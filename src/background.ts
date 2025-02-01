@@ -67,6 +67,54 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const handleMessage = async () => {
     try {
       switch (message.type) {
+        case "CAPTURE_TAB_SCREENSHOT":
+          // We can now safely call chrome.tabs.query
+          chrome.tabs.query(
+            { active: true, currentWindow: true },
+            async (tabs) => {
+              if (!tabs.length) {
+                sendResponse({ error: "No active tab found." });
+                return;
+              }
+              const tab = tabs[0];
+              if (!tab.id) {
+                sendResponse({ error: "No valid tab ID." });
+                return;
+              }
+              // Ask content script to "prepare" the page if needed
+              chrome.tabs.sendMessage(
+                tab.id,
+                { type: "PREPARE_SCREENSHOT" },
+                async () => {
+                  // Wait some time for UI changes if needed
+                  await new Promise((resolve) => setTimeout(resolve, 200));
+
+                  // Actually capture the screenshot
+                  chrome.tabs.captureVisibleTab(
+                    { format: "jpeg", quality: 50 },
+                    (dataUrl) => {
+                      if (chrome.runtime.lastError) {
+                        sendResponse({
+                          error: chrome.runtime.lastError.message,
+                        });
+                      } else {
+                        if (tab?.id) {
+                          // After capturing, restore if needed
+                          chrome.tabs.sendMessage(tab.id, {
+                            type: "RESTORE_AFTER_SCREENSHOT",
+                          });
+                          sendResponse({ dataUrl });
+                        }
+                      }
+                    }
+                  );
+                }
+              );
+            }
+          );
+
+          // Return true to indicate we’ll send an async response later
+          return true;
         case "CAPTURE_TAB": {
           const [tab] = await chrome.tabs.query({
             active: true,

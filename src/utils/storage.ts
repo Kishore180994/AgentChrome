@@ -1,7 +1,7 @@
 interface StorageData {
   openaiKey?: string;
   geminiKey?: string;
-  aiProvider?: 'openai' | 'gemini';
+  aiProvider?: "openai" | "gemini";
   [key: string]: any;
 }
 
@@ -9,20 +9,33 @@ class Storage {
   private isExtension: boolean;
 
   constructor() {
-    this.isExtension = typeof chrome !== 'undefined' && chrome.storage !== undefined;
+    this.isExtension =
+      typeof chrome !== "undefined" && chrome.storage !== undefined;
   }
 
   async get(keys: string[]): Promise<StorageData> {
     if (this.isExtension) {
+      // Use Chrome storage
       return new Promise((resolve) => {
         chrome.storage.sync.get(keys, (result) => {
           resolve(result as StorageData);
         });
       });
     } else {
+      // Use localStorage, but parse JSON
       const result: StorageData = {};
       keys.forEach((key) => {
-        result[key] = localStorage.getItem(key);
+        const rawValue = localStorage.getItem(key);
+        if (rawValue !== null) {
+          try {
+            result[key] = JSON.parse(rawValue);
+          } catch {
+            // Fallback if it was plain text, not JSON
+            result[key] = rawValue;
+          }
+        } else {
+          result[key] = undefined;
+        }
       });
       return result;
     }
@@ -30,15 +43,18 @@ class Storage {
 
   async set(data: StorageData): Promise<void> {
     if (this.isExtension) {
+      // Use Chrome storage
       return new Promise((resolve) => {
         chrome.storage.sync.set(data, () => {
           resolve();
         });
       });
     } else {
+      // Use localStorage, but JSON-stringify objects/arrays
       Object.entries(data).forEach(([key, value]) => {
         if (value !== undefined) {
-          localStorage.setItem(key, value);
+          // Safely store any type of data as a JSON string
+          localStorage.setItem(key, JSON.stringify(value));
         } else {
           localStorage.removeItem(key);
         }

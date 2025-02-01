@@ -2,6 +2,11 @@
 
 import OpenAI from "openai";
 import { storage } from "../../utils/storage";
+import {
+  ChatMessage,
+  getConversationHistory,
+  saveConversationHistory,
+} from "../../utils/chatHistory";
 
 // Add Chrome types
 declare global {
@@ -61,22 +66,23 @@ async function sendMessageToActiveTab(message: any): Promise<void> {
 /**
  * Captures a screenshot of the current tab.
  */
-async function captureTabScreenshot(): Promise<string> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) {
-    throw new Error("No active tab found.");
-  }
-
-  await sendMessageToActiveTab({ type: "PREPARE_SCREENSHOT" });
-  await new Promise((resolve) => setTimeout(resolve, 200)); // Wait for UI adjustments
-
-  const dataUrl = await chrome.tabs.captureVisibleTab({
-    format: "jpeg",
-    quality: 50,
+export function captureTabScreenshot(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // The content script environment supports chrome.runtime.sendMessage
+    chrome.runtime.sendMessage(
+      { type: "CAPTURE_TAB_SCREENSHOT" },
+      (response) => {
+        console.log({ response });
+        if (chrome.runtime.lastError) {
+          return reject(chrome.runtime.lastError.message);
+        }
+        if (response?.error) {
+          return reject(response.error);
+        }
+        resolve(response.dataUrl);
+      }
+    );
   });
-
-  await sendMessageToActiveTab({ type: "RESTORE_AFTER_SCREENSHOT" });
-  return dataUrl;
 }
 
 /**
@@ -188,7 +194,10 @@ async function sendChatRequest(
 }
 
 /**
- * Handles chat interactions with OpenAI.
+ * Chat with OpenAI while preserving conversation history.
+ * @param {string} message - The user's message.
+ * @param {boolean} includeScreenshot - Whether to capture a screenshot of the current tab.
+ * @returns {Promise<AIResponse>}
  */
 export async function chatWithOpenAI(
   message: string,
@@ -200,34 +209,87 @@ export async function chatWithOpenAI(
     }
 
     const openai = await getOpenAIInstance();
-    const messages: any[] = [
-      {
+
+    const existingHistory = await getConversationHistory();
+
+    console.log({ existingHistory });
+
+    let conversation = [...existingHistory];
+
+    if (!conversation.find((m) => m.role === "system")) {
+      conversation.unshift({
         role: "system",
-        content: `You are a helpful AI assistant in a Chrome extension that can interact with webpages. You can:
-        1. See what's on the screen when screen capture is enabled.
-        2. Interact with the webpage using natural language commands like click, type, select, and scroll.
-        3. Help users with their browsing tasks.`,
-      },
-      { role: "user", content: message },
-    ];
+        content: `You are a helpful AI assistant in a Chrome extension that can:
+                  1. See what's on the screen when screen capture is enabled.
+                  2. Interact with the webpage using natural language commands like click, type, select, and scroll.
+                  3. Help users with their browsing tasks.`,
+      });
+    }
+
+    conversation.push({
+      role: "user",
+      content: message,
+    });
+
+    // const messages: any[] = [
+    //   {
+    //     role: "system",
+    //     content: `You are a helpful AI assistant in a Chrome extension that can interact with webpages. You can:
+    //     1. See what's on the screen when screen capture is enabled.
+    //     2. Interact with the webpage using natural language commands like click, type, select, and scroll.
+    //     3. Help users with their browsing tasks.`,
+    //   },
+    //   { role: "user", content: message },
+    // ];
 
     if (includeScreenshot) {
       try {
         const screenshot = await captureTabScreenshot();
-        console.log({ screenshot });
-        messages.push({
+
+        conversation.push({
           role: "user",
-          content: [
-            { type: "image_url", image_url: { url: screenshot } },
-            { type: "text", text: message },
-          ],
+          content: {
+            type: "image_url",
+            image_url: { url: screenshot },
+          },
         });
       } catch (error) {
         console.error("Screenshot error:", error);
       }
     }
 
-    return await sendChatRequest(openai, messages);
+    // Filter out messages missing a valid "role"
+    const validMessages = conversation.filter(
+      (msg) => msg.role && typeof msg.role === "string"
+    );
+
+    const openAIMessages = validMessages.map((msg) => {
+      // If the content is an object, we turn it to string JSON:
+      const contentString =
+        typeof msg.content === "object"
+          ? JSON.stringify(msg.content)
+          : msg.content;
+      return {
+        role: msg.role,
+        content: contentString,
+      };
+    });
+
+    console.log("Sending chat request with conversation:", openAIMessages);
+    const { text, error, actions } = await sendChatRequest(
+      openai,
+      openAIMessages
+    );
+
+    let newReply: ChatMessage = {
+      role: "assistant",
+      content: text,
+    };
+    conversation.push(newReply);
+
+    await saveConversationHistory(conversation);
+
+    return { text, error, actions };
   } catch (error: any) {
     console.error("Error in chatWithOpenAI:", error);
     return {
