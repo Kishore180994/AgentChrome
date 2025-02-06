@@ -1,10 +1,11 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Mic, MicOff, Eye, Settings, AlertCircle } from "lucide-react";
 import { SpeechError, SpeechRecognitionHandler } from "./services/speech";
 import { ScreenCapture } from "./services/screen-capture";
 import { SettingsModal } from "./components/SettingsModal";
 import { ChatWidget } from "./components/ChatWidget";
 import { StagehandControls } from "./components/StagehandControls";
+import { ContentScriptMessage } from "./types/messages";
 
 const App = () => {
   const [isListening, setIsListening] = useState(false);
@@ -13,6 +14,7 @@ const App = () => {
   const [screenAnalysis, setScreenAnalysis] = useState("");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [error, setError] = useState<SpeechError | null>(null);
+  const extensionId = chrome.runtime.id;
 
   // --- SINGLETON INSTANCES ---
   // 1) SpeechRecognitionHandler
@@ -78,6 +80,18 @@ const App = () => {
     setIsWatching(!isWatching);
   };
 
+  // Add message listener at component mount
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent<ContentScriptMessage>) => {
+      if (event.data.type === "FROM_CONTENT_SCRIPT") {
+        // Type-safe access to properties
+        console.log("Received response:", event.data.result);
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, []);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       <div className="max-w-4xl mx-auto p-4">
@@ -95,6 +109,44 @@ const App = () => {
 
         {/* Main Content */}
         <main className="space-y-6">
+          {/* DOM Elements Panel */}
+          <div className="bg-white/80 backdrop-blur-sm rounded-xl p-4 shadow-md border border-gray-200">
+            <h2 className="text-base font-semibold text-gray-800 mb-3">
+              DOM Elements
+            </h2>
+            <div className="flex items-center gap-4">
+              {/* Show Button */}
+              <button
+                onClick={() => {
+                  window.postMessage(
+                    {
+                      type: "FROM_REACT_APP",
+                      action: "SHOW_PAGE_ELEMENTS",
+                    },
+                    "*"
+                  );
+                }}
+                className="flex items-center gap-2 px-4 py-2 rounded-md font-medium text-sm transition-all bg-gray-100 hover:bg-gray-200 text-gray-600"
+              >
+                Show Elements
+              </button>
+
+              {/* Hide Button */}
+              <button
+                onClick={() => {
+                  console.log({ extensionId });
+                  // Tell the content script to remove highlights
+                  chrome.runtime.sendMessage(extensionId, {
+                    type: "HIDE_PAGE_ELEMENTS",
+                  });
+                }}
+                className="flex items-center gap-2 px-4 py-2 rounded-md font-medium text-sm transition-all bg-gray-100 hover:bg-gray-200 text-gray-600"
+              >
+                Hide Elements
+              </button>
+            </div>
+          </div>
+
           {/* Control Panel */}
           <div className="bg-white/80 backdrop-blur-sm rounded-xl p-4 shadow-md border border-gray-200">
             <h2 className="text-base font-semibold text-gray-800 mb-3">
