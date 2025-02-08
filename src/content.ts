@@ -1,15 +1,20 @@
 // content.ts
 
-import { ExtensionMessage, ReactMessage } from "./types/messages";
-
 /******************************************************
  * 1) Global Declaration to avoid "window[...] error"
  ******************************************************/
-// content.ts
+
+/**
+ * Extend the Window interface to declare properties or methods
+ * that TypeScript doesn't recognize by default.
+ * This avoids errors like: 'Property ___ does not exist on type Window'.
+ */
 declare global {
   interface Window {
     __AGENT_CHROME_INITIALIZED__?: boolean;
-    // Add this for message type safety
+    /**
+     * postMessage override for stricter type checks related to our extension messages
+     */
     postMessage(message: ExtensionMessage, targetOrigin: string): void;
   }
 }
@@ -17,11 +22,18 @@ declare global {
 /******************************************************
  * 2) Define our message interfaces
  ******************************************************/
+
+/**
+ * A base message interface that all messages share.
+ */
 interface BaseMessage {
   type: string;
   [key: string]: any;
 }
 
+/**
+ * The shape of the data used for performing an action on the DOM.
+ */
 interface ActionData {
   // e.g. "click", "input", "select", "scroll"
   type: string;
@@ -35,10 +47,19 @@ interface ActionData {
   };
 }
 
+/**
+ * A message instructing the extension to perform an action,
+ * containing data that describes the action and the target element.
+ */
 interface PerformActionMessage extends BaseMessage {
   type: "PERFORM_ACTION";
   data: ActionData;
 }
+
+/******************************************************
+ * 2b) Import external message type definitions
+ ******************************************************/
+import { ExtensionMessage, ReactMessage } from "./types/messages";
 
 /******************************************************
  * 3) Main Guard - ensure we only run once
@@ -53,12 +74,18 @@ if (!window[AGENT_KEY]) {
   let sidebarContainer: HTMLDivElement | null = null;
   let sidebarVisible = false;
 
-  // Notify background that content script is ready
+  // Notify background script that the content script is ready
   chrome.runtime.sendMessage({ type: "CONTENT_SCRIPT_READY" });
 
   /******************************************************
    * 4) Utility: skip elements in the sidebar
    ******************************************************/
+
+  /**
+   * Determines whether a given element is within the injected sidebar.
+   * @param element The element to check
+   * @returns True if the element is inside the sidebar; false otherwise
+   */
   function isInSidebar(element: HTMLElement): boolean {
     const sbar = document.getElementById("agent-chrome-root");
     return !!sbar && sbar.contains(element);
@@ -67,21 +94,34 @@ if (!window[AGENT_KEY]) {
   /******************************************************
    * 5) Utility: build a unique selector
    ******************************************************/
+
+  /**
+   * Generates a simple (possibly partial) unique selector string for an element.
+   * Currently returns the element's ID if it exists.
+   * @param element The element to generate a selector for
+   * @returns A string CSS selector or null if none found
+   */
   function getUniqueSelector(element: HTMLElement): string | null {
     if (element.id) {
       return `#${element.id}`;
     }
-    // fallback or more advanced logic
+    // Extend or fallback logic if needed
     return null;
   }
 
   /******************************************************
    * 6) Highlighting logic
    ******************************************************/
+
   const activeHighlights: HTMLDivElement[] = [];
 
+  /**
+   * Scans the page for interactive elements (buttons, inputs, etc.)
+   * while excluding those inside the sidebar.
+   * @returns An array of objects with the element reference, index, selector, and snippet of text
+   */
   function scanPageElements() {
-    // Interactable elements
+    // Potentially interactable elements
     const allCandidates = document.querySelectorAll(
       "button, a, input, textarea, select"
     );
@@ -91,6 +131,7 @@ if (!window[AGENT_KEY]) {
       selector: string;
       text: string;
     }> = [];
+
     let idx = 1;
 
     for (const candidate of allCandidates) {
@@ -116,11 +157,19 @@ if (!window[AGENT_KEY]) {
     return elements;
   }
 
+  /**
+   * Creates a visible overlay on top of the specified element,
+   * drawing a border and showing a label.
+   * @param element The DOM element to highlight
+   * @param label A label string to display on the overlay
+   * @returns The overlay element (div) that was created
+   */
   function highlightElement(element: HTMLElement, label: string) {
     const rect = element.getBoundingClientRect();
     const overlay = document.createElement("div");
+    const random = getRandomColor();
     overlay.style.position = "absolute";
-    overlay.style.border = "2px solid red";
+    overlay.style.border = `2px solid ${random}`;
     overlay.style.pointerEvents = "none";
     overlay.style.zIndex = "999999999";
 
@@ -146,6 +195,9 @@ if (!window[AGENT_KEY]) {
     return overlay;
   }
 
+  /**
+   * Removes any currently active highlights (overlays) from the page.
+   */
   function clearHighlights() {
     for (const hl of activeHighlights) {
       hl.remove();
@@ -153,6 +205,9 @@ if (!window[AGENT_KEY]) {
     activeHighlights.length = 0;
   }
 
+  /**
+   * Highlights all interactable elements found on the page.
+   */
   function showPageElements() {
     clearHighlights();
     const elements = scanPageElements();
@@ -165,14 +220,20 @@ if (!window[AGENT_KEY]) {
   /******************************************************
    * 7) Sidebar injection and toggling
    ******************************************************/
+
+  /**
+   * Injects the sidebar container into the DOM if it isn't already present.
+   * Also loads the sidebar script (e.g., the React app) to populate that container.
+   */
   function injectSidebar() {
-    if (sidebarContainer || document.getElementById("agent-chrome-root"))
-      return;
+    const existing = document.getElementById("agent-chrome-root");
+    if (sidebarContainer || existing) return;
 
     sidebarContainer = document.createElement("div");
     sidebarContainer.id = "agent-chrome-root";
     document.body.appendChild(sidebarContainer);
 
+    // Inject a style block for controlling sidebar appearance/animations
     if (!document.getElementById("agent-chrome-style")) {
       const style = document.createElement("style");
       style.id = "agent-chrome-style";
@@ -215,6 +276,22 @@ if (!window[AGENT_KEY]) {
     sidebarVisible = true;
   }
 
+  /**
+   * Generates a random color in hex format.
+   * @returns A random hex color string (e.g. "#f1a94a")
+   */
+  function getRandomColor(): string {
+    return (
+      "#" +
+      Math.floor(Math.random() * 16777215)
+        .toString(16)
+        .padEnd(6, "0")
+    );
+  }
+
+  /**
+   * Toggles the sidebar's visibility and updates styling accordingly.
+   */
   function toggleSidebar() {
     if (!sidebarContainer) {
       injectSidebar();
@@ -228,27 +305,40 @@ if (!window[AGENT_KEY]) {
   /******************************************************
    * 8) performAction
    ******************************************************/
+
+  /**
+   * Perform a user-like action (click, input, select, scroll) on the DOM element
+   * specified by an ActionData object. Supports fallback logic if a selector is not provided.
+   *
+   * @param action The ActionData object specifying the type of action and target element details
+   * @returns Promise resolving to success: boolean and optional error string
+   */
   async function performAction(
     action: ActionData
   ): Promise<{ success: boolean; error?: string }> {
     try {
       let element: HTMLElement | null = null;
 
-      // Try finding by .selector
+      // If a direct CSS selector is provided, try that first
       if (action.selector) {
         element = document.querySelector<HTMLElement>(action.selector);
       } else if (action.data) {
-        // Fallback to building a CSS query
+        // Otherwise, try to build a more detailed fallback query
         const { tagName, id, className, textContent } = action.data;
         const selParts: string[] = [];
+
         if (tagName) selParts.push(tagName.toLowerCase());
         if (id) selParts.push(`#${id}`);
-        if (className) selParts.push("." + className.split(" ").join("."));
+        if (className) {
+          selParts.push("." + className.split(" ").join("."));
+        }
 
         const possible = document.querySelectorAll<HTMLElement>(
           selParts.join("")
         );
+
         if (possible.length > 1 && textContent) {
+          // If multiple matches, narrow down by matching text content
           element =
             Array.from(possible).find(
               (el) => el.textContent?.trim() === textContent.trim()
@@ -266,6 +356,7 @@ if (!window[AGENT_KEY]) {
         case "click":
           element.click();
           break;
+
         case "input":
           if (
             element instanceof HTMLInputElement ||
@@ -275,15 +366,18 @@ if (!window[AGENT_KEY]) {
             element.dispatchEvent(new Event("input", { bubbles: true }));
           }
           break;
+
         case "select":
           if (element instanceof HTMLSelectElement) {
             element.value = action.data?.value || "";
             element.dispatchEvent(new Event("change", { bubbles: true }));
           }
           break;
+
         case "scroll":
           element.scrollIntoView({ behavior: "smooth", block: "center" });
           break;
+
         default:
           throw new Error(`Unsupported action type: ${action.type}`);
       }
@@ -298,6 +392,11 @@ if (!window[AGENT_KEY]) {
   /******************************************************
    * 9) Ctrl/Cmd + Click => capture element info
    ******************************************************/
+
+  /**
+   * Listen for clicks combined with Ctrl (Windows/Linux) or Cmd (Mac).
+   * Captures and sends element metadata to the background script.
+   */
   document.addEventListener("click", (event: MouseEvent) => {
     if (event.metaKey || event.ctrlKey) {
       event.preventDefault();
@@ -321,8 +420,9 @@ if (!window[AGENT_KEY]) {
   });
 
   /******************************************************
-   * 10) Listen for messages
+   * 10) Listen for messages (from background script, etc.)
    ******************************************************/
+
   chrome.runtime.onMessage.addListener(
     (message: BaseMessage, sender, sendResponse) => {
       console.log("[content.ts] Received message:", message.type);
@@ -335,15 +435,18 @@ if (!window[AGENT_KEY]) {
 
         case "TOGGLE_LISTENING":
         case "TOGGLE_WATCHING":
+          // These might trigger internal state changes or watchers
           console.log("Toggling listening/watching:", message.type);
           sendResponse({ success: true });
           break;
 
         case "PERFORM_ACTION":
+          // Perform the specified action on a DOM element
           performAction(message.data).then(sendResponse);
-          return true; // keep channel open for async
+          return true; // keep channel open for async response
 
         case "PREPARE_SCREENSHOT":
+          // Hide sidebar before screenshot
           if (sidebarContainer) {
             sidebarContainer.style.display = "none";
             document.body.classList.add("sidebar-hidden");
@@ -351,6 +454,7 @@ if (!window[AGENT_KEY]) {
           break;
 
         case "RESTORE_AFTER_SCREENSHOT":
+          // Restore sidebar after screenshot
           if (sidebarContainer) {
             sidebarContainer.style.display = "";
             if (sidebarVisible) {
@@ -380,19 +484,28 @@ if (!window[AGENT_KEY]) {
   console.warn("[content.ts] Agent Chrome already initialized");
 }
 
-// content.ts - Add to existing code
+/******************************************************
+ * Window Event Listener: receiving messages from React
+ ******************************************************/
+
+/**
+ * Listen for messages from the injected React app (via window.postMessage),
+ * and forward them to the background script as needed.
+ */
 window.addEventListener("message", (event: MessageEvent<ReactMessage>) => {
+  // Only handle messages from the same origin and the window itself
   if (event.origin !== window.location.origin) return;
   if (event.source !== window) return;
 
-  // Handle messages from React app
+  // Handle messages from the React app
   if (event.data.type === "FROM_REACT_APP") {
     switch (event.data.action) {
       case "SHOW_PAGE_ELEMENTS":
+        // Ask the background script to show highlights
         chrome.runtime.sendMessage(
           { type: "SHOW_PAGE_ELEMENTS" },
           (response) => {
-            // Send response back to React
+            // Relay the result back to React
             window.postMessage(
               {
                 type: "FROM_CONTENT_SCRIPT",
@@ -403,6 +516,10 @@ window.addEventListener("message", (event: MessageEvent<ReactMessage>) => {
             );
           }
         );
+        break;
+      // Add more actions here if needed
+      default:
+        // No other actions from React handled yet
         break;
     }
   }

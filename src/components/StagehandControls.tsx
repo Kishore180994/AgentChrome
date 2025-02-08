@@ -15,10 +15,9 @@ export function StagehandControls() {
   const startRecording = () => {
     console.log("Starting action recording...");
     try {
-      // Clear any previous errors
       setError(null);
 
-      // Start listening for actions
+      // Listen for interactive events
       document.addEventListener("click", handleAction);
       document.addEventListener("input", handleAction);
       document.addEventListener("keydown", handleAction);
@@ -36,7 +35,7 @@ export function StagehandControls() {
   const stopRecording = () => {
     console.log("Stopping action recording...");
     try {
-      // Remove event listeners
+      // Remove listeners
       document.removeEventListener("click", handleAction);
       document.removeEventListener("input", handleAction);
       document.removeEventListener("keydown", handleAction);
@@ -97,49 +96,73 @@ export function StagehandControls() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center space-x-4">
+    <div className="ext-space-y-4 ext-text-sm ext-text-gray-200">
+      {/* Recording Controls */}
+      <div className="ext-flex ext-items-center ext-space-x-4">
         <button
           onClick={isRecording ? stopRecording : startRecording}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
+          className={`ext-flex ext-items-center ext-space-x-2 ext-px-4 ext-py-2 ext-rounded-lg ext-transition-colors ext-ring-1 ${
             isRecording
-              ? "bg-red-100 text-red-600 hover:bg-red-200"
-              : "bg-green-100 text-green-600 hover:bg-green-200"
+              ? "ext-bg-red-700 ext-text-red-100 ext-ring-red-500/50 ext-hover:bg-red-600"
+              : "ext-bg-green-700 ext-text-green-100 ext-ring-green-500/50 ext-hover:bg-green-600"
           }`}
         >
           {isRecording ? (
             <>
-              <Square className="w-4 h-4" />
+              <Square className="ext-w-4 ext-h-4" />
               <span>Stop Recording</span>
             </>
           ) : (
             <>
-              <Play className="w-4 h-4" />
+              <Play className="ext-w-4 ext-h-4" />
               <span>Start Recording</span>
             </>
           )}
         </button>
 
+        {/* Clear Actions */}
         <button
           onClick={clearActions}
           disabled={actions.length === 0}
-          className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="
+            ext-flex ext-items-center ext-space-x-2
+            ext-px-4 ext-py-2 ext-rounded-lg 
+            ext-ring-1 ext-ring-gray-500/50
+            ext-bg-gray-700 ext-text-gray-200
+            ext-hover:bg-gray-600
+            ext-disabled:opacity-50 ext-disabled:cursor-not-allowed
+            ext-transition-colors
+          "
         >
-          <Trash2 className="w-4 h-4" />
+          <Trash2 className="ext-w-4 ext-h-4" />
           <span>Clear</span>
         </button>
       </div>
 
+      {/* Error Display */}
       {error && (
-        <div className="p-4 bg-red-50 text-red-600 rounded-lg">{error}</div>
+        <div
+          className="
+            ext-p-4 ext-rounded-lg
+            ext-bg-red-800/40 ext-text-red-200
+            ext-ring-1 ext-ring-red-500/50
+          "
+        >
+          {error}
+        </div>
       )}
 
+      {/* Recorded Actions */}
       {actions.length > 0 && (
-        <div className="mt-4">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">
-            Recorded Actions:
-          </h3>
-          <pre className="bg-gray-50 p-4 rounded-lg overflow-auto max-h-[200px] text-sm">
+        <div>
+          <h3 className="font-medium mb-2 text-cyan-200">Recorded Actions:</h3>
+          <pre
+            className="
+              ext-bg-gray-900 ext-p-4 ext-rounded-lg
+              ext-overflow-auto ext-max-h-[200px] ext-text-xs
+              ext-ring-1 ext-ring-gray-500/50
+            "
+          >
             {JSON.stringify(actions, null, 2)}
           </pre>
         </div>

@@ -1,304 +1,167 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Mic, MicOff, Eye, Settings, AlertCircle } from "lucide-react";
+import { Settings } from "lucide-react";
+
 import { SpeechError, SpeechRecognitionHandler } from "./services/speech";
 import { ScreenCapture } from "./services/screen-capture";
+import { ContentScriptMessage } from "./types/messages";
+import {
+  sendToContentScript,
+  handleContentScriptMessages,
+} from "./lib/messaging";
+
 import { SettingsModal } from "./components/SettingsModal";
 import { ChatWidget } from "./components/ChatWidget";
-import { StagehandControls } from "./components/StagehandControls";
-import { ContentScriptMessage } from "./types/messages";
+import { DOMElementsPanel } from "./components/DOMElementsPanel";
+import { ControlPanel } from "./components/ControlPanel";
+import { ActionRecording } from "./components/ActionRecording";
+import { TranscriptPanel } from "./components/TranscriptPanel";
+import { ScreenAnalysis } from "./components/ScreenAnalysis";
+import { HotkeysPanel } from "./components/HotkeysPanel";
 
+/** Top-level App */
 const App = () => {
-  const [isListening, setIsListening] = useState(false);
-  const [isWatching, setIsWatching] = useState(false);
-  const [transcript, setTranscript] = useState("");
-  const [screenAnalysis, setScreenAnalysis] = useState("");
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [error, setError] = useState<SpeechError | null>(null);
-  const extensionId = chrome.runtime.id;
+  // State management
+  const [state, setState] = useState({
+    isListening: false,
+    isWatching: false,
+    transcript: "",
+    screenAnalysis: "",
+    isSettingsOpen: false,
+    error: null as SpeechError | null,
+  });
 
-  // --- SINGLETON INSTANCES ---
-  // 1) SpeechRecognitionHandler
-  const speechRef = useRef<SpeechRecognitionHandler | null>(null);
-  if (!speechRef.current) {
-    // Create it once
-    speechRef.current = new SpeechRecognitionHandler();
-  }
-  const speechRecognition = speechRef.current;
+  // Refs for singleton services
+  const speechRecognition = useRef(new SpeechRecognitionHandler()).current;
+  const screenCapture = useRef(new ScreenCapture()).current;
 
-  // 2) ScreenCapture
-  const screenRef = useRef<ScreenCapture | null>(null);
-  if (!screenRef.current) {
-    screenRef.current = new ScreenCapture();
-  }
-  const screenCapture = screenRef.current;
-
-  // Toggle listening
-  const toggleListening = async () => {
-    if (isListening) {
-      // Stop speech recognition
-      speechRecognition.stop();
-      setIsListening(false);
-    } else {
-      try {
-        await speechRecognition.start((text, err) => {
-          if (err) {
-            setError(err);
-          } else if (text) {
-            // The handler is building a combined transcript for us
-            setTranscript(text);
-          }
-        });
-        setIsListening(true);
-      } catch (err: any) {
-        console.error("Error starting speech recognition:", err);
-        setError({
-          type: "START_ERROR",
-          message: err.message || "Failed to start speech recognition.",
-          timestamp: Date.now(),
-          details: err.stack,
-        });
-        setIsListening(false);
-      }
-    }
-  };
-
-  // Toggle screen capture
-  const toggleWatching = async () => {
-    try {
-      if (!isWatching) {
-        await screenCapture.start((text) => {
-          setScreenAnalysis(text);
-        });
-      } else {
-        screenCapture.stop();
-      }
-    } catch (err) {
-      console.error("Error toggling screen capture:", err);
-      setIsWatching(false);
-      return;
-    }
-    setIsWatching(!isWatching);
-  };
-
-  // Add message listener at component mount
+  // Listen for messages from the content script
   useEffect(() => {
-    const handleMessage = (event: MessageEvent<ContentScriptMessage>) => {
-      if (event.data.type === "FROM_CONTENT_SCRIPT") {
-        // Type-safe access to properties
-        console.log("Received response:", event.data.result);
+    const cleanup = handleContentScriptMessages(
+      (message: ContentScriptMessage) => {
+        console.log("Received from content script:", message.result);
+        // Add specific message handling here if needed
       }
-    };
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
+    );
+    return cleanup;
   }, []);
 
+  // Speech recognition helpers
+  const handleSpeechResult = (text: string) => {
+    setState((prev) => ({ ...prev, transcript: text }));
+  };
+
+  const handleSpeechError = (error: SpeechError) => {
+    setState((prev) => ({ ...prev, error }));
+  };
+
+  const toggleListening = async () => {
+    if (state.isListening) {
+      speechRecognition.stop();
+    } else {
+      try {
+        await speechRecognition.start((text, error) => {
+          if (error) {
+            handleSpeechError(error);
+          } else if (text) {
+            handleSpeechResult(text);
+          }
+        });
+      } catch (err) {
+        handleSpeechError(err as SpeechError);
+      }
+    }
+    setState((prev) => ({ ...prev, isListening: !prev.isListening }));
+  };
+
+  const toggleWatching = async () => {
+    try {
+      if (state.isWatching) {
+        screenCapture.stop();
+      } else {
+        await screenCapture.start((analysis: string) => {
+          setState((prev) => ({ ...prev, screenAnalysis: analysis }));
+        });
+      }
+      setState((prev) => ({ ...prev, isWatching: !prev.isWatching }));
+    } catch (error) {
+      console.error("Screen capture error:", error);
+      setState((prev) => ({ ...prev, isWatching: false }));
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <div className="max-w-4xl mx-auto p-4">
+    // Changed from `ext-min-h-screen` to `ext-h-screen` and added `ext-overflow-auto`
+    <div className="ext-h-screen ext-overflow-auto ext-bg-gradient-to-r ext-from-gray-900 ext-via-black ext-to-gray-900 ext-text-gray-100">
+      <div className="ext-max-w-5xl ext-mx-auto ext-py-10 ext-px-6 ext-space-y-8">
         {/* Header */}
-        <header className="flex items-center justify-between mb-8">
-          <h1 className="text-2xl font-semibold text-gray-800">AI Assistant</h1>
+        <header className="ext-flex ext-items-center ext-justify-between">
+          <h1 className="ext-text-3xl ext-font-bold ext-tracking-wide ext-text-cyan-300 ext-drop-shadow-[0_0_8px_rgba(0,255,255,0.7)]">
+            Do4Me
+          </h1>
           <button
-            onClick={() => setIsSettingsOpen(true)}
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            onClick={() =>
+              setState((prev) => ({ ...prev, isSettingsOpen: true }))
+            }
+            className="ext-flex ext-items-center ext-gap-1 ext-px-3 ext-py-2 ext-rounded-lg ext-bg-cyan-700/20 ext-text-cyan-200 ext-ring-1 ext-ring-cyan-400 ext-hover:bg-cyan-600/30 ext-transition-colors"
             title="API Settings"
           >
-            <Settings className="w-6 h-6 text-gray-600" />
+            <Settings className="ext-w-5 ext-h-5" />
+            <span className="ext-text-sm ext-font-semibold">Settings</span>
           </button>
         </header>
 
         {/* Main Content */}
-        <main className="space-y-6">
+        <main className="ext-space-y-6">
           {/* DOM Elements Panel */}
-          <div className="bg-white/80 backdrop-blur-sm rounded-xl p-4 shadow-md border border-gray-200">
-            <h2 className="text-base font-semibold text-gray-800 mb-3">
-              DOM Elements
-            </h2>
-            <div className="flex items-center gap-4">
-              {/* Show Button */}
-              <button
-                onClick={() => {
-                  window.postMessage(
-                    {
-                      type: "FROM_REACT_APP",
-                      action: "SHOW_PAGE_ELEMENTS",
-                    },
-                    "*"
-                  );
-                }}
-                className="flex items-center gap-2 px-4 py-2 rounded-md font-medium text-sm transition-all bg-gray-100 hover:bg-gray-200 text-gray-600"
-              >
-                Show Elements
-              </button>
-
-              {/* Hide Button */}
-              <button
-                onClick={() => {
-                  console.log({ extensionId });
-                  // Tell the content script to remove highlights
-                  chrome.runtime.sendMessage(extensionId, {
-                    type: "HIDE_PAGE_ELEMENTS",
-                  });
-                }}
-                className="flex items-center gap-2 px-4 py-2 rounded-md font-medium text-sm transition-all bg-gray-100 hover:bg-gray-200 text-gray-600"
-              >
-                Hide Elements
-              </button>
-            </div>
-          </div>
+          <section className="ext-relative ext-bg-gray-800/80 ext-p-4 ext-rounded-xl ext-ring-1 ext-ring-inset ext-ring-gray-500/50 ext-shadow-xl ext-backdrop-blur-md">
+            <DOMElementsPanel sendToContentScript={sendToContentScript} />
+          </section>
 
           {/* Control Panel */}
-          <div className="bg-white/80 backdrop-blur-sm rounded-xl p-4 shadow-md border border-gray-200">
-            <h2 className="text-base font-semibold text-gray-800 mb-3">
-              Control Panel
-            </h2>
-            <div className="flex items-center justify-between gap-4">
-              <button
-                onClick={toggleListening}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium text-sm transition-all ${
-                  isListening
-                    ? "bg-red-100 text-red-600"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
-              >
-                {isListening ? (
-                  <MicOff className="w-5 h-5" />
-                ) : (
-                  <Mic className="w-5 h-5" />
-                )}
-                <span>
-                  {isListening ? "Stop Listening" : "Start Listening"}
-                </span>
-              </button>
-
-              <button
-                onClick={toggleWatching}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium text-sm transition-all ${
-                  isWatching
-                    ? "bg-blue-100 text-blue-600"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
-              >
-                <Eye className="w-5 h-5" />
-                <span>{isWatching ? "Stop Watching" : "Start Watching"}</span>
-              </button>
-            </div>
-
-            {/* Error Display */}
-            {error && (
-              <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-md shadow-sm">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-6 h-6 text-red-500 flex-shrink-0" />
-                  <div>
-                    <h3 className="text-sm font-semibold text-red-800">
-                      {error.message}
-                    </h3>
-                    {error.details && (
-                      <p className="mt-2 text-sm text-red-600">
-                        {error.details}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          <section className="ext-relative ext-bg-gray-800/80 ext-p-4 ext-rounded-xl ext-ring-1 ext-ring-inset ext-ring-gray-500/50 ext-shadow-xl ext-backdrop-blur-md">
+            <ControlPanel
+              isListening={state.isListening}
+              isWatching={state.isWatching}
+              error={state.error}
+              onToggleListening={toggleListening}
+              onToggleWatching={toggleWatching}
+            />
+          </section>
 
           {/* Chat Widget */}
-          <div
-            className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-gray-100 resize-y overflow-auto"
-            style={{ height: "300px" }}
-          >
-            <ChatWidget />
-          </div>
+          <ChatWidget />
 
-          {/* Stagehand Recording Controls */}
-          <div className="bg-white/80 backdrop-blur-sm rounded-xl p-4 shadow-md border border-gray-200">
-            <h2 className="text-base font-semibold text-gray-800 mb-3">
-              Action Recording
-            </h2>
-            <StagehandControls />
-          </div>
+          {/* Action Recording */}
+          <section className="ext-relative ext-bg-gray-800/80 ext-p-4 ext-rounded-xl ext-ring-1 ext-ring-inset ext-ring-gray-500/50 ext-shadow-xl ext-backdrop-blur-md">
+            <ActionRecording />
+          </section>
 
           {/* Transcript Panel */}
-          <div className="bg-white/80 backdrop-blur-sm rounded-xl p-4 shadow-md border border-gray-200">
-            <h2 className="text-base font-semibold text-gray-800 mb-3">
-              Transcript
-            </h2>
-            <div className="space-y-3 whitespace-pre-wrap">
-              {transcript ? (
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  {transcript}
-                </p>
-              ) : (
-                <p className="text-sm text-gray-400 italic">
-                  Start listening to see the transcript...
-                </p>
-              )}
-            </div>
-          </div>
+          <section className="ext-relative ext-bg-gray-800/80 ext-p-4 ext-rounded-xl ext-ring-1 ext-ring-inset ext-ring-gray-500/50 ext-shadow-xl ext-backdrop-blur-md">
+            <TranscriptPanel transcript={state.transcript} />
+          </section>
 
-          {/* Screen Analysis Panel */}
-          {isWatching && (
-            <div className="bg-white/80 backdrop-blur-sm rounded-xl p-6 shadow-sm border border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-800 mb-4">
-                Screen Analysis
-              </h2>
-              <div className="space-y-4 whitespace-pre-wrap">
-                {screenAnalysis ? (
-                  <p className="text-gray-600">{screenAnalysis}</p>
-                ) : (
-                  <p className="text-gray-400 italic">
-                    Analyzing screen content...
-                  </p>
-                )}
-              </div>
-            </div>
+          {/* Screen Analysis */}
+          {state.isWatching && (
+            <section className="ext-relative ext-bg-gray-800/80 ext-p-4 ext-rounded-xl ext-ring-1 ext-ring-inset ext-ring-gray-500/50 ext-shadow-xl ext-backdrop-blur-md">
+              <ScreenAnalysis screenAnalysis={state.screenAnalysis} />
+            </section>
           )}
 
           {/* Hotkeys Panel */}
-          <div className="bg-white/80 backdrop-blur-sm rounded-xl p-6 shadow-sm border border-gray-100">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">
-              Hotkeys
-            </h2>
-            <div className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <kbd className="px-3 py-1 bg-gray-100 rounded text-sm">
-                  ⌘ + Shift + L
-                </kbd>
-                <span className="text-gray-600">Toggle Listening</span>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <kbd className="px-3 py-1 bg-gray-100 rounded text-sm">
-                  ⌘ + Shift + W
-                </kbd>
-                <span className="text-gray-600">Toggle Watching</span>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <kbd className="px-3 py-1 bg-gray-100 rounded text-sm">
-                  ⌘ + Click
-                </kbd>
-                <span className="text-gray-600">Perform Action</span>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <kbd className="px-3 py-1 bg-gray-100 rounded text-sm">
-                  ⌘ + Right Click
-                </kbd>
-                <span className="text-gray-600">Context Menu</span>
-              </div>
-            </div>
-          </div>
+          <section className="ext-relative ext-bg-gray-800/80 ext-p-4 ext-rounded-xl ext-ring-1 ext-ring-inset ext-ring-gray-500/50 ext-shadow-xl ext-backdrop-blur-md">
+            <HotkeysPanel />
+          </section>
         </main>
-      </div>
 
-      {/* Settings Modal */}
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-      />
+        {/* Settings Modal */}
+        <SettingsModal
+          isOpen={state.isSettingsOpen}
+          onClose={() =>
+            setState((prev) => ({ ...prev, isSettingsOpen: false }))
+          }
+        />
+      </div>
     </div>
   );
 };
