@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { Settings } from "lucide-react";
 
 import { SpeechError, SpeechRecognitionHandler } from "./services/speech";
-import { ScreenCapture } from "./services/screen-capture";
+// import { ScreenCapture } from "./services/screen-capture";
 import { ContentScriptMessage } from "./types/messages";
 import {
   sendToContentScript,
@@ -32,7 +32,7 @@ const App = () => {
 
   // Refs for singleton services
   const speechRecognition = useRef(new SpeechRecognitionHandler()).current;
-  const screenCapture = useRef(new ScreenCapture()).current;
+  // const screenCapture = useRef(new ScreenCapture()).current;
 
   // Listen for messages from the content script
   useEffect(() => {
@@ -74,19 +74,19 @@ const App = () => {
   };
 
   const toggleWatching = async () => {
-    try {
-      if (state.isWatching) {
-        screenCapture.stop();
-      } else {
-        await screenCapture.start((analysis: string) => {
-          setState((prev) => ({ ...prev, screenAnalysis: analysis }));
-        });
-      }
-      setState((prev) => ({ ...prev, isWatching: !prev.isWatching }));
-    } catch (error) {
-      console.error("Screen capture error:", error);
-      setState((prev) => ({ ...prev, isWatching: false }));
-    }
+    // try {
+    //   if (state.isWatching) {
+    //     screenCapture.stop();
+    //   } else {
+    //     await screenCapture.start((analysis: string) => {
+    //       setState((prev) => ({ ...prev, screenAnalysis: analysis }));
+    //     });
+    //   }
+    //   setState((prev) => ({ ...prev, isWatching: !prev.isWatching }));
+    // } catch (error) {
+    //   console.error("Screen capture error:", error);
+    //   setState((prev) => ({ ...prev, isWatching: false }));
+    // }
   };
 
   return (

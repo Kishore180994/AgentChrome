@@ -42,9 +42,11 @@
   "web_accessible_resources": [{
     "resources": [
       "sidebar.js",
+      "storage.js",
       "index.html",
       "index.css",
       "index.js",
+      "main.js",
       "*.js.map",
       "assets/*"
     ],

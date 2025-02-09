@@ -1,5 +1,6 @@
-// background.ts (Manifest V3 - service worker)
+import { chatWithOpenAI } from "./services/openai/api"; // AI logic stays here
 
+// background.ts (Manifest V3 - service worker)
 chrome.runtime.onInstalled.addListener(() => {
   console.log("AI Assistant Extension installed");
 });
@@ -61,10 +62,95 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 });
 
+const handleCommand = async (
+  command: string,
+  sendResponse: (response: any) => void
+) => {
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `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`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4",
+        messages: [
+          {
+            role: "user",
+            content: `Break down this command step by step: ${command}`,
+          },
+        ],
+        temperature: 0.2,
+      }),
+    });
+
+    const data = await response.json();
+    console.log("AI Response:", data);
+
+    if (data.choices && data.choices.length > 0) {
+      const steps = data.choices[0].message.content;
+      sendResponse({ success: true, steps });
+    } else {
+      sendResponse({ success: false, error: "No steps returned by AI." });
+    }
+  } catch (error) {
+    console.error("Error processing command:", error);
+    sendResponse({ success: false, error: "Failed to fetch AI response." });
+  }
+};
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log({ message });
   const handleMessage = async () => {
     try {
       switch (message.type) {
+        case "getTabId":
+          if (sender.tab && sender.tab.id !== undefined) {
+            sendResponse({ tabId: sender.tab.id });
+          } else {
+            sendResponse({ error: "Tab information not available." });
+          }
+          // Return true to indicate you will respond asynchronously.
+          return true;
+        case "PROCESS_COMMAND":
+          console.log(
+            "[background.ts] Processing user command:",
+            message.command
+          );
+
+          const aiResponse = await chatWithOpenAI(
+            message.command,
+            "session-id",
+            { elements: message.elements }
+          );
+
+          console.log("[background.ts] AI Response:", aiResponse);
+
+          sendResponse(aiResponse);
+
+          // Notify ChatWidget.tsx directly
+          chrome.runtime.sendMessage({
+            type: "COMMAND_RESPONSE",
+            response: aiResponse.text,
+          });
+          // If AI provides an action (click, type, etc.), forward it to content.ts
+          if (aiResponse.actions?.length) {
+            aiResponse.actions.forEach((action) => {
+              chrome.tabs.query(
+                { active: true, currentWindow: true },
+                (tabs) => {
+                  if (tabs[0]?.id) {
+                    chrome.tabs.sendMessage(tabs[0].id, {
+                      type: "PERFORM_ACTION",
+                      data: action,
+                    });
+                  }
+                }
+              );
+            });
+          }
+          return true;
         case "SHOW_PAGE_ELEMENTS":
           if (sender.tab?.id !== undefined) {
             chrome.tabs.sendMessage(

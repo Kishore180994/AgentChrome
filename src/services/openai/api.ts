@@ -1,7 +1,6 @@
 /// <reference types="@types/chrome" />
 
 import OpenAI from "openai";
-import { storage } from "../../utils/storage";
 import {
   ChatMessage,
   getConversationHistory,
@@ -15,19 +14,44 @@ declare global {
   }
 }
 
+// New AIResponse interface and supporting types
 interface AIResponse {
   text: string;
-  error?: boolean;
-  errorDetails?: {
-    type: string;
-    message: string;
-    code?: string;
-    action?: string;
-  };
-  actions?: Array<{
-    type: string;
-    data: any;
-  }>;
+  code: string;
+  actions: Action[];
+}
+
+type ActionType =
+  | "confirm"
+  | "click"
+  | "input"
+  | "select"
+  | "scroll"
+  | "hover"
+  | "double_click"
+  | "right_click"
+  | "keydown"
+  | "keyup"
+  | "keypress"
+  | "clear"
+  | "submit"
+  | "wait"
+  | "navigate";
+
+interface Action {
+  type: ActionType;
+  data: ActionData;
+  message?: string;
+  description?: string;
+}
+
+interface ActionData {
+  selector: string;
+  value?: string; // For input/select/navigate actions etc.
+  duration?: number; // In milliseconds for wait actions.
+  key?: string; // For keyboard events.
+  keyCode?: number; // For keyboard events.
+  url?: string;
 }
 
 let openaiInstance: OpenAI | null = null;
@@ -36,7 +60,9 @@ let openaiInstance: OpenAI | null = null;
  * Initializes and returns the OpenAI instance.
  */
 async function getOpenAIInstance(): Promise<OpenAI> {
-  const { openaiKey } = await storage.get(["openaiKey"]);
+  // const { openaiKey } = await storage.get(["openaiKey"]);
+  const openaiKey =
+    "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";
 
   if (!openaiKey) {
     throw new Error("OpenAI API key not found. Please add it in settings.");
@@ -64,48 +90,94 @@ async function sendMessageToActiveTab(message: any): Promise<void> {
 }
 
 /**
- * Captures a screenshot of the current tab.
- */
-export function captureTabScreenshot(): Promise<string> {
-  return new Promise((resolve, reject) => {
-    // The content script environment supports chrome.runtime.sendMessage
-    chrome.runtime.sendMessage(
-      { type: "CAPTURE_TAB_SCREENSHOT" },
-      (response) => {
-        console.log({ response });
-        if (chrome.runtime.lastError) {
-          return reject(chrome.runtime.lastError.message);
-        }
-        if (response?.error) {
-          return reject(response.error);
-        }
-        resolve(response.dataUrl);
-      }
-    );
-  });
-}
-
-/**
  * Parses actions like click, input, and scroll from AI responses.
  */
 function parseActionsFromResponse(response: string): {
   text: string;
-  actions: any[];
+  actions: Action[];
 } {
-  const actions: any[] = [];
+  const actions: Action[] = [];
   let cleanText = response;
 
-  const actionPatterns = [
-    { pattern: /click (?:on )?["']?([^"'.,]+)["']?/i, type: "click" },
+  const actionPatterns: { pattern: RegExp; type: ActionType }[] = [
+    // Confirm: e.g., "confirm on '#selector'" or "confirm on '#selector' with message 'Are you sure?'"
     {
-      pattern: /type ["']([^"']+)["'] in ["']?([^"'.,]+)["']?/i,
+      pattern:
+        /confirm (?:on )?["']?([^"']+)["']?(?: with message ["']([^"']+)["']?)?/i,
+      type: "confirm",
+    },
+    // Click: e.g., "click on '#selector'"
+    {
+      pattern: /click (?:on )?["']?([^"']+)["']?/i,
+      type: "click",
+    },
+    // Input: e.g., "type 'hello world' into '#inputSelector'"
+    {
+      pattern: /type ["']([^"']+)["'] (?:into|in) ["']?([^"']+)["']?/i,
       type: "input",
     },
+    // Select: e.g., "select 'option' from '#dropdown'"
     {
-      pattern: /select ["']([^"']+)["'] from ["']?([^"'.,]+)["']?/i,
+      pattern: /select ["']([^"']+)["'] from ["']?([^"']+)["']?/i,
       type: "select",
     },
-    { pattern: /scroll to ["']?([^"'.,]+)["']?/i, type: "scroll" },
+    // Scroll: e.g., "scroll to '#element'"
+    {
+      pattern: /scroll to ["']?([^"']+)["']?/i,
+      type: "scroll",
+    },
+    // Hover: e.g., "hover over '#element'"
+    {
+      pattern: /hover (?:over )?["']?([^"']+)["']?/i,
+      type: "hover",
+    },
+    // Double Click: e.g., "double click on '#element'" or "double-click on '#element'"
+    {
+      pattern: /double[-\s]?click (?:on )?["']?([^"']+)["']?/i,
+      type: "double_click",
+    },
+    // Right Click: e.g., "right click on '#element'" or "right-click on '#element'"
+    {
+      pattern: /right[-\s]?click (?:on )?["']?([^"']+)["']?/i,
+      type: "right_click",
+    },
+    // Keydown: e.g., "keydown key 'Enter' on '#input'"
+    {
+      pattern:
+        /keydown (?:key )?["']?([^"']+)["'] (?:on|at) ["']?([^"']+)["']?/i,
+      type: "keydown",
+    },
+    // Keyup: e.g., "keyup key 'Escape' on '#input'"
+    {
+      pattern: /keyup (?:key )?["']?([^"']+)["'] (?:on|at) ["']?([^"']+)["']?/i,
+      type: "keyup",
+    },
+    // Keypress: e.g., "keypress key 'a' on '#input'"
+    {
+      pattern:
+        /keypress (?:key )?["']?([^"']+)["'] (?:on|at) ["']?([^"']+)["']?/i,
+      type: "keypress",
+    },
+    // Clear: e.g., "clear the input at '#input'" or "clear textarea at '#textArea'"
+    {
+      pattern: /clear (?:the )?(?:input|textarea) (?:at )?["']?([^"']+)["']?/i,
+      type: "clear",
+    },
+    // Submit: e.g., "submit the form at '#form'"
+    {
+      pattern: /submit (?:the )?form (?:at )?["']?([^"']+)["']?/i,
+      type: "submit",
+    },
+    // Wait: e.g., "wait for 2000 milliseconds" or "wait for 2000ms"
+    {
+      pattern: /wait for (\d+)(?:\s?ms| milliseconds)?/i,
+      type: "wait",
+    },
+    // Navigate: e.g., "navigate to 'https://example.com'" or "go to 'https://example.com'"
+    {
+      pattern: /(?:navigate|go to) ["']?([^"']+)["']?/i,
+      type: "navigate",
+    },
   ];
 
   actionPatterns.forEach(({ pattern, type }) => {
@@ -116,8 +188,8 @@ function parseActionsFromResponse(response: string): {
         actions.push({
           type,
           data: {
-            value: parts[1]?.trim(),
-            textContent: parts[2]?.trim() || null,
+            selector: parts[2] ? parts[2].trim() : "",
+            value: parts[1] ? parts[1].trim() : undefined,
           },
         });
         cleanText = cleanText.replace(match, ""); // Remove matched action text
@@ -129,26 +201,58 @@ function parseActionsFromResponse(response: string): {
 }
 
 /**
- * Sends a chat request to OpenAI.
+ * Manages session-based conversation history.
+ */
+let conversationHistory: { [sessionId: string]: any[] } = {};
+
+/**
+ * Sends a chat request to OpenAI and returns an AIResponse.
  */
 async function sendChatRequest(
   openai: OpenAI,
-  messages: any[]
+  messages: any[],
+  sessionId: string
 ): Promise<AIResponse> {
   try {
-    console.log("Sending chat request with messages:", messages);
+    console.log(
+      `[Session ${sessionId}] Sending chat request with messages:`,
+      messages
+    );
 
-    // Send the request to OpenAI
+    // **Limit messages to avoid excessive token usage**
+    const MAX_CONTEXT_MESSAGES = 5;
+    let sessionHistory = conversationHistory[sessionId] || [];
+
+    // Keep only the last N messages for context
+    sessionHistory = sessionHistory.slice(-MAX_CONTEXT_MESSAGES);
+
+    // Ensure system message is always included
+    if (!sessionHistory.find((msg) => msg.role === "system")) {
+      sessionHistory.unshift({
+        role: "system",
+        content: `
+          You are an AI automation assistant for a Chrome extension.
+          - Process tasks step-by-step.
+          - Return **one step at a time** unless full instructions are requested.
+          - Wait for confirmation before executing critical actions.
+          - Adapt dynamically based on user feedback and page state.
+        `,
+      });
+    }
+
+    // Merge recent history with new user input
+    const fullContext = [...sessionHistory, ...messages];
+
+    // Send request to OpenAI
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      messages,
+      messages: fullContext,
       max_tokens: 1000,
       temperature: 0.7,
     });
 
-    console.log("OpenAI API response:", response);
+    console.log(`[Session ${sessionId}] OpenAI API response:`, response);
 
-    // Validate response structure
     if (!response.choices || response.choices.length === 0) {
       throw new Error("Invalid response: No choices returned.");
     }
@@ -158,190 +262,178 @@ async function sendChatRequest(
       throw new Error("No content returned in the response.");
     }
 
-    // Parse actions from the response
-    const { text, actions } = parseActionsFromResponse(content);
+    // Try to parse the content as JSON according to our expected format.
+    let aiResponse: AIResponse;
+    try {
+      const parsed = JSON.parse(content);
+      if (
+        typeof parsed.text !== "string" ||
+        typeof parsed.code !== "string" ||
+        !Array.isArray(parsed.actions)
+      ) {
+        throw new Error("Parsed JSON does not match expected format.");
+      }
+      aiResponse = {
+        text: parsed.text,
+        code: parsed.code,
+        actions: parsed.actions,
+      };
+    } catch (jsonError) {
+      console.warn(
+        `[Session ${sessionId}] Failed to parse JSON response, falling back to regex extraction.`,
+        jsonError
+      );
+      const { text, actions } = parseActionsFromResponse(content);
+      // When falling back, we assume no code was provided.
+      aiResponse = { text, code: "", actions };
+    }
 
-    // Log parsed actions for debugging
-    console.log("Parsed actions:", actions);
+    // Update conversation history
+    conversationHistory[sessionId] = [
+      ...sessionHistory,
+      { role: "user", content: messages[messages.length - 1].content },
+      { role: "assistant", content: aiResponse.text },
+    ].slice(-MAX_CONTEXT_MESSAGES);
 
-    // Perform actions on the active tab, if any
-    if (actions.length > 0) {
-      for (const action of actions) {
-        console.log("Performing action on active tab:", action);
-
-        await sendMessageToActiveTab({
-          type: "PERFORM_ACTION",
-          data: action,
-        });
+    // Perform actions if the AI requested any
+    if (aiResponse.actions.length > 0) {
+      for (const action of aiResponse.actions) {
+        console.log(`[Session ${sessionId}] Performing action:`, action);
+        await sendMessageToActiveTab({ type: "PERFORM_ACTION", data: action });
       }
     }
 
-    return { text, error: false, actions };
+    return aiResponse;
   } catch (error: any) {
-    console.error("Error in sendChatRequest:", error);
-
-    // Return an error response for the caller to handle
+    console.error(`[Session ${sessionId}] Error in sendChatRequest:`, error);
+    // Return an AIResponse that follows our interface, even on error.
     return {
       text: error.message || "An unknown error occurred.",
-      error: true,
-      errorDetails: {
-        type: "API_ERROR",
-        message: error.message || "Failed to communicate with OpenAI.",
-        action: "Please check your network and API key settings.",
-      },
+      code: "",
+      actions: [],
     };
   }
 }
 
 /**
- * Chat with OpenAI while preserving conversation history.
- * @param {string} message - The user's message.
- * @param {boolean} includeScreenshot - Whether to capture a screenshot of the current tab.
- * @returns {Promise<AIResponse>}
+ * Main function to interact with OpenAI while preserving conversation history.
  */
+const HISTORY_LIMIT = 5;
+
 export async function chatWithOpenAI(
   message: string,
-  includeScreenshot: boolean = false
+  sessionId: string,
+  currentState: Record<string, any> = {}
 ): Promise<AIResponse> {
+  // Validate user input
+  if (!message || !message.trim()) {
+    return { text: "No message provided.", code: "", actions: [] };
+  }
+
   try {
-    if (!message.trim()) {
-      throw new Error("No message provided.");
-    }
-
+    // Get an instance of the OpenAI client
     const openai = await getOpenAIInstance();
-
-    const existingHistory = await getConversationHistory();
-
-    console.log({ existingHistory });
-
-    let conversation = [...existingHistory];
-
-    if (!conversation.find((m) => m.role === "system")) {
-      conversation.unshift({
-        role: "system",
-        content: `You are a helpful AI assistant in a Chrome extension that can:
-                  1. See what's on the screen when screen capture is enabled.
-                  2. Interact with the webpage using natural language commands like click, type, select, and scroll.
-                  3. Help users with their browsing tasks.`,
-      });
+    if (!openai) {
+      throw new Error("Failed to initialize OpenAI instance.");
     }
 
-    conversation.push({
-      role: "user",
-      content: message,
-    });
+    // Retrieve conversation history
+    let conversation: ChatMessage[] = (await getConversationHistory()) || [];
+    if (!Array.isArray(conversation)) {
+      conversation = [];
+    }
 
-    // const messages: any[] = [
-    //   {
-    //     role: "system",
-    //     content: `You are a helpful AI assistant in a Chrome extension that can interact with webpages. You can:
-    //     1. See what's on the screen when screen capture is enabled.
-    //     2. Interact with the webpage using natural language commands like click, type, select, and scroll.
-    //     3. Help users with their browsing tasks.`,
-    //   },
-    //   { role: "user", content: message },
-    // ];
+    // Only keep the last HISTORY_LIMIT messages to conserve context tokens
+    conversation = conversation.slice(-HISTORY_LIMIT);
 
-    if (includeScreenshot) {
-      try {
-        const screenshot = await captureTabScreenshot();
+    // Prepare the system message with the latest instructions
+    const systemMessage: ChatMessage = {
+      role: "system",
+      content: `
+You are an AI automation assistant for a Chrome extension.
+Your goal is to process user commands and generate **JavaScript code** to automate interactions with the webpage.
 
-        conversation.push({
-          role: "user",
-          content: {
-            type: "image_url",
-            image_url: { url: screenshot },
-          },
-        });
-      } catch (error) {
-        console.error("Screenshot error:", error);
+## **Response Format**
+You must **always** return a valid JSON object with the following structure:
+{
+  "text": "A concise description of the step",
+  "code": "JavaScript code that is directly executable on the page",
+  "actions": [
+    {
+      "type": "confirm | click | input | select | scroll | hover | double_click | right_click | keydown | keyup | keypress | clear | submit | wait | navigate",
+      "data": {
+        "selector": "A valid CSS selector for the target element",
+        "value": "Any required value (if applicable)",
+        "duration": "Duration in milliseconds (for wait actions)",
+        "key": "Key identifier for keyboard events (if applicable)"
       }
     }
+  ]
+}
 
-    // Filter out messages missing a valid "role"
-    const validMessages = conversation.filter(
-      (msg) => msg.role && typeof msg.role === "string"
-    );
+## **Rules**
+1️⃣ **Return only one step at a time.** Each response should describe a single, discrete action.
+2️⃣ **Provide directly executable JavaScript code** that interacts with the current webpage.
+3️⃣ **Use the provided interactable elements data** to generate the correct \`selector\` for actions.
+4️⃣ **For Google searches:** Identify the proper search input (textarea or input) and simulate entering text followed by clicking the search button.
+5️⃣ **For input actions:** Locate the correct element and insert the provided text.
+6️⃣ **For dropdown actions:** Set the correct value and trigger the change event.
+7️⃣ **For click actions:** Ensure the targeted element is correct before simulating a click.
+8️⃣ **For hover actions:** Simulate mouse over events (e.g., dispatch \`mouseover\` and \`mouseenter\` events).
+9️⃣ **For double-click and right-click actions:** Simulate the corresponding mouse events (e.g., \`dblclick\` for double-click, \`contextmenu\` for right-click).
+🔟 **For keyboard events** (\`keydown\`, \`keyup\`, \`keypress\`): Include the appropriate \`key\` or \`keyCode\` in the event data.
+1️⃣1️⃣ **For clear actions:** Remove any existing text from input fields.
+1️⃣2️⃣ **For submit actions:** Target the appropriate form or element and trigger a submission.
+1️⃣3️⃣ **For wait actions:** Pause execution for the specified duration before proceeding.
+1️⃣4️⃣ **For navigation actions:** Redirect the browser to the provided URL.
+1️⃣5️⃣ **Include debugging output** in the \`code\` field using \`console.log\` statements as needed for tracing execution.
+1️⃣6️⃣ **Keep actions sequential.** If multiple interactions are required, break them into separate steps.
 
-    const openAIMessages = validMessages.map((msg) => {
-      // If the content is an object, we turn it to string JSON:
-      const contentString =
+## **Current Page State**
+Below are the available interactable elements:
+\`\`\`
+${JSON.stringify(currentState, null, 2)}
+\`\`\`
+      `.trim(),
+    };
+
+    // Remove outdated system messages to ensure the latest instructions are used
+    conversation = conversation.filter((msg) => msg.role !== "system");
+    conversation.unshift(systemMessage);
+
+    // Append the current user message
+    conversation.push({ role: "user", content: message });
+
+    // Format the conversation messages for the OpenAI API
+    const openAIMessages = conversation.map((msg) => ({
+      role: msg.role,
+      content:
         typeof msg.content === "object"
           ? JSON.stringify(msg.content)
-          : msg.content;
-      return {
-        role: msg.role,
-        content: contentString,
-      };
-    });
+          : msg.content,
+    }));
 
-    console.log("Sending chat request with conversation:", openAIMessages);
-    const { text, error, actions } = await sendChatRequest(
-      openai,
-      openAIMessages
-    );
+    console.log("Sending chat request with context:", openAIMessages);
 
-    let newReply: ChatMessage = {
-      role: "assistant",
-      content: text,
-    };
-    conversation.push(newReply);
+    // Send the request to OpenAI and get an AIResponse
+    const response = await sendChatRequest(openai, openAIMessages, sessionId);
+    if (!response || typeof response.text !== "string") {
+      throw new Error("Invalid response from OpenAI.");
+    }
 
-    await saveConversationHistory(conversation);
+    // Save the updated conversation history including the assistant's response
+    await saveConversationHistory([
+      ...conversation,
+      { role: "assistant", content: response.text },
+    ]);
 
-    return { text, error, actions };
+    return response;
   } catch (error: any) {
     console.error("Error in chatWithOpenAI:", error);
     return {
-      text: error.message || "Error",
-      error: true,
-      errorDetails: {
-        type: "CHAT_ERROR",
-        message: error.message || "An unknown error occurred.",
-        action: "Please try again later.",
-      },
-    };
-  }
-}
-
-/**
- * Handles image analysis requests with OpenAI.
- */
-export async function analyzeImageWithOpenAI(
-  imageData: string
-): Promise<AIResponse> {
-  try {
-    if (!imageData) {
-      throw new Error("No image data provided.");
-    }
-
-    const openai = await getOpenAIInstance();
-    const messages: any[] = [
-      {
-        role: "system",
-        content:
-          "You are a helpful AI assistant that can analyze images and provide insights.",
-      },
-      {
-        role: "user",
-        content: [
-          { type: "text", text: "What do you see in this image?" },
-          { type: "image_url", image_url: { url: imageData } },
-        ],
-      },
-    ];
-
-    return await sendChatRequest(openai, messages);
-  } catch (error: any) {
-    console.error("Error in analyzeImageWithOpenAI:", error);
-    return {
-      text: error.message || "Error analyzing the image.",
-      error: true,
-      errorDetails: {
-        type: "VISION_ERROR",
-        message: "Failed to analyze image.",
-        action: "Please check your settings and try again.",
-      },
+      text: error?.message || "Unknown error occurred.",
+      code: "",
+      actions: [],
     };
   }
 }
