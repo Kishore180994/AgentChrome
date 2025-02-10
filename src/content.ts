@@ -10,6 +10,9 @@ declare global {
 
 import { ExtensionMessage, ReactMessage } from "./types/messages";
 
+/******************************************************
+ * 2) Interface Definitions (Consistent Formatting)
+ ******************************************************/
 interface AIResponse {
   text: string;
   code: string;
@@ -39,17 +42,16 @@ type ActionType =
 interface Action {
   type: ActionType;
   data: ActionData;
-  // Optional properties if you want to include them at the action level:
   message?: string;
   description?: string;
 }
 
 interface ActionData {
   selector: string;
-  value?: string; // For input/select/navigate actions etc.
-  duration?: number; // In milliseconds for wait actions.
-  key?: string; // For keyboard events.
-  keyCode?: number; // For keyboard events.
+  value?: string;
+  duration?: number;
+  key?: string;
+  keyCode?: number;
   url?: string;
 }
 
@@ -65,7 +67,261 @@ if (!window[AGENT_KEY]) {
   let sidebarVisible = false;
 
   /******************************************************
-   * 4) Sidebar Injection & Toggling
+   * 4) Listen for Messages from Background & ChatWidget
+   ******************************************************/
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    switch (message.type) {
+      case "PERFORM_ACTION":
+        console.log("[content.ts] Executing action:", message.action);
+        highlightElement(message.action.data.selector);
+        executeDOMAction(message.action);
+        sendResponse({ success: true });
+        return true;
+
+      case "TOGGLE_SIDEBAR":
+        toggleSidebar();
+        sendResponse({ success: true });
+        return true;
+
+      case "GET_PAGE_ELEMENTS":
+        console.log("[content.ts] Extracting page elements...");
+        const elements = extractPageElements();
+        sendResponse({ success: true, elements });
+        return true;
+
+      default:
+        console.warn("[content.ts] Unknown message type:", message.type);
+        sendResponse({ success: false, error: "Unknown message type" });
+    }
+  });
+
+  /******************************************************
+   * Extract **ALL** Available Data for Each Element
+   ******************************************************/
+  function extractPageElements() {
+    const elements: Array<{
+      id: number;
+      tagName: string;
+      selector: string;
+      text: string;
+      fullText: string;
+      attributes: Record<string, string | null>;
+      role?: string;
+      accessibleLabel?: string;
+      boundingBox: { x: number; y: number; width: number; height: number };
+    }> = [];
+
+    let idx = 1;
+
+    document
+      .querySelectorAll("button, a, input, textarea, select, label, div[role]")
+      .forEach((el) => {
+        if (!(el instanceof HTMLElement)) return;
+
+        // Generate a unique selector
+        const selector = el.id
+          ? `#${el.id}`
+          : el.className
+          ? `.${el.className.replace(/\s+/g, ".")}`
+          : `tag:${el.tagName.toLowerCase()}`;
+
+        // Extract element text and its surrounding context
+        const textSnippet = (
+          el.textContent ||
+          el.getAttribute("placeholder") ||
+          ""
+        )
+          .trim()
+          .slice(0, 50);
+        const parentDiv = el.closest("div");
+        const fullText = parentDiv
+          ? parentDiv.innerText.trim().slice(0, 200)
+          : textSnippet;
+
+        // Extract all attributes
+        const attributes: Record<string, string | null> = {};
+        Array.from(el.attributes).forEach((attr) => {
+          attributes[attr.name] = attr.value;
+        });
+
+        // Extract accessible label and role
+        const role = el.getAttribute("role") || null;
+        const accessibleLabel =
+          el.getAttribute("aria-label") ||
+          el.getAttribute("alt") ||
+          el.innerText.trim() ||
+          null;
+
+        // Get element position and size
+        const rect = el.getBoundingClientRect();
+        const boundingBox = {
+          x: rect.left + window.scrollX,
+          y: rect.top + window.scrollY,
+          width: rect.width,
+          height: rect.height,
+        };
+
+        elements.push({
+          id: idx++,
+          tagName: el.tagName.toLowerCase(),
+          selector,
+          text: textSnippet,
+          fullText,
+          attributes,
+          role: role ? role : undefined,
+          accessibleLabel: accessibleLabel ? accessibleLabel : undefined,
+          boundingBox,
+        });
+
+        // Highlight extracted elements for debugging (optional)
+        drawDebugHighlight(el, selector);
+      });
+
+    return elements;
+  }
+
+  /******************************************************
+   * Draw a Debug Highlight on Extracted Elements
+   ******************************************************/
+  function drawDebugHighlight(element: HTMLElement, selector: string) {
+    const rect = element.getBoundingClientRect();
+    const overlay = document.createElement("div");
+    overlay.className = "debug-highlight";
+    overlay.style.position = "absolute";
+    overlay.style.border = "2px solid blue";
+    overlay.style.pointerEvents = "none";
+    overlay.style.zIndex = "999999";
+    overlay.style.top = `${rect.top + window.scrollY}px`;
+    overlay.style.left = `${rect.left + window.scrollX}px`;
+    overlay.style.width = `${rect.width}px`;
+    overlay.style.height = `${rect.height}px`;
+    overlay.style.backgroundColor = "rgba(0, 0, 255, 0.1)"; // Light blue overlay
+
+    document.body.appendChild(overlay);
+
+    // Remove highlight after 5 seconds
+    setTimeout(() => overlay.remove(), 5000);
+  }
+
+  // Listen for messages from ChatWidget (via window.postMessage)
+  window.addEventListener("message", (event: MessageEvent) => {
+    if (event.origin !== window.location.origin || event.source !== window)
+      return;
+
+    const data = event.data as { type: string; command?: string };
+
+    if (data.type === "USER_COMMAND" && data.command) {
+      console.log(
+        "[content.ts] Received command from ChatWidget:",
+        data.command
+      );
+
+      // Forward the command to background.ts for AI processing
+      chrome.runtime.sendMessage({
+        type: "PROCESS_COMMAND",
+        command: data.command,
+      });
+    }
+  });
+
+  /******************************************************
+   * 5) Highlight Element Before Execution
+   ******************************************************/
+  function highlightElement(selector: string) {
+    const element = document.querySelector(selector);
+    if (!element) {
+      console.warn(
+        "[content.ts] Element not found for highlighting:",
+        selector
+      );
+      return;
+    }
+
+    // Create a highlight box
+    const rect = element.getBoundingClientRect();
+    const overlay = document.createElement("div");
+    overlay.className = "ai-highlight-box";
+    overlay.style.position = "absolute";
+    overlay.style.border = "2px solid red";
+    overlay.style.pointerEvents = "none";
+    overlay.style.zIndex = "999999";
+    overlay.style.top = `${rect.top + window.scrollY}px`;
+    overlay.style.left = `${rect.left + window.scrollX}px`;
+    overlay.style.width = `${rect.width}px`;
+    overlay.style.height = `${rect.height}px`;
+    overlay.style.backgroundColor = "rgba(255, 0, 0, 0.2)";
+
+    document.body.appendChild(overlay);
+
+    // Remove highlight after 2 seconds
+    setTimeout(() => overlay.remove(), 2000);
+  }
+
+  /******************************************************
+   * 6) Execute AI Actions
+   ******************************************************/
+  function executeDOMAction(action: Action) {
+    try {
+      let element = document.querySelector(action.data.selector) as HTMLElement;
+      if (!element) {
+        console.warn("[content.ts] Element not found, scrolling down...");
+        window.scrollTo(0, document.body.scrollHeight);
+
+        setTimeout(() => {
+          element = document.querySelector(action.data.selector) as HTMLElement;
+          if (!element) {
+            console.error(
+              "[content.ts] Element still not found after scrolling."
+            );
+            chrome.runtime.sendMessage({
+              type: "ACTION_FAILED",
+              error: "Element not found.",
+            });
+            return;
+          }
+          performAction(element, action);
+        }, 1000);
+      } else {
+        performAction(element, action);
+      }
+    } catch (error: any) {
+      console.error("[content.ts] Error executing action:", error);
+      chrome.runtime.sendMessage({
+        type: "ACTION_FAILED",
+        error: error.message,
+      });
+    }
+  }
+
+  function performAction(element: HTMLElement, action: Action) {
+    switch (action.type) {
+      case "click":
+        element.click();
+        break;
+      case "input":
+        (element as HTMLInputElement).value = action.data.value || "";
+        element.dispatchEvent(new Event("input", { bubbles: true }));
+        break;
+      case "select":
+        (element as HTMLSelectElement).value = action.data.value || "";
+        element.dispatchEvent(new Event("change", { bubbles: true }));
+        break;
+      case "scroll":
+        element.scrollIntoView({ behavior: "smooth", block: "center" });
+        break;
+      default:
+        console.error("[content.ts] Unknown action type:", action.type);
+        chrome.runtime.sendMessage({
+          type: "ACTION_FAILED",
+          error: "Unknown action type",
+        });
+        return;
+    }
+    chrome.runtime.sendMessage({ type: "ACTION_SUCCESS" });
+  }
+
+  /******************************************************
+   * 7) Sidebar Handling (Kept As-Is)
    ******************************************************/
   function injectSidebar() {
     if (document.getElementById("agent-chrome-root")) return;
@@ -103,724 +359,6 @@ if (!window[AGENT_KEY]) {
     sidebarContainer?.classList.toggle("hidden", !sidebarVisible);
     document.body.classList.toggle("sidebar-hidden", !sidebarVisible);
   }
-
-  function extractClickableElements() {
-    const elements: Array<{
-      id: number;
-      tagName: string;
-      selector: string;
-      text: string;
-      fullText: string; // Full text from surrounding div
-      attributes: Record<string, string | null>; // Additional attributes
-    }> = [];
-    let idx = 1;
-
-    document
-      .querySelectorAll("button, a, input, textarea, select")
-      .forEach((el) => {
-        if (!(el instanceof HTMLElement)) return;
-
-        // Generate a unique selector
-        const selector = el.id
-          ? `#${el.id}`
-          : el.className
-          ? `.${el.className.replace(/\s+/g, ".")}`
-          : "";
-
-        // Extract inner text (short version for quick reference)
-        const textSnippet = (
-          el.textContent ||
-          el.getAttribute("placeholder") ||
-          ""
-        )
-          .trim()
-          .slice(0, 50);
-
-        // Extract the closest parent div's text (for better context)
-        let parentText = "";
-        const parentDiv = el.closest("div");
-        if (parentDiv) {
-          parentText = parentDiv.innerText.trim().slice(0, 200); // Limiting to 200 characters
-        }
-
-        // Extract additional attributes (helpful for AI to identify elements)
-        const attributes: Record<string, string | null> = {
-          id: el.id || null,
-          class: el.className || null,
-          name: el.getAttribute("name"),
-          type: el.getAttribute("type"),
-          role: el.getAttribute("role"),
-          "aria-label": el.getAttribute("aria-label"),
-          value: el.getAttribute("value"),
-        };
-
-        // Include any data-* attributes
-        Array.from(el.attributes).forEach((attr) => {
-          if (attr.name.startsWith("data-")) {
-            attributes[attr.name] = attr.value;
-          }
-        });
-
-        elements.push({
-          id: idx++,
-          tagName: el.tagName,
-          selector,
-          text: textSnippet,
-          fullText: parentText,
-          attributes,
-        });
-
-        // **Highlight the element for debugging**
-        drawDebugHighlight(el, selector, el.id || `#${idx}`);
-      });
-
-    return elements;
-  }
-
-  /**
-   * Draws a debug highlight on the element with a label
-   */
-  function drawDebugHighlight(
-    element: HTMLElement,
-    selector: string,
-    label: string
-  ) {
-    const rect = element.getBoundingClientRect();
-    const overlay = document.createElement("div");
-    overlay.className = "debug-highlight";
-    overlay.style.position = "absolute";
-    overlay.style.border = "2px solid blue";
-    overlay.style.pointerEvents = "none";
-    overlay.style.zIndex = "999999";
-    overlay.style.top = `${rect.top + window.scrollY}px`;
-    overlay.style.left = `${rect.left + window.scrollX}px`;
-    overlay.style.width = `${rect.width}px`;
-    overlay.style.height = `${rect.height}px`;
-    overlay.style.backgroundColor = "rgba(0, 0, 255, 0.1)"; // Light blue overlay
-
-    // Label with selector and ID
-    const labelDiv = document.createElement("div");
-    labelDiv.textContent = `Selector: ${selector} | ID: ${label}`;
-    labelDiv.style.position = "absolute";
-    labelDiv.style.top = "-20px";
-    labelDiv.style.left = "0";
-    labelDiv.style.backgroundColor = "blue";
-    labelDiv.style.color = "white";
-    labelDiv.style.padding = "2px 4px";
-    labelDiv.style.fontSize = "12px";
-    labelDiv.style.borderRadius = "4px";
-    overlay.appendChild(labelDiv);
-
-    document.body.appendChild(overlay);
-
-    // **Optional: Remove highlight after 5 seconds**
-    // setTimeout(() => overlay.remove(), 10000);
-  }
-
-  function showConfirmationModal(
-    message: string,
-    callback: (confirmed: boolean, editedText?: string) => void
-  ) {
-    // Remove existing modal if any
-    const existingModal = document.getElementById("ai-confirmation-modal");
-    if (existingModal) existingModal.remove();
-
-    // Create modal container
-    const modal = document.createElement("div");
-    modal.id = "ai-confirmation-modal";
-    modal.style.position = "fixed";
-    modal.style.top = "50%";
-    modal.style.left = "50%";
-    modal.style.transform = "translate(-50%, -50%)";
-    modal.style.zIndex = "10000";
-    modal.style.backgroundColor = "white";
-    modal.style.padding = "20px";
-    modal.style.borderRadius = "8px";
-    modal.style.boxShadow = "0px 4px 10px rgba(0,0,0,0.2)";
-    modal.style.minWidth = "300px";
-    modal.style.textAlign = "center";
-
-    // Message text
-    const messageText = document.createElement("p");
-    messageText.innerText = message;
-    modal.appendChild(messageText);
-
-    // Editable input field
-    const inputField = document.createElement("input");
-    inputField.type = "text";
-    inputField.value = message; // Pre-fill with AI message
-    inputField.style.width = "100%";
-    inputField.style.marginTop = "10px";
-    inputField.style.padding = "5px";
-    inputField.style.border = "1px solid #ccc";
-    modal.appendChild(inputField);
-
-    // Button container
-    const buttonContainer = document.createElement("div");
-    buttonContainer.style.marginTop = "15px";
-    buttonContainer.style.display = "flex";
-    buttonContainer.style.justifyContent = "space-between";
-
-    // Confirm button
-    const confirmBtn = document.createElement("button");
-    confirmBtn.innerText = "Confirm";
-    confirmBtn.style.backgroundColor = "#28a745";
-    confirmBtn.style.color = "white";
-    confirmBtn.style.border = "none";
-    confirmBtn.style.padding = "8px 16px";
-    confirmBtn.style.cursor = "pointer";
-    confirmBtn.style.borderRadius = "4px";
-    confirmBtn.onclick = () => {
-      callback(true, inputField.value);
-      modal.remove();
-    };
-
-    // Cancel button
-    const cancelBtn = document.createElement("button");
-    cancelBtn.innerText = "Cancel";
-    cancelBtn.style.backgroundColor = "#dc3545";
-    cancelBtn.style.color = "white";
-    cancelBtn.style.border = "none";
-    cancelBtn.style.padding = "8px 16px";
-    cancelBtn.style.cursor = "pointer";
-    cancelBtn.style.borderRadius = "4px";
-    cancelBtn.onclick = () => {
-      callback(false);
-      modal.remove();
-    };
-
-    buttonContainer.appendChild(cancelBtn);
-    buttonContainer.appendChild(confirmBtn);
-    modal.appendChild(buttonContainer);
-
-    document.body.appendChild(modal);
-  }
-
-  /**
-   * Attempts to execute the provided AI step.
-   * If code injection fails, falls back to executing structured actions.
-   */
-  async function executeStep(step: AIResponse) {
-    console.log("[content.ts] Executing AI Step:", step);
-    // Fallback: if no code or code execution fails, execute the actions.
-    if (
-      step.actions &&
-      Array.isArray(step.actions) &&
-      step.actions.length > 0
-    ) {
-      console.log("[content.ts] Executing automation actions.");
-      for (const action of step.actions) {
-        await executeFallbackAction(action);
-      }
-      return;
-    }
-
-    console.warn(
-      "[content.ts] No executable code or fallback actions provided."
-    );
-    requestNextStep("No executable code or actions provided.");
-  }
-
-  /**
-   * Executes a single fallback action based on its type.
-   */
-  async function executeFallbackAction(action: Action) {
-    console.log("[content.ts] Executing fallback action:", action);
-
-    const element = document.querySelector(action.data.selector);
-    if (!element) {
-      console.error(
-        "[content.ts] Target element not found:",
-        action.data.selector
-      );
-      requestNextStep("Element not found");
-      return;
-    }
-
-    // Provide visual feedback by highlighting the element.
-    drawHighlightBox(element as HTMLElement);
-
-    // Delay a bit to allow the visual highlight before taking action.
-    setTimeout(() => {
-      switch (action.type) {
-        case "confirm":
-          showConfirmationModal(
-            action.message || action.description || "Please confirm.",
-            (confirmed, editedText) => {
-              if (confirmed) {
-                // If text was edited, inject it into the element.
-                if (editedText) {
-                  const inputEl = document.querySelector<HTMLInputElement>(
-                    action.data.selector
-                  );
-                  if (inputEl) {
-                    inputEl.value = editedText;
-                    inputEl.dispatchEvent(
-                      new Event("input", { bubbles: true })
-                    );
-                  }
-                }
-                requestNextStep();
-              } else {
-                console.log("[content.ts] Action canceled by user.");
-              }
-            }
-          );
-          return; // We'll call requestNextStep inside the callback.
-
-        case "click":
-          (element as HTMLElement).click();
-          break;
-
-        case "input":
-        case "input_text":
-          if (
-            element instanceof HTMLInputElement ||
-            element instanceof HTMLTextAreaElement
-          ) {
-            element.value = action.data.value || "";
-            element.dispatchEvent(new Event("input", { bubbles: true }));
-          }
-          break;
-
-        case "select":
-          if (element instanceof HTMLSelectElement) {
-            element.value = action.data.value || "";
-            element.dispatchEvent(new Event("change", { bubbles: true }));
-          }
-          break;
-
-        case "scroll":
-          element.scrollIntoView({ behavior: "smooth", block: "center" });
-          break;
-
-        case "hover":
-          // Dispatch events to simulate hovering.
-          element.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
-          element.dispatchEvent(
-            new MouseEvent("mouseenter", { bubbles: true })
-          );
-          break;
-
-        case "double_click":
-        case "doubleClick":
-          // Dispatch a double-click event.
-          element.dispatchEvent(
-            new MouseEvent("dblclick", { bubbles: true, detail: 2 })
-          );
-          break;
-
-        case "right_click":
-        case "rightClick":
-          // Dispatch a right-click (context menu) event.
-          element.dispatchEvent(
-            new MouseEvent("contextmenu", { bubbles: true })
-          );
-          break;
-
-        case "keydown":
-          // Dispatch a keydown event on the element.
-          element.dispatchEvent(
-            new KeyboardEvent("keydown", {
-              bubbles: true,
-              key: action.data.key || "",
-              keyCode: action.data.keyCode || 0,
-            })
-          );
-          break;
-
-        case "keyup":
-          element.dispatchEvent(
-            new KeyboardEvent("keyup", {
-              bubbles: true,
-              key: action.data.key || "",
-              keyCode: action.data.keyCode || 0,
-            })
-          );
-          break;
-
-        case "keypress":
-          element.dispatchEvent(
-            new KeyboardEvent("keypress", {
-              bubbles: true,
-              key: action.data.key || "",
-              keyCode: action.data.keyCode || 0,
-            })
-          );
-          break;
-
-        case "clear":
-          if (
-            element instanceof HTMLInputElement ||
-            element instanceof HTMLTextAreaElement
-          ) {
-            element.value = "";
-            element.dispatchEvent(new Event("input", { bubbles: true }));
-          }
-          break;
-
-        case "submit":
-          // If the element is a form, submit it; otherwise, try finding the closest form.
-          if (element instanceof HTMLFormElement) {
-            element.submit();
-          } else {
-            const form = element.closest("form");
-            if (form) {
-              form.submit();
-            }
-          }
-          break;
-
-        case "wait":
-          // Wait for a given duration (in milliseconds) before proceeding.
-          const duration = action.data.duration || 1000;
-          setTimeout(() => {
-            requestNextStep();
-          }, duration);
-          return; // Early return since requestNextStep is already scheduled.
-
-        case "navigate":
-          // Navigate to a new URL provided in action.data.value.
-          if (action.data.url) {
-            window.location.href = action.data.url;
-          }
-          break;
-
-        default:
-          console.warn("[content.ts] Unknown action type:", action.type);
-      }
-
-      // Wait before proceeding to the next step.
-      setTimeout(() => {
-        requestNextStep();
-      }, 2000);
-    }, 1000); // Initial delay to allow the highlight to be visible.
-  }
-
-  /******************************************************
-   * 3️⃣ Draw a Highlight Box on AI-Selected Element
-   ******************************************************/
-  function drawHighlightBox(element: HTMLElement) {
-    const rect = element.getBoundingClientRect();
-    const overlay = document.createElement("div");
-    overlay.style.position = "absolute";
-    overlay.style.border = "3px solid red";
-    overlay.style.pointerEvents = "none";
-    overlay.style.zIndex = "999999";
-    overlay.style.top = `${rect.top + window.scrollY}px`;
-    overlay.style.left = `${rect.left + window.scrollX}px`;
-    overlay.style.width = `${rect.width}px`;
-    overlay.style.height = `${rect.height}px`;
-
-    document.body.appendChild(overlay);
-    setTimeout(() => overlay.remove(), 1500); // Remove highlight after 1.5 seconds
-  }
-
-  /******************************************************
-   * 4️⃣ Request the Next AI Step
-   ******************************************************/
-  function requestNextStep(errorMessage?: string) {
-    chrome.runtime.sendMessage(
-      { type: "REQUEST_NEXT_STEP", error: errorMessage || null },
-      (response) => {
-        console.log("[content.ts] AI Next Step:", response);
-        if (response?.actions?.length) {
-          executeStep(response.actions[0]);
-        }
-      }
-    );
-  }
-
-  /******************************************************
-   * 6) Perform Actions on DOM Elements
-   ******************************************************/
-  async function performAction(
-    action: Action
-  ): Promise<{ success: boolean; error?: string }> {
-    try {
-      let element: HTMLElement | null = null;
-
-      // For actions that require a DOM element, attempt to query it first.
-      if (
-        [
-          "click",
-          "input",
-          "select",
-          "scroll",
-          "hover",
-          "double_click",
-          "right_click",
-          "keydown",
-          "keyup",
-          "keypress",
-          "clear",
-          "submit",
-        ].includes(action.type)
-      ) {
-        element = document.querySelector<HTMLElement>(action.data.selector);
-        if (!element) {
-          throw new Error(`Element not found: ${action.data.selector}`);
-        }
-      }
-
-      switch (action.type) {
-        case "click":
-          element!.click();
-          break;
-
-        case "input":
-          if (
-            element instanceof HTMLInputElement ||
-            element instanceof HTMLTextAreaElement
-          ) {
-            element.value = action.data.value || "";
-            element.dispatchEvent(new Event("input", { bubbles: true }));
-          } else {
-            throw new Error("Element is not an input or textarea.");
-          }
-          break;
-
-        case "select":
-          if (element instanceof HTMLSelectElement) {
-            element.value = action.data.value || "";
-            element.dispatchEvent(new Event("change", { bubbles: true }));
-          } else {
-            throw new Error("Element is not a select element.");
-          }
-          break;
-
-        case "scroll":
-          element!.scrollIntoView({ behavior: "smooth", block: "center" });
-          break;
-
-        case "hover":
-          element!.dispatchEvent(
-            new MouseEvent("mouseover", { bubbles: true })
-          );
-          element!.dispatchEvent(
-            new MouseEvent("mouseenter", { bubbles: true })
-          );
-          break;
-
-        case "double_click":
-          element!.dispatchEvent(
-            new MouseEvent("dblclick", { bubbles: true, detail: 2 })
-          );
-          break;
-
-        case "right_click":
-          element!.dispatchEvent(
-            new MouseEvent("contextmenu", { bubbles: true })
-          );
-          break;
-
-        case "keydown":
-          element!.dispatchEvent(
-            new KeyboardEvent("keydown", {
-              bubbles: true,
-              key: action.data.key || "",
-              keyCode: action.data.keyCode || 0,
-            })
-          );
-          break;
-
-        case "keyup":
-          element!.dispatchEvent(
-            new KeyboardEvent("keyup", {
-              bubbles: true,
-              key: action.data.key || "",
-              keyCode: action.data.keyCode || 0,
-            })
-          );
-          break;
-
-        case "keypress":
-          element!.dispatchEvent(
-            new KeyboardEvent("keypress", {
-              bubbles: true,
-              key: action.data.key || "",
-              keyCode: action.data.keyCode || 0,
-            })
-          );
-          break;
-
-        case "clear":
-          if (
-            element instanceof HTMLInputElement ||
-            element instanceof HTMLTextAreaElement
-          ) {
-            element.value = "";
-            element.dispatchEvent(new Event("input", { bubbles: true }));
-          } else {
-            throw new Error("Element is not an input or textarea.");
-          }
-          break;
-
-        case "submit":
-          if (element instanceof HTMLFormElement) {
-            element.submit();
-          } else {
-            const form = element!.closest("form");
-            if (form) {
-              form.submit();
-            } else {
-              throw new Error("No form found for submission.");
-            }
-          }
-          break;
-
-        case "wait":
-          await new Promise((resolve) =>
-            setTimeout(resolve, action.data.duration || 1000)
-          );
-          break;
-
-        case "navigate":
-          if (action.data.url) {
-            window.location.href = action.data.url;
-          } else {
-            throw new Error("No navigation URL provided.");
-          }
-          break;
-
-        case "confirm":
-          // Use a built-in confirmation dialog.
-          const confirmed = window.confirm(
-            action.message || action.description || "Please confirm the action."
-          );
-          if (!confirmed) {
-            return { success: false, error: "User canceled the confirmation." };
-          }
-          break;
-
-        default:
-          throw new Error(`Unsupported action type: ${action.type}`);
-      }
-
-      return { success: true };
-    } catch (err: any) {
-      console.error("Error performing action:", err);
-      return { success: false, error: err.message };
-    }
-  }
-
-  /******************************************************
-   * 7) Listen for Messages from Background Script & ChatWidget
-   ******************************************************/
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log("[content.ts] Received Message:", message);
-
-    switch (message.type) {
-      case "TOGGLE_SIDEBAR":
-        toggleSidebar();
-        sendResponse({ success: true });
-        break;
-
-      case "PERFORM_ACTION":
-        console.log("[content.ts] Performing action:", message.data);
-        performAction(message.data).then(sendResponse);
-        return true;
-
-      case "SHOW_PAGE_ELEMENTS":
-        console.log("[content.ts] Extracting clickable elements...");
-        const elements = extractClickableElements();
-        chrome.runtime.sendMessage({ type: "CLICKABLE_ELEMENTS", elements });
-        sendResponse({ success: true });
-        break;
-
-      default:
-        console.warn("[content.ts] Unknown message type:", message.type);
-        sendResponse({ success: false, error: "Unknown message type" });
-        break;
-    }
-  });
-
-  /******************************************************
-   * 8) Listen for Messages from ChatWidget.tsx
-   ******************************************************/
-  window.addEventListener("message", (event: MessageEvent) => {
-    if (event.origin !== window.location.origin || event.source !== window)
-      return;
-
-    const data = event.data as {
-      type: string;
-      command?: string;
-      elements?: any[];
-    };
-
-    switch (data.type) {
-      case "USER_COMMAND":
-        console.log("[content.ts] Received command:", data.command);
-
-        // **Extract clickable elements**
-        const clickableElements = extractClickableElements();
-        console.log(
-          "[content.ts] Clickable elements extracted:",
-          clickableElements
-        );
-
-        // **Send command + elements to background.ts for AI processing**
-        chrome.runtime.sendMessage(
-          {
-            type: "PROCESS_COMMAND",
-            command: data.command,
-            elements: clickableElements,
-          },
-          (response) => {
-            console.log("[content.ts] AI Response Received:", response);
-
-            try {
-              // ✅ Fix: Parse the stringified JSON response
-              const parsedResponse: AIResponse = JSON.parse(response.text);
-
-              console.log("[content.ts] AI Response Parsed:", parsedResponse);
-
-              // ✅ Ensure `actions` are extracted correctly
-              if (parsedResponse) {
-                executeStep(parsedResponse);
-              } else {
-                console.error(
-                  "[content.ts] No valid actions found in AI response."
-                );
-              }
-            } catch (error) {
-              console.error("[content.ts] Error parsing AI response:", error);
-            }
-          }
-        );
-
-        break;
-
-      case "REQUEST_CLICKABLE_ELEMENTS":
-        console.log("[content.ts] Sending clickable elements...");
-        window.postMessage(
-          { type: "CLICKABLE_ELEMENTS", elements: extractClickableElements() },
-          "*"
-        );
-        break;
-
-      case "FROM_REACT_APP":
-        console.log("[content.ts] Received FROM_REACT_APP message");
-        chrome.runtime.sendMessage(
-          { type: "SHOW_PAGE_ELEMENTS" },
-          (response) => {
-            window.postMessage(
-              {
-                type: "FROM_CONTENT_SCRIPT",
-                action: "SHOW_PAGE_ELEMENTS_RESPONSE",
-                result: response,
-              },
-              "*"
-            );
-          }
-        );
-        break;
-
-      default:
-        console.warn("[content.ts] Unknown event type:", data.type);
-        break;
-    }
-  });
 } else {
   console.warn("[content.ts] Agent Chrome already initialized");
 }
