@@ -5,18 +5,19 @@ import { SpeechError, SpeechRecognitionHandler } from "./services/speech";
 // import { ScreenCapture } from "./services/screen-capture";
 import { ContentScriptMessage } from "./types/messages";
 import {
-  sendToContentScript,
+  // sendToContentScript,
   handleContentScriptMessages,
 } from "./lib/messaging";
 
 import { SettingsModal } from "./components/SettingsModal";
 import { ChatWidget } from "./components/ChatWidget";
-import { DOMElementsPanel } from "./components/DOMElementsPanel";
+// import { DOMElementsPanel } from "./components/DOMElementsPanel";
 import { ControlPanel } from "./components/ControlPanel";
-import { ActionRecording } from "./components/ActionRecording";
-import { TranscriptPanel } from "./components/TranscriptPanel";
-import { ScreenAnalysis } from "./components/ScreenAnalysis";
-import { HotkeysPanel } from "./components/HotkeysPanel";
+// import { ActionRecording } from "./components/ActionRecording";
+// import { TranscriptPanel } from "./components/TranscriptPanel";
+// import { ScreenAnalysis } from "./components/ScreenAnalysis";
+// import { HotkeysPanel } from "./components/HotkeysPanel";
+import { ExecutionSteps } from "./components/ExecutionSteps";
 
 /** Top-level App */
 const App = () => {
@@ -113,12 +114,12 @@ const App = () => {
         {/* Main Content */}
         <main className="ext-space-y-6">
           {/* DOM Elements Panel */}
-          <section className="ext-relative ext-bg-gray-800/80 ext-p-4 ext-rounded-xl ext-ring-1 ext-ring-inset ext-ring-gray-500/50 ext-shadow-xl ext-backdrop-blur-md">
+          {/* <section className="ext-relative ext-bg-gray-800/80 ext-p-4 ext-rounded-xl ext-ring-1 ext-ring-inset ext-ring-gray-500/50 ext-shadow-xl ext-backdrop-blur-md">
             <DOMElementsPanel sendToContentScript={sendToContentScript} />
-          </section>
+          </section> */}
 
           {/* Control Panel */}
-          <section className="ext-relative ext-bg-gray-800/80 ext-p-4 ext-rounded-xl ext-ring-1 ext-ring-inset ext-ring-gray-500/50 ext-shadow-xl ext-backdrop-blur-md">
+          {/* <section className="ext-relative ext-bg-gray-800/80 ext-p-4 ext-rounded-xl ext-ring-1 ext-ring-inset ext-ring-gray-500/50 ext-shadow-xl ext-backdrop-blur-md">
             <ControlPanel
               isListening={state.isListening}
               isWatching={state.isWatching}
@@ -126,32 +127,35 @@ const App = () => {
               onToggleListening={toggleListening}
               onToggleWatching={toggleWatching}
             />
-          </section>
+          </section> */}
 
           {/* Chat Widget */}
           <ChatWidget />
 
+          {/* Execution Steps */}
+          <ExecutionSteps />
+
           {/* Action Recording */}
-          <section className="ext-relative ext-bg-gray-800/80 ext-p-4 ext-rounded-xl ext-ring-1 ext-ring-inset ext-ring-gray-500/50 ext-shadow-xl ext-backdrop-blur-md">
+          {/* <section className="ext-relative ext-bg-gray-800/80 ext-p-4 ext-rounded-xl ext-ring-1 ext-ring-inset ext-ring-gray-500/50 ext-shadow-xl ext-backdrop-blur-md">
             <ActionRecording />
-          </section>
+          </section> */}
 
           {/* Transcript Panel */}
-          <section className="ext-relative ext-bg-gray-800/80 ext-p-4 ext-rounded-xl ext-ring-1 ext-ring-inset ext-ring-gray-500/50 ext-shadow-xl ext-backdrop-blur-md">
+          {/* <section className="ext-relative ext-bg-gray-800/80 ext-p-4 ext-rounded-xl ext-ring-1 ext-ring-inset ext-ring-gray-500/50 ext-shadow-xl ext-backdrop-blur-md">
             <TranscriptPanel transcript={state.transcript} />
-          </section>
+          </section> */}
 
           {/* Screen Analysis */}
-          {state.isWatching && (
+          {/* {state.isWatching && (
             <section className="ext-relative ext-bg-gray-800/80 ext-p-4 ext-rounded-xl ext-ring-1 ext-ring-inset ext-ring-gray-500/50 ext-shadow-xl ext-backdrop-blur-md">
               <ScreenAnalysis screenAnalysis={state.screenAnalysis} />
             </section>
-          )}
+          )} */}
 
           {/* Hotkeys Panel */}
-          <section className="ext-relative ext-bg-gray-800/80 ext-p-4 ext-rounded-xl ext-ring-1 ext-ring-inset ext-ring-gray-500/50 ext-shadow-xl ext-backdrop-blur-md">
+          {/* <section className="ext-relative ext-bg-gray-800/80 ext-p-4 ext-rounded-xl ext-ring-1 ext-ring-inset ext-ring-gray-500/50 ext-shadow-xl ext-backdrop-blur-md">
             <HotkeysPanel />
-          </section>
+          </section> */}
         </main>
 
         {/* Settings Modal */}

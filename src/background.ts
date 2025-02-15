@@ -4,6 +4,12 @@ interface AIResponse {
   text: string;
   code: string;
   actions: Action[];
+  nextStep: string; // Required
+  errorStep?: {
+    // Optional
+    condition: string;
+    actions: Action[];
+  };
 }
 
 type ActionType =
@@ -24,7 +30,8 @@ type ActionType =
   | "input_text"
   | "doubleClick"
   | "rightClick"
-  | "navigate";
+  | "navigate"
+  | "verify";
 
 interface Action {
   type: ActionType;
@@ -34,7 +41,7 @@ interface Action {
 }
 
 interface ActionData {
-  selector: string;
+  selector?: string;
   value?: string;
   duration?: number;
   key?: string;
@@ -42,77 +49,276 @@ interface ActionData {
   url?: string;
 }
 
-// background.ts (Manifest V3 - service worker)
-chrome.runtime.onInstalled.addListener(() => {
-  console.log("[background.ts] AI Assistant Extension installed");
-});
+// ✅ Execution history tracking
+let executionHistory: {
+  step: string;
+  status: "pending" | "success" | "failed";
+  retries: number;
+  message?: string;
+}[] = [];
 
-// Listen for extension icon clicks
+// ✅ Store active ports for persistent connection
+const activePorts: Record<number, chrome.runtime.Port> = {};
+
+// ✅ Send execution updates
+function sendExecutionUpdate() {
+  try {
+    chrome.runtime.sendMessage({
+      type: "EXECUTION_UPDATE",
+      history: executionHistory.slice(-10),
+    });
+  } catch (error) {
+    console.warn("[background.ts] Failed to send execution update:", error);
+  }
+}
+
+// ✅ Ensure Sidebar Injection & Toggle
 chrome.action.onClicked.addListener(async (tab) => {
   console.log("[background.ts] Extension icon clicked on tab:", tab);
+
   if (!tab?.id) {
     console.error("[background.ts] No tab ID found");
     return;
   }
 
   try {
-    console.log("[background.ts] Fetching tab info...");
-    const tabInfo = await chrome.tabs.get(tab.id);
-    console.log("[background.ts] Tab info:", tabInfo);
-
-    if (!tabInfo.url || !tabInfo.url.startsWith("http")) {
-      console.warn(
-        "[background.ts] Cannot access this page. URL must start with http:// or https://"
-      );
-      return;
-    }
-
-    console.log("[background.ts] Injecting content script...");
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ["content.js"],
-    });
+    console.log("[background.ts] Ensuring content script is injected...");
+    await ensureContentScriptInjected(tab.id);
 
     console.log("[background.ts] Sending TOGGLE_SIDEBAR message...");
-    chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_SIDEBAR" });
+    sendMessageToContent(tab.id, { type: "TOGGLE_SIDEBAR" });
   } catch (error) {
     console.error("[background.ts] Error injecting content script:", error);
   }
 });
 
-// Handle keyboard shortcuts
-chrome.commands.onCommand.addListener(async (command) => {
-  console.log("[background.ts] Keyboard shortcut triggered:", command);
-  try {
-    const [tab] = await chrome.tabs.query({
-      active: true,
-      currentWindow: true,
+// ✅ Send message with persistent connection
+function sendMessageToContent(tabId: number, message: any) {
+  if (activePorts[tabId]) {
+    console.log(`[background.ts] Sending message to tab ${tabId}:`, message);
+    activePorts[tabId].postMessage(message);
+  } else {
+    console.warn(
+      `[background.ts] No active port for tab ${tabId}. Retrying connection.`
+    );
+    ensureContentScriptInjected(tabId).then(() => {
+      chrome.tabs.sendMessage(tabId, message);
     });
-    console.log("[background.ts] Active tab:", tab);
+  }
+}
 
-    if (!tab?.id) {
-      console.error("[background.ts] No active tab found");
+// ✅ Ensure Content Script is Injected Before Sending Messages
+async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, { type: "PING" }, (response) => {
+      if (chrome.runtime.lastError || !response) {
+        console.warn(
+          `[background.ts] Content script not found in tab ${tabId}, injecting now...`
+        );
+        chrome.scripting.executeScript(
+          { target: { tabId }, files: ["content.js"] },
+          () => {
+            setTimeout(() => resolve(true), 500);
+          }
+        );
+      } else {
+        resolve(true);
+      }
+    });
+  });
+}
+
+// ✅ Fetch Page Elements Before Sending AI Request
+async function fetchPageElements(tabId: number): Promise<Record<string, any>> {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(
+      tabId,
+      { type: "GET_PAGE_ELEMENTS" },
+      (response) => {
+        if (!response || chrome.runtime.lastError) {
+          console.error(
+            "[background.ts] Error fetching page elements:",
+            chrome.runtime.lastError?.message
+          );
+          resolve({});
+        } else {
+          resolve(response.elements);
+        }
+      }
+    );
+  });
+}
+
+// ✅ Process AI Commands and Execute Actions Recursively
+async function processCommand(
+  tabId: number,
+  contextMessage: string,
+  isInitialCommand: boolean = false
+) {
+  console.log("[background.ts] Fetching page elements before AI request...");
+
+  const pageElements = await fetchPageElements(tabId);
+  console.log("[background.ts] Retrieved Page Elements:", pageElements);
+
+  if (!pageElements || Object.keys(pageElements).length === 0) {
+    console.warn(
+      "[background.ts] No valid page elements found, aborting AI request."
+    );
+    return;
+  }
+
+  console.log(
+    `[background.ts] Requesting AI next step with message: "${contextMessage}"`
+  );
+
+  try {
+    const aiResponse = await chatWithOpenAI(
+      contextMessage,
+      "session-id",
+      pageElements,
+      isInitialCommand
+    );
+    console.log("[background.ts] AI Response:", aiResponse);
+
+    if (aiResponse.nextStep === "FINISHED_AUTOMATION") {
+      chrome.runtime.sendMessage({ type: "AUTOMATION_COMPLETE" });
       return;
     }
 
-    switch (command) {
-      case "toggle-listening":
-        console.log("[background.ts] Toggling listening...");
-        chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_LISTENING" });
-        break;
-      case "toggle-watching":
-        console.log("[background.ts] Toggling watching...");
-        chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_WATCHING" });
-        break;
-      default:
-        console.warn("[background.ts] Unknown command:", command);
+    if (aiResponse.actions?.length) {
+      executeStep(aiResponse.actions, 0, tabId, contextMessage);
+    } else {
+      console.log("[background.ts] No more actions. Execution complete.");
     }
   } catch (error) {
-    console.error("[background.ts] Error handling command:", error);
+    console.error("[background.ts] Error communicating with AI:", error);
   }
-});
+}
 
-// Process AI commands and execute actions step-by-step
+// ✅ Execute AI-generated steps sequentially
+async function executeStep(
+  actions: Action[],
+  actionIndex: number,
+  tabId: number,
+  _contextMessage: string
+) {
+  if (actionIndex >= actions.length) {
+    console.log(
+      "[background.ts] All actions completed. Requesting next AI step..."
+    );
+    await processCommand(
+      tabId,
+      `Previous step completed successfully. What should I do next?`
+    );
+    return;
+  }
+
+  const action = actions[actionIndex];
+  console.log("[background.ts] Executing AI Step:", action);
+
+  executionHistory.push({
+    step: action.description || action.type,
+    status: "pending",
+    retries: 0,
+  });
+  sendExecutionUpdate();
+
+  try {
+    await performAction(action);
+    executionHistory[executionHistory.length - 1].status = "success";
+    sendExecutionUpdate();
+
+    executeStep(
+      actions,
+      actionIndex + 1,
+      tabId,
+      `Action "${action.type}" executed successfully. Proceed with the next step.`
+    );
+  } catch (error) {
+    console.error("[background.ts] Error executing action:", error);
+
+    executionHistory[executionHistory.length - 1].status = "failed";
+    executionHistory[executionHistory.length - 1].message = (
+      error as any
+    ).message;
+    sendExecutionUpdate();
+
+    if (executionHistory[executionHistory.length - 1].retries < 2) {
+      console.log("[background.ts] Retrying failed action...");
+      executionHistory[executionHistory.length - 1].retries += 1;
+      executeStep(
+        actions,
+        actionIndex,
+        tabId,
+        `Action "${action.type}" failed. Attempting retry.`
+      );
+    } else {
+      console.log(
+        "[background.ts] Maximum retries reached. Asking AI for guidance."
+      );
+      processCommand(
+        tabId,
+        `Action "${action.type}" failed multiple times. What should I do next?`
+      );
+    }
+  }
+}
+
+// ✅ Perform AI-generated action
+async function performAction(action: Action) {
+  switch (action.type) {
+    case "verify":
+      await verifyOrOpenTab(action.data.url || "");
+      break;
+    case "navigate":
+      if (action.data.url) chrome.tabs.create({ url: action.data.url });
+      break;
+    case "click":
+    case "double_click":
+    case "right_click":
+    case "hover":
+    case "scroll":
+    case "input":
+    case "input_text":
+      sendActionToActiveTab(action);
+      break;
+    default:
+      throw new Error(`[background.ts] Unknown action type: ${action.type}`);
+  }
+}
+
+// ✅ Send action to content script for execution
+function sendActionToActiveTab(action: Action) {
+  console.log("[background.ts] Sending action to active tab:", action);
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0]?.id) {
+      chrome.tabs.sendMessage(tabs[0].id, { type: "PERFORM_ACTION", action });
+    } else {
+      console.error("[background.ts] No active tab found to send action.");
+    }
+  });
+}
+
+// ✅ Check if a tab is open or open a new one (Verification)
+async function verifyOrOpenTab(urlContains: string) {
+  console.log("[background.ts] Checking if tab is open:", urlContains);
+
+  const tabs = await chrome.tabs.query({});
+  const matchingTab = tabs.find((tab) => tab.url?.includes(urlContains));
+
+  if (matchingTab && matchingTab.id) {
+    console.log("[background.ts] Found existing tab:", matchingTab.url);
+    chrome.tabs.update(matchingTab.id, { active: true });
+  } else {
+    console.log("[background.ts] No matching tab found, opening a new one.");
+    chrome.tabs.create({ url: `https://${urlContains}` });
+  }
+
+  sendExecutionUpdate();
+}
+
+// ✅ Handle messages from content scripts or UI
 chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
   console.log(
     "[background.ts] Received message:",
@@ -121,262 +327,28 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
     sender
   );
 
-  switch (message.type) {
-    case "PROCESS_COMMAND":
-      console.log("[background.ts] Processing AI command:", message.command);
+  if (message.type === "PROCESS_COMMAND") {
+    console.log("[background.ts] Processing AI command:", message.command);
 
-      fetchCurrentPageElements((currentState) => {
-        console.log("[background.ts] Current page elements:", currentState);
-
-        chatWithOpenAI(message.command, "session-id", currentState).then(
-          (aiResponse) => {
-            console.log("[background.ts] Raw AI Response:", aiResponse);
-
-            // ✅ Safely parse AI response before execution
-            try {
-              const parsedResponse: AIResponse = JSON.parse(aiResponse.text);
-              console.log(
-                "[background.ts] Parsed AI Response:",
-                parsedResponse
-              );
-
-              if (parsedResponse.actions?.length) {
-                executeStep(parsedResponse.actions[0]);
-              } else {
-                console.error(
-                  "[background.ts] No valid actions found in AI response."
-                );
-              }
-            } catch (error) {
-              console.error(
-                "[background.ts] Error parsing AI response:",
-                error
-              );
-            }
-          }
-        );
-
-        sendResponse({ success: true });
-      });
-
-      return true;
-
-    case "ACTION_SUCCESS":
-      console.log("[background.ts] Action succeeded, requesting next step...");
-
-      fetchCurrentPageElements((currentState) => {
-        console.log("[background.ts] Fetching next step from AI...");
-        chatWithOpenAI("Next step?", "session-id", currentState).then(
-          (aiResponse) => {
-            console.log("[background.ts] Raw Next AI Response:", aiResponse);
-
-            // ✅ Parse AI response before execution
-            try {
-              const parsedResponse: AIResponse = JSON.parse(aiResponse.text);
-              console.log(
-                "[background.ts] Parsed Next AI Response:",
-                parsedResponse
-              );
-
-              if (parsedResponse.actions?.length) {
-                executeStep(parsedResponse.actions[0]);
-              } else {
-                console.error("[background.ts] No valid next actions found.");
-              }
-            } catch (error) {
-              console.error(
-                "[background.ts] Error parsing next AI response:",
-                error
-              );
-            }
-          }
-        );
-      });
-
-      return true;
-
-    case "ACTION_FAILED":
-      console.error("[background.ts] Action failed:", message.error);
-
-      fetchCurrentPageElements((currentState) => {
-        console.log(
-          "[background.ts] Requesting AI for the next step after failure..."
-        );
-        chatWithOpenAI(
-          "The last action failed. What should I do next?",
-          "session-id",
-          currentState
-        ).then((aiResponse) => {
-          console.log("[background.ts] Raw Recovery AI Response:", aiResponse);
-
-          // ✅ Parse AI response before execution
-          try {
-            const parsedResponse: AIResponse = JSON.parse(aiResponse.text);
-            console.log(
-              "[background.ts] Parsed Recovery AI Response:",
-              parsedResponse
-            );
-
-            if (parsedResponse.actions?.length) {
-              executeStep(parsedResponse.actions[0]);
-            } else {
-              console.error("[background.ts] No valid recovery actions found.");
-            }
-          } catch (error) {
-            console.error(
-              "[background.ts] Error parsing recovery AI response:",
-              error
-            );
-          }
-        });
-      });
-
-      return true;
-
-    case "SHOW_PAGE_ELEMENTS":
-      if (sender.tab?.id !== undefined) {
-        console.log(
-          "[background.ts] Showing page elements in tab:",
-          sender.tab.id
-        );
-        chrome.tabs.sendMessage(
-          sender.tab.id,
-          { type: "SHOW_PAGE_ELEMENTS" },
-          (response) => {
-            console.log("[background.ts] Elements shown:", response);
-            sendResponse(response);
-          }
-        );
-        return true;
-      }
-      break;
-
-    case "CAPTURE_TAB_SCREENSHOT":
-      console.log("[background.ts] Capturing screenshot...");
-      captureScreenshot(sendResponse);
-      return true;
-
-    default:
-      console.warn("[background.ts] Unknown message type:", message.type);
-      sendResponse({ success: false, error: "Unknown message type" });
-  }
-});
-
-// Execute AI-generated steps sequentially
-async function executeStep(action: any) {
-  console.log("[background.ts] Executing AI Step:", action);
-
-  switch (action.type) {
-    case "VERIFY_TAB":
-      console.log("[background.ts] Verifying or opening tab:", action.data.url);
-      verifyOrOpenTab(action.data.url);
-      break;
-
-    case "PERFORM_ACTION":
-      console.log("[background.ts] Sending action to active tab:", action.data);
-      sendActionToActiveTab(action.data);
-      break;
-
-    default:
-      console.warn("[background.ts] Unknown action type:", action.type);
-      chrome.runtime.sendMessage(undefined, {
-        type: "ACTION_FAILED",
-        error: "Unknown action",
-      });
-  }
-}
-
-// Check if a tab exists or open a new one
-async function verifyOrOpenTab(urlContains: string) {
-  console.log("[background.ts] Checking for existing tab with:", urlContains);
-  const tabs = await chrome.tabs.query({});
-  const matchingTab = tabs.find((tab) => tab.url?.includes(urlContains));
-
-  if (matchingTab && matchingTab.id) {
-    console.log("[background.ts] Found existing tab:", matchingTab.url);
-    chrome.tabs.update(matchingTab.id, { active: true });
-    chrome.runtime.sendMessage(undefined, { type: "ACTION_SUCCESS" });
-  } else {
-    console.log("[background.ts] No matching tab found, opening a new one.");
-    chrome.tabs.create({ url: `https://${urlContains}` });
-    chrome.runtime.sendMessage(undefined, { type: "ACTION_SUCCESS" });
-  }
-}
-
-// Send action to content script for execution
-function sendActionToActiveTab(action: any) {
-  console.log("[background.ts] Sending action to active tab:", action);
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs[0]?.id) {
-      chrome.tabs.sendMessage(tabs[0].id, { type: "PERFORM_ACTION", action });
-    }
-  });
-}
-
-// Capture active tab screenshot
-async function captureScreenshot(sendResponse: Function) {
-  console.log("[background.ts] Capturing screenshot...");
-  try {
-    const [tab] = await chrome.tabs.query({
-      active: true,
-      currentWindow: true,
-    });
-
-    if (!tab?.id) {
-      console.error("[background.ts] No active tab found.");
-      sendResponse({ error: "No active tab found." });
+    const tabId = sender.tab?.id;
+    if (!tabId) {
+      console.error("[background.ts] No active tab ID found, aborting.");
+      sendResponse({ success: false, error: "No active tab ID found" });
       return;
     }
 
-    chrome.tabs.captureVisibleTab(
-      { format: "jpeg", quality: 50 },
-      (dataUrl) => {
-        if (chrome.runtime.lastError) {
-          console.error(
-            "[background.ts] Screenshot capture error:",
-            chrome.runtime.lastError.message
-          );
-          sendResponse({ error: chrome.runtime.lastError.message });
-        } else {
-          console.log("[background.ts] Screenshot captured successfully.");
-          sendResponse({ dataUrl });
-        }
-      }
-    );
-  } catch (error) {
-    console.error("[background.ts] Error capturing screenshot:", error);
-    sendResponse({ error: "Failed to capture screenshot" });
-  }
-}
+    executionHistory = [
+      { step: "Processing Command", status: "pending", retries: 0 },
+    ];
+    sendExecutionUpdate();
 
-// Fetch current page elements from content.ts
-function fetchCurrentPageElements(
-  callback: (currentState: Record<string, any>) => void
-) {
-  console.log("[background.ts] Fetching current page elements...");
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs[0]?.id) {
-      chrome.tabs.sendMessage(
-        tabs[0].id,
-        { type: "GET_PAGE_ELEMENTS" },
-        (response) => {
-          console.log(
-            "[background.ts] Received page elements response:",
-            response
-          );
-          if (chrome.runtime.lastError || !response) {
-            console.error(
-              "[background.ts] Error fetching page elements:",
-              chrome.runtime.lastError?.message
-            );
-            callback({});
-          } else {
-            callback(response.elements);
-          }
-        }
-      );
-    } else {
-      callback({});
-    }
-  });
-}
+    await processCommand(
+      tabId,
+      message.command,
+      message.commandType && message.commandType === "INITIAL_COMMAND"
+        ? true
+        : false
+    );
+    sendResponse({ success: true });
+  }
+});

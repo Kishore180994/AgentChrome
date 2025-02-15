@@ -1,24 +1,16 @@
 /// <reference types="@types/chrome" />
-
 import OpenAI from "openai";
-import {
-  ChatMessage,
-  getConversationHistory,
-  saveConversationHistory,
-} from "../../utils/chatHistory";
+import { ChatMessage } from "../../utils/chatHistory";
 
-// Add Chrome types
-declare global {
-  interface Window {
-    chrome: typeof chrome;
-  }
-}
-
-// New AIResponse interface and supporting types
 interface AIResponse {
   text: string;
-  code: string;
+  code?: string;
   actions: Action[];
+  nextStep: string;
+  errorStep?: {
+    condition: string;
+    actions: Action[];
+  };
 }
 
 type ActionType =
@@ -36,471 +28,487 @@ type ActionType =
   | "clear"
   | "submit"
   | "wait"
-  | "navigate";
+  | "input_text"
+  | "doubleClick"
+  | "rightClick"
+  | "navigate"
+  | "verify";
 
 interface Action {
   type: ActionType;
   data: ActionData;
-  message?: string;
   description?: string;
 }
 
 interface ActionData {
-  selector: string;
-  value?: string; // For input/select/navigate actions etc.
-  duration?: number; // In milliseconds for wait actions.
-  key?: string; // For keyboard events.
-  keyCode?: number; // For keyboard events.
+  selector?: string;
+  value?: string;
+  duration?: number;
+  key?: string;
   url?: string;
 }
 
+const HISTORY_LIMIT = 5;
+const MAX_RETRIES = 3;
 let openaiInstance: OpenAI | null = null;
 
-/**
- * Initializes and returns the OpenAI instance.
- */
+const SYSTEM_PROMPT = (currentState: string) =>
+  `
+You are an AI web automation engine. Follow these STRICT RULES:
+
+1. RESPONSE FORMAT (MUST USE):
+{
+  "text": "Brief step description",
+  "actions": [{
+    "type": "ActionType",
+    "data": {
+      "selector": "CSS selector from current elements",
+      "value": "Optional input value",
+      "url": "For navigation/verification"
+    },
+    "description": "Why this action is needed"
+  }],
+  "nextStep": "Next immediate action description",
+  "errorStep": {
+    "condition": "Specific failure scenario",
+    "actions": [/* Recovery steps */]
+  }
+}
+
+2. CORE PRINCIPLES:
+- Verify URL before interacting with elements
+- Use ONLY selectors from current elements
+- One primary action per response + recovery plan
+- Assume nothing about page state
+- Handle both successful and failed outcomes
+
+3. ACTION TYPES GUIDE:
+• verify: Check URL/Page Load (requires 'url')
+• navigate: Go to new URL (requires 'url')
+• click: Standard click (requires 'selector')
+• input: Type text (needs 'selector' + 'value')
+• scroll: Scroll to element (needs 'selector')
+• wait: Pause execution (needs 'duration')
+
+4. CURRENT PAGE STATE (USE THESE SELECTORS):
+${currentState}
+
+5. EXAMPLE SCENARIOS:
+
+🔹 Google Search:
+{
+  "text": "Searching for 'AI automation tools'",
+  "actions": [
+    {
+      "type": "verify",
+      "data": { "url": "google.com" },
+      "description": "Ensure we're on Google"
+    },
+    {
+      "type": "input",
+      "data": {
+        "selector": "[name='q']",
+        "value": "AI automation tools"
+      },
+      "description": "Enter search query"
+    }
+  ],
+  "nextStep": "Click search button",
+  "errorStep": {
+    "condition": "Search input missing",
+    "actions": [
+      { "type": "navigate", "data": { "url": "https://google.com" } }
+    ]
+  }
+}
+
+🔹 E-commerce Checkout:
+{
+  "text": "Completing purchase",
+  "actions": [
+    {
+      "type": "click",
+      "data": { "selector": ".checkout-btn" },
+      "description": "Initiate checkout"
+    }
+  ],
+  "nextStep": "Fill shipping information",
+  "errorStep": {
+    "condition": "Checkout button not found",
+    "actions": [
+      { "type": "scroll", "data": { "selector": "footer" } },
+      { "type": "wait", "data": { "duration": 2000 } },
+      { "type": "click", "data": { "selector": ".checkout-btn" } }
+    ]
+  }
+}
+
+6. VALIDATION CHECKLIST (REQUIRED):
+✅ Selectors exist in current elements
+✅ Required data fields present per action type
+✅ nextStep describes concrete next action
+✅ errorStep has executable recovery plan
+✅ No markdown formatting
+✅ Pure JSON only
+`.trim();
+
 async function getOpenAIInstance(): Promise<OpenAI> {
-  // const { openaiKey } = await storage.get(["openaiKey"]);
+  console.debug("[OpenAI] Initializing OpenAI instance");
+
   const openaiKey =
-    "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";
+    "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";
 
-  if (!openaiKey) {
-    throw new Error("OpenAI API key not found. Please add it in settings.");
-  }
-
-  if (!openaiInstance) {
-    openaiInstance = new OpenAI({
-      apiKey: openaiKey,
-      dangerouslyAllowBrowser: true,
-    });
-  }
-
-  return openaiInstance;
-}
-
-/**
- * Sends a message to the active tab.
- */
-async function sendMessageToActiveTab(message: any): Promise<void> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) {
-    throw new Error("No active tab found.");
-  }
-  await chrome.tabs.sendMessage(tab.id, message);
-}
-
-/**
- * Parses actions like click, input, and scroll from AI responses.
- */
-function parseActionsFromResponse(response: string): {
-  text: string;
-  actions: Action[];
-} {
-  const actions: Action[] = [];
-  let cleanText = response;
-
-  const actionPatterns: { pattern: RegExp; type: ActionType }[] = [
-    // Confirm: e.g., "confirm on '#selector'" or "confirm on '#selector' with message 'Are you sure?'"
-    {
-      pattern:
-        /confirm (?:on )?["']?([^"']+)["']?(?: with message ["']([^"']+)["']?)?/i,
-      type: "confirm",
-    },
-    // Click: e.g., "click on '#selector'"
-    {
-      pattern: /click (?:on )?["']?([^"']+)["']?/i,
-      type: "click",
-    },
-    // Input: e.g., "type 'hello world' into '#inputSelector'"
-    {
-      pattern: /type ["']([^"']+)["'] (?:into|in) ["']?([^"']+)["']?/i,
-      type: "input",
-    },
-    // Select: e.g., "select 'option' from '#dropdown'"
-    {
-      pattern: /select ["']([^"']+)["'] from ["']?([^"']+)["']?/i,
-      type: "select",
-    },
-    // Scroll: e.g., "scroll to '#element'"
-    {
-      pattern: /scroll to ["']?([^"']+)["']?/i,
-      type: "scroll",
-    },
-    // Hover: e.g., "hover over '#element'"
-    {
-      pattern: /hover (?:over )?["']?([^"']+)["']?/i,
-      type: "hover",
-    },
-    // Double Click: e.g., "double click on '#element'" or "double-click on '#element'"
-    {
-      pattern: /double[-\s]?click (?:on )?["']?([^"']+)["']?/i,
-      type: "double_click",
-    },
-    // Right Click: e.g., "right click on '#element'" or "right-click on '#element'"
-    {
-      pattern: /right[-\s]?click (?:on )?["']?([^"']+)["']?/i,
-      type: "right_click",
-    },
-    // Keydown: e.g., "keydown key 'Enter' on '#input'"
-    {
-      pattern:
-        /keydown (?:key )?["']?([^"']+)["'] (?:on|at) ["']?([^"']+)["']?/i,
-      type: "keydown",
-    },
-    // Keyup: e.g., "keyup key 'Escape' on '#input'"
-    {
-      pattern: /keyup (?:key )?["']?([^"']+)["'] (?:on|at) ["']?([^"']+)["']?/i,
-      type: "keyup",
-    },
-    // Keypress: e.g., "keypress key 'a' on '#input'"
-    {
-      pattern:
-        /keypress (?:key )?["']?([^"']+)["'] (?:on|at) ["']?([^"']+)["']?/i,
-      type: "keypress",
-    },
-    // Clear: e.g., "clear the input at '#input'" or "clear textarea at '#textArea'"
-    {
-      pattern: /clear (?:the )?(?:input|textarea) (?:at )?["']?([^"']+)["']?/i,
-      type: "clear",
-    },
-    // Submit: e.g., "submit the form at '#form'"
-    {
-      pattern: /submit (?:the )?form (?:at )?["']?([^"']+)["']?/i,
-      type: "submit",
-    },
-    // Wait: e.g., "wait for 2000 milliseconds" or "wait for 2000ms"
-    {
-      pattern: /wait for (\d+)(?:\s?ms| milliseconds)?/i,
-      type: "wait",
-    },
-    // Navigate: e.g., "navigate to 'https://example.com'" or "go to 'https://example.com'"
-    {
-      pattern: /(?:navigate|go to) ["']?([^"']+)["']?/i,
-      type: "navigate",
-    },
-  ];
-
-  actionPatterns.forEach(({ pattern, type }) => {
-    const matches = cleanText.match(new RegExp(pattern, "g")) || [];
-    matches.forEach((match) => {
-      const parts = match.match(pattern);
-      if (parts) {
-        actions.push({
-          type,
-          data: {
-            selector: parts[2] ? parts[2].trim() : "",
-            value: parts[1] ? parts[1].trim() : undefined,
-          },
-        });
-        cleanText = cleanText.replace(match, ""); // Remove matched action text
-      }
-    });
-  });
-
-  return { text: cleanText.trim(), actions };
-}
-
-/**
- * Manages session-based conversation history.
- */
-let conversationHistory: { [sessionId: string]: any[] } = {};
-
-/**
- * Sends a chat request to OpenAI and returns an AIResponse.
- */
-async function sendChatRequest(
-  openai: OpenAI,
-  messages: any[],
-  sessionId: string
-): Promise<AIResponse> {
   try {
-    console.log(
-      `[Session ${sessionId}] Sending chat request with messages:`,
-      messages
-    );
-
-    // **Limit messages to avoid excessive token usage**
-    const MAX_CONTEXT_MESSAGES = 5;
-    let sessionHistory = conversationHistory[sessionId] || [];
-
-    // Keep only the last N messages for context
-    sessionHistory = sessionHistory.slice(-MAX_CONTEXT_MESSAGES);
-
-    // Ensure system message is always included
-    if (!sessionHistory.find((msg) => msg.role === "system")) {
-      sessionHistory.unshift({
-        role: "system",
-        content: `
-          You are an AI automation assistant for a Chrome extension.
-          - Process tasks step-by-step.
-          - Return **one step at a time** unless full instructions are requested.
-          - Wait for confirmation before executing critical actions.
-          - Adapt dynamically based on user feedback and page state.
-        `,
+    if (!openaiInstance) {
+      console.debug("[OpenAI] Creating new OpenAI client instance");
+      openaiInstance = new OpenAI({
+        apiKey: openaiKey,
+        dangerouslyAllowBrowser: true,
       });
+      console.debug("[OpenAI] OpenAI instance created successfully");
+    } else {
+      console.debug("[OpenAI] Using existing OpenAI instance");
     }
-
-    // Merge recent history with new user input
-    const fullContext = [...sessionHistory, ...messages];
-
-    // Send request to OpenAI
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: fullContext,
-      max_tokens: 1000,
-      temperature: 0.7,
-    });
-
-    console.log(`[Session ${sessionId}] OpenAI API response:`, response);
-
-    if (!response.choices || response.choices.length === 0) {
-      throw new Error("Invalid response: No choices returned.");
-    }
-
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      throw new Error("No content returned in the response.");
-    }
-
-    // Try to parse the content as JSON according to our expected format.
-    let aiResponse: AIResponse;
-    try {
-      const parsed = JSON.parse(content);
-      if (
-        typeof parsed.text !== "string" ||
-        typeof parsed.code !== "string" ||
-        !Array.isArray(parsed.actions)
-      ) {
-        throw new Error("Parsed JSON does not match expected format.");
-      }
-      aiResponse = {
-        text: parsed.text,
-        code: parsed.code,
-        actions: parsed.actions,
-      };
-    } catch (jsonError) {
-      console.warn(
-        `[Session ${sessionId}] Failed to parse JSON response, falling back to regex extraction.`,
-        jsonError
-      );
-      const { text, actions } = parseActionsFromResponse(content);
-      // When falling back, we assume no code was provided.
-      aiResponse = { text, code: "", actions };
-    }
-
-    // Update conversation history
-    conversationHistory[sessionId] = [
-      ...sessionHistory,
-      { role: "user", content: messages[messages.length - 1].content },
-      { role: "assistant", content: aiResponse.text },
-    ].slice(-MAX_CONTEXT_MESSAGES);
-
-    // Perform actions if the AI requested any
-    if (aiResponse.actions.length > 0) {
-      for (const action of aiResponse.actions) {
-        console.log(`[Session ${sessionId}] Performing action:`, action);
-        await sendMessageToActiveTab({ type: "PERFORM_ACTION", data: action });
-      }
-    }
-
-    return aiResponse;
-  } catch (error: any) {
-    console.error(`[Session ${sessionId}] Error in sendChatRequest:`, error);
-    // Return an AIResponse that follows our interface, even on error.
-    return {
-      text: error.message || "An unknown error occurred.",
-      code: "",
-      actions: [],
-    };
+    return openaiInstance;
+  } catch (error) {
+    console.error("[OpenAI] Error creating OpenAI instance:", error);
+    throw error;
   }
 }
-
-/**
- * Main function to interact with OpenAI while preserving conversation history.
- */
-const HISTORY_LIMIT = 5;
 
 export async function chatWithOpenAI(
   message: string,
   sessionId: string,
-  currentState: Record<string, any> = {}
+  currentState: Record<string, any> = {},
+  isInitialCommand: boolean = false
 ): Promise<AIResponse> {
-  // Validate user input
-  if (!message || !message.trim()) {
-    return { text: "No message provided.", code: "", actions: [] };
-  }
+  console.debug(`[chatWithOpenAI] Session ${sessionId} started processing`, {
+    messagePreview: message.substring(0, 50),
+    isInitialCommand,
+    currentStateElements: Object.keys(currentState).length,
+  });
+
+  const defaultResponse: AIResponse = {
+    text: "Failed to process request",
+    code: "ERR_DEFAULT",
+    actions: [],
+    nextStep: "ABORT_AUTOMATION",
+    errorStep: {
+      condition: "Initial failure",
+      actions: [],
+    },
+  };
 
   try {
-    // Get an instance of the OpenAI client
+    console.debug(`[chatWithOpenAI][${sessionId}] Getting OpenAI instance`);
     const openai = await getOpenAIInstance();
     if (!openai) {
-      throw new Error("Failed to initialize OpenAI instance.");
+      console.error(`[chatWithOpenAI][${sessionId}] OpenAI client unavailable`);
+      throw new Error("OpenAI client unavailable");
     }
 
-    // Retrieve conversation history
-    let conversation: ChatMessage[] = (await getConversationHistory()) || [];
-    if (!Array.isArray(conversation)) {
-      conversation = [];
-    }
+    console.debug(`[chatWithOpenAI][${sessionId}] Building system prompt`);
+    const systemPrompt = buildSystemPrompt(
+      currentState,
+      isInitialCommand,
+      message
+    );
 
-    // Only keep the last HISTORY_LIMIT messages to conserve context tokens
-    conversation = conversation.slice(-HISTORY_LIMIT);
-
-    // Prepare the system message with the latest instructions
-    const systemMessage: ChatMessage = {
-      role: "system",
-      content: `
-You are an AI automation assistant for a Chrome extension.  
-Your goal is to process user commands and generate **step-by-step automation actions** that reliably interact with any webpage.  
-
-## **🔹 Core Execution Rules**  
-1️⃣ **Always verify context before executing an action.**  
-   - Example: Before clicking a button, confirm the correct webpage is open.  
-   - Example: Before filling a form, confirm input fields are visible and enabled.  
-2️⃣ **If an expected condition is not met, retrace and adjust the next action.**  
-   - Example: If clicking fails, check if the element exists before retrying.  
-   - Example: If a tab is missing, check open tabs before opening a new one.  
-3️⃣ **Always return a single actionable step at a time.**  
-   - Do **not** assume success; wait for confirmation before proceeding.  
-4️⃣ **Adapt dynamically to the browser state.**  
-   - Example: If the target website is already open, switch to that tab instead of opening a new one.  
-   - Example: If a modal is expected but missing, find a way to open it first.  
-
----
-
-## **🔹 Response Format (Every Step Must Follow This)**
-Every AI-generated step **must** return a JSON object with definite action involved:
-
-{
-  "text": "A concise description of the current step",
-  "actions": [
-    {
-      "type": "verify | navigate | click | input | select | scroll | hover | double_click | right_click | keydown | keyup | keypress | clear | submit | wait",
-      "data": {
-        "selector": "A valid CSS selector for the target element (if applicable)",
-        "value": "Any required value (for input/select actions)",
-        "duration": "Duration in milliseconds (for wait actions)",
-        "key": "Key identifier for keyboard events (if applicable)",
-        "url": "A URL for navigation actions"
+    console.debug(
+      `[chatWithOpenAI][${sessionId}] Preparing conversation context`
+    );
+    const conversation = await prepareConversation(systemPrompt, message);
+    console.debug(
+      `[chatWithOpenAI][${sessionId}] Conversation context prepared`,
+      {
+        messageCount: conversation.length,
       }
+    );
+
+    console.debug(
+      `[chatWithOpenAI][${sessionId}] Sending request with retries`
+    );
+    const response = await sendWithRetry(openai, conversation, sessionId);
+    console.debug(`[chatWithOpenAI][${sessionId}] Received API response`, {
+      responsePreview: response.choices[0]?.message?.content?.substring(0, 100),
+    });
+
+    console.debug(
+      `[chatWithOpenAI][${sessionId}] Validating response structure`
+    );
+    const validatedResponse = validateAIResponse(response);
+    console.debug(`[chatWithOpenAI][${sessionId}] Response validated`, {
+      actionCount: validatedResponse.actions.length,
+      nextStep: validatedResponse.nextStep,
+    });
+
+    console.debug(
+      `[chatWithOpenAI][${sessionId}] Updating conversation history`
+    );
+    await updateConversationHistory(conversation, validatedResponse.text);
+    console.debug(
+      `[chatWithOpenAI][${sessionId}] History updated successfully`
+    );
+
+    return validatedResponse;
+  } catch (error) {
+    console.error(`[chatWithOpenAI][${sessionId}] Critical error:`, error);
+    if (error instanceof Error) {
+      console.debug(`[chatWithOpenAI][${sessionId}] Error stack:`, error.stack);
     }
-  ]
+    return {
+      ...defaultResponse,
+      text: error instanceof Error ? error.message : "Unknown error",
+      code: "ERR_CRITICAL",
+    };
+  }
 }
 
+function buildSystemPrompt(
+  currentState: Record<string, any>,
+  isInitial: boolean,
+  message: string
+): ChatMessage[] {
+  console.debug("[buildSystemPrompt] Constructing system messages", {
+    isInitialCommand: isInitial,
+    currentStateElementCount: Object.keys(currentState).length,
+  });
 
----
+  const messages: ChatMessage[] = [
+    { role: "system", content: SYSTEM_PROMPT(JSON.stringify(currentState)) },
+  ];
 
-## **🔹 Step-by-Step Execution Rules**
-1️⃣ **For any webpage interaction, first check if the correct page is open.**  
-   - Before clicking anything, **confirm the tab URL contains the expected domain.**  
-   - If the correct tab is open, **switch to it.**  
-   - If the tab is missing, **open it in a new tab.**  
+  if (isInitial) {
+    console.debug("[buildSystemPrompt] Adding initial command", {
+      commandPreview: message.substring(0, 50),
+    });
+    messages.push({
+      role: "system",
+      content: `INITIAL COMMAND: ${message}`,
+    });
+  }
 
-2️⃣ **Before interacting with any element, confirm it exists.**  
-   - Example: Before clicking "Submit," confirm that the button is present and enabled.  
-   - Example: Before filling a form, ensure the input field exists and is editable.  
+  console.debug("[buildSystemPrompt] System messages prepared", {
+    systemMessageCount: messages.length,
+  });
+  return messages;
+}
 
-3️⃣ **If an element is missing, follow this order of actions before failing:**  
-   🔹 **Step 1:** Scroll down to the bottom of the page.  
-   🔹 **Step 2:** Recheck if the element is now visible.  
-   🔹 **Step 3:** If still missing, refresh the page.  
-   🔹 **Step 4:** Reattempt the action.  
-   🔹 **Step 5:** If the element is still missing, generate a corrective step (e.g., open a modal, switch tabs).  
+async function prepareConversation(
+  systemMessages: ChatMessage[],
+  userMessage: string
+): Promise<ChatMessage[]> {
+  console.debug("[prepareConversation] Building conversation context", {
+    systemMessageCount: systemMessages.length,
+    userMessageLength: userMessage.length,
+  });
 
-4️⃣ **If an action fails, generate a corrective step before retrying.**
-   - Example: If a button is missing, first check if the page needs to scroll down.
-   - Example: If form submission fails, check for missing fields and fill them in.
+  try {
+    console.debug("[prepareConversation] Retrieving conversation history");
+    const history = await getConversationHistory();
+    console.debug("[prepareConversation] Retrieved history", {
+      historyItemCount: history.length,
+    });
 
-5️⃣ **Always break down actions into minimal steps.**
-   - Example: "Open Website" → "Scroll Down" → "Click Button" → "Wait for Next Step" → "Continue."
-   - Do **not** assume multiple steps will succeed at once.
+    const filteredHistory = history.filter((msg) => msg.role !== "system");
+    console.debug("[prepareConversation] Filtered non-system messages", {
+      filteredCount: filteredHistory.length,
+    });
 
----
+    const conversation: ChatMessage[] = [
+      ...systemMessages,
+      ...filteredHistory,
+      { role: "user", content: userMessage } as ChatMessage,
+    ].slice(-HISTORY_LIMIT * 2);
 
-## **🔹 Retracing Logic (AI Must Always Confirm Before Moving Forward)**
-🔁 **Before executing any step, validate that prerequisites are met.**
-   - If an element is missing, pause and generate a step to locate it.
-   - If the page has changed unexpectedly, navigate back or refresh.
+    console.debug("[prepareConversation] Final conversation context", {
+      totalMessages: conversation.length,
+      firstSystemMessage:
+        typeof systemMessages[0]?.content === "string"
+          ? systemMessages[0].content.substring(0, 50)
+          : "",
+    });
 
-🔄 **Example Workflow (Applies to Any Website)**
-- **User Command:** *"DFM, schedule a meeting on Calendar."*
-- **AI Steps:**
-  1. **Check if Calendar is already open in a tab.**
-     → If yes, switch to it.
-     → If no, open it in a new tab.
-  2. **Verify that the "New Event" button is visible before clicking it.**
-  3. **If not visible, scroll down and retry.**
-  4. **If still missing, refresh the page.**
-  5. **Wait for the event creation modal before entering details.**
-  6. **Type in the meeting name, date, and participants.**
-  7. **Click "Save" and confirm that the event was successfully created.**
+    return conversation;
+  } catch (error) {
+    console.error("[prepareConversation] Error preparing conversation:", error);
+    throw error;
+  }
+}
 
----
+async function sendWithRetry(
+  openai: OpenAI,
+  messages: ChatMessage[],
+  sessionId: string,
+  retries = MAX_RETRIES
+): Promise<any> {
+  console.debug(`[sendWithRetry][${sessionId}] Attempting API request`, {
+    retriesRemaining: retries,
+  });
 
-## **🔹 Debugging & Logging**
-1️⃣ **Always include \`console.log()\` statements in JavaScript code for debugging.**
-2️⃣ **For each action failure, AI must generate a retry or alternative step.**
-3️⃣ **If an expected UI element is missing, AI should determine why and adjust accordingly.**
-4️⃣ **If the browser state is unexpected (wrong tab, popup closed, etc.), AI should correct it before continuing.**
+  try {
+    console.debug(`[sendWithRetry][${sessionId}] Sending request to OpenAI`, {
+      messageCount: messages.length,
+      firstMessage:
+        typeof messages[0]?.content === "string"
+          ? messages[0].content.substring(0, 50)
+          : "",
+    });
 
----
+    console.log({ messages });
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: messages.map((msg) => ({
+        role: msg.role,
+        content:
+          typeof msg.content === "string"
+            ? msg.content
+            : JSON.stringify(msg.content),
+      })),
+      max_tokens: 1000,
+      temperature: 0.7,
+    });
 
-## **🔹 AI Must Adapt to Real-World Failures**
-- **Scenario 1: Button is Missing?**
-  - Scroll down first.
-  - If still missing, refresh the page.
-- **Scenario 2: Input Field is Disabled?**
-  - Check if another required field is missing.
-  - Ensure the form is in "edit mode."
-- **Scenario 3: Wrong Page Opened?**
-  - Navigate back or search for the correct tab.
+    console.debug(`[sendWithRetry][${sessionId}] API request successful`);
+    return response;
+  } catch (error) {
+    console.error(`[sendWithRetry][${sessionId}] API request failed:`, error);
 
----
-
-## **🔹 Current Page State (AI Should Use This Data)**
-Below are the currently interactable elements on the page:
-${JSON.stringify(currentState, null, 2)}
----
-  `.trim(),
-    };
-
-    // Remove outdated system messages to ensure the latest instructions are used
-    conversation = conversation.filter((msg) => msg.role !== "system");
-    conversation.unshift(systemMessage);
-
-    // Append the current user message
-    conversation.push({ role: "user", content: message });
-
-    // Format the conversation messages for the OpenAI API
-    const openAIMessages = conversation.map((msg) => ({
-      role: msg.role,
-      content:
-        typeof msg.content === "object"
-          ? JSON.stringify(msg.content)
-          : msg.content,
-    }));
-
-    console.log("Sending chat request with context:", openAIMessages);
-
-    // Send the request to OpenAI and get an AIResponse
-    const response = await sendChatRequest(openai, openAIMessages, sessionId);
-    if (!response || typeof response.text !== "string") {
-      throw new Error("Invalid response from OpenAI.");
+    if (retries > 0) {
+      console.debug(`[sendWithRetry][${sessionId}] Retrying...`, {
+        retriesRemaining: retries - 1,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      return sendWithRetry(openai, messages, sessionId, retries - 1);
     }
 
-    // Save the updated conversation history including the assistant's response
-    await saveConversationHistory([
-      ...conversation,
-      { role: "assistant", content: response.text },
-    ]);
+    console.error(`[sendWithRetry][${sessionId}] All retries exhausted`);
+    throw error;
+  }
+}
 
-    return response;
-  } catch (error: any) {
-    console.error("Error in chatWithOpenAI:", error);
+function validateAIResponse(rawResponse: any): AIResponse {
+  console.debug("[validateAIResponse] Validating response structure");
+
+  try {
+    console.debug("[validateAIResponse] Parsing raw response");
+    const content = JSON.parse(rawResponse.choices[0].message.content);
+    console.debug("[validateAIResponse] JSON parsed successfully");
+
+    if (!content.text || !Array.isArray(content.actions)) {
+      console.error("[validateAIResponse] Invalid structure", {
+        hasText: !!content.text,
+        hasActions: Array.isArray(content.actions),
+      });
+      throw new Error("Invalid response structure");
+    }
+
+    console.debug("[validateAIResponse] Building validated response", {
+      actionCount: content.actions.length,
+      nextStep: content.nextStep,
+    });
+
     return {
-      text: error?.message || "Unknown error occurred.",
-      code: "",
-      actions: [],
+      text: content.text,
+      code: content.code || "",
+      actions: content.actions || [],
+      nextStep: content.nextStep || "CONTINUE_AUTOMATION",
+      errorStep: content.errorStep || {
+        condition: "Generic failure",
+        actions: [],
+      },
     };
+  } catch (error) {
+    console.error("[validateAIResponse] Validation failed, using fallback");
+    return parseFallbackResponse(rawResponse);
+  }
+}
+
+function parseFallbackResponse(response: any): AIResponse {
+  console.debug("[parseFallbackResponse] Attempting fallback parsing");
+
+  try {
+    const content = response.choices[0]?.message?.content || "";
+    console.debug("[parseFallbackResponse] Raw content:", {
+      contentPreview: content.substring(0, 100),
+    });
+
+    const textMatch = content.match(/"text":\s*"([^"]+)"/);
+    const actionsMatch = content.match(/"actions":\s*(\[[\s\S]*?\])/);
+
+    console.debug("[parseFallbackResponse] Regex matches", {
+      textFound: !!textMatch,
+      actionsFound: !!actionsMatch,
+    });
+
+    return {
+      text: textMatch?.[1] || "Could not parse response",
+      code: "ERR_PARSE_FAILED",
+      actions: actionsMatch ? JSON.parse(actionsMatch[1]) : [],
+      nextStep: content.includes("FINISHED_AUTOMATION")
+        ? "FINISHED_AUTOMATION"
+        : "REQUIRE_MANUAL_INPUT",
+      errorStep: {
+        condition: "Invalid response format",
+        actions: [],
+      },
+    };
+  } catch (error) {
+    console.error("[parseFallbackResponse] Fallback parsing failed");
+    return {
+      text: "Critical parse failure",
+      code: "ERR_PARSE_FAILED",
+      actions: [],
+      nextStep: "ABORT_AUTOMATION",
+      errorStep: {
+        condition: "Unrecoverable parse error",
+        actions: [],
+      },
+    };
+  }
+}
+
+async function updateConversationHistory(
+  conversation: ChatMessage[],
+  responseText: string
+) {
+  console.debug("[updateConversationHistory] Updating storage", {
+    conversationLength: conversation.length,
+    responsePreview: responseText.substring(0, 50),
+  });
+
+  try {
+    const newHistory = [
+      ...conversation,
+      { role: "assistant", content: responseText },
+    ].slice(-HISTORY_LIMIT);
+
+    console.debug("[updateConversationHistory] Setting new history", {
+      newHistoryLength: newHistory.length,
+    });
+
+    await chrome.storage.local.set({ conversationHistory: newHistory });
+    console.debug("[updateConversationHistory] Storage updated successfully");
+  } catch (error) {
+    console.error("[updateConversationHistory] Storage update failed:", error);
+    throw error;
+  }
+}
+
+async function getConversationHistory(): Promise<ChatMessage[]> {
+  console.debug("[getConversationHistory] Retrieving from storage");
+
+  try {
+    const result = await chrome.storage.local.get("conversationHistory");
+    const history = result.conversationHistory || [];
+
+    console.debug("[getConversationHistory] Retrieved history", {
+      historyLength: history.length,
+    });
+
+    return history;
+  } catch (error) {
+    console.error("[getConversationHistory] Storage retrieval failed:", error);
+    return [];
   }
 }
