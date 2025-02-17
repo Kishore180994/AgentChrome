@@ -1,58 +1,51 @@
+import { PageElement } from "./services/ai/interfaces";
+
 /******************************************************
  * 1) Global Declaration to avoid "window[...] error"
  ******************************************************/
 declare global {
   interface Window {
     __AGENT_CHROME_INITIALIZED__?: boolean;
-    postMessage(message: ExtensionMessage, targetOrigin: string): void;
+    postMessage(message: any, targetOrigin: string): void;
   }
 }
 
-import { ExtensionMessage, ReactMessage } from "./types/messages";
-
 /******************************************************
- * 2) Interface Definitions (Consistent Formatting)
+ * 2) Minimal definitions for local "Action"
+ *    (matching the new approach from background.ts)
  ******************************************************/
-interface AIResponse {
-  text: string;
-  code: string;
-  actions: Action[];
-}
-
-type ActionType =
-  | "confirm"
+type LocalActionType =
   | "click"
-  | "input"
-  | "select"
+  | "input_text"
   | "scroll"
+  | "verify"
+  | "extract_content"
+  | "submit_form"
+  | "key_press"
+  | "done"
+  | "navigate"
   | "hover"
+  | "select"
+  | "wait"
   | "double_click"
   | "right_click"
-  | "keydown"
-  | "keyup"
-  | "keypress"
-  | "clear"
-  | "submit"
-  | "wait"
-  | "input_text"
-  | "doubleClick"
-  | "rightClick"
-  | "navigate";
+  | "click_element";
 
-interface Action {
-  type: ActionType;
-  data: ActionData;
-  message?: string;
+interface LocalAction {
+  type: LocalActionType;
+  data: {
+    selector?: string;
+    value?: string;
+    text?: string; // For input_text or key_press
+    index?: number; // Possibly used for referencing an element
+    key?: string; // For key_press
+    duration?: number;
+    url?: string;
+    offset?: number;
+    direction?: "up" | "down";
+    // ... add more as needed
+  };
   description?: string;
-}
-
-interface ActionData {
-  selector: string;
-  value?: string;
-  duration?: number;
-  key?: string;
-  keyCode?: number;
-  url?: string;
 }
 
 /******************************************************
@@ -61,7 +54,7 @@ interface ActionData {
 const AGENT_KEY = "__AGENT_CHROME_INITIALIZED__";
 if (!window[AGENT_KEY]) {
   window[AGENT_KEY] = true;
-  console.log("[content.ts] Loaded");
+  console.log("[content.ts] Loaded content script successfully.");
 
   let sidebarContainer: HTMLDivElement | null = null;
   let sidebarVisible = false;
@@ -77,7 +70,9 @@ if (!window[AGENT_KEY]) {
     switch (message.type) {
       case "PERFORM_ACTION":
         console.log("[content.ts] Executing action:", message.action);
-        highlightElement(message.action.data.selector);
+        if (message.action?.data?.selector) {
+          highlightElement(message.action.data.selector);
+        }
         executeDOMAction(message.action);
         break;
 
@@ -98,22 +93,24 @@ if (!window[AGENT_KEY]) {
     }
   });
 
-  // ✅ Keep connection alive by sending periodic "heartbeat" messages
+  // ✅ Keep connection alive
   setInterval(() => {
-    port.postMessage({ type: "KEEP_ALIVE" });
+    port.postMessage({ type: "KEEP_ALIVE", tabId: -1 });
   }, 5000);
 
-  // ✅ Notify background that content script is active
+  // ✅ Notify background that content script is active (optional)
   chrome.runtime.sendMessage({ type: "REGISTER_CONTENT_SCRIPT" });
 
   /******************************************************
    * 4) Listen for Messages from Background & ChatWidget
    ******************************************************/
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     switch (message.type) {
       case "PERFORM_ACTION":
         console.log("[content.ts] Executing action:", message.action);
-        highlightElement(message.action.data.selector);
+        if (message.action?.data?.selector) {
+          highlightElement(message.action.data.selector);
+        }
         executeDOMAction(message.action);
         sendResponse({ success: true });
         return true;
@@ -136,19 +133,16 @@ if (!window[AGENT_KEY]) {
   });
 
   /******************************************************
-   * 5) Highlight Element Before Execution
+   * 5) highlightElement - visual overlay
    ******************************************************/
   function highlightElement(selector: string) {
     const element = document.querySelector(selector);
     if (!element) {
-      console.warn(
-        "[content.ts] Element not found for highlighting:",
-        selector
-      );
+      console.warn("[content.ts] highlightElement: not found:", selector);
       return;
     }
 
-    // Create a highlight box
+    // Create highlight box
     const rect = element.getBoundingClientRect();
     const overlay = document.createElement("div");
     overlay.className = "ai-highlight-box";
@@ -167,34 +161,40 @@ if (!window[AGENT_KEY]) {
   }
 
   /******************************************************
-   * 6) Execute AI Actions
+   * 6) Execute DOM Actions
    ******************************************************/
-  function executeDOMAction(action: Action) {
+  function executeDOMAction(action: LocalAction) {
     try {
-      let element = document.querySelector(action.data.selector) as HTMLElement;
-      if (!element) {
-        console.warn("[content.ts] Element not found, scrolling down...");
+      // If no selector needed (e.g. "done", "verify" handled by background),
+      // we might skip direct DOM interaction. But let's handle the rest:
+      const sel = action.data.selector || "";
+      let element = sel ? (document.querySelector(sel) as HTMLElement) : null;
+
+      if (!element && sel) {
+        console.warn("[content.ts] Element not found. Attempting scroll...");
+        // Attempt to scroll down to see if element appears
         window.scrollTo(0, document.body.scrollHeight);
 
         setTimeout(() => {
-          element = document.querySelector(action.data.selector) as HTMLElement;
+          element = document.querySelector(sel) as HTMLElement;
           if (!element) {
-            console.error(
-              "[content.ts] Element still not found after scrolling."
-            );
+            console.error("[content.ts] Element still not found after scroll.");
             chrome.runtime.sendMessage({
               type: "ACTION_FAILED",
-              error: "Element not found.",
+              error: `Element not found for selector: ${sel}`,
             });
             return;
           }
-          performAction(element, action);
+          performLocalDOMAction(element, action);
         }, 1000);
+      } else if (element) {
+        performLocalDOMAction(element, action);
       } else {
-        performAction(element, action);
+        // No selector or not needed
+        performLocalDOMAction(null, action);
       }
     } catch (error: any) {
-      console.error("[content.ts] Error executing action:", error);
+      console.error("[content.ts] Error executing DOM action:", error);
       chrome.runtime.sendMessage({
         type: "ACTION_FAILED",
         error: error.message,
@@ -202,35 +202,132 @@ if (!window[AGENT_KEY]) {
     }
   }
 
-  function performAction(element: HTMLElement, action: Action) {
+  function performLocalDOMAction(
+    target: HTMLElement | null,
+    action: LocalAction
+  ) {
     switch (action.type) {
       case "click":
-        element.click();
+      case "click_element":
+        target?.click();
+        actionSuccess();
         break;
-      case "input":
-        (element as HTMLInputElement).value = action.data.value || "";
-        element.dispatchEvent(new Event("input", { bubbles: true }));
+
+      case "input_text":
+        if (!target) {
+          actionFail("No element for input_text");
+          break;
+        }
+        (target as HTMLInputElement).value = action.data.text || "";
+        target.dispatchEvent(new Event("input", { bubbles: true }));
+        actionSuccess();
         break;
-      case "select":
-        (element as HTMLSelectElement).value = action.data.value || "";
-        element.dispatchEvent(new Event("change", { bubbles: true }));
-        break;
+
       case "scroll":
-        element.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (target) {
+          target.scrollIntoView({ behavior: "smooth", block: "center" });
+          actionSuccess();
+        } else {
+          // If no target, might do window scroll
+          window.scrollBy({
+            top: action.data.offset || 200,
+            behavior: "smooth",
+          });
+          actionSuccess();
+        }
         break;
+
+      case "select":
+        if (!target) {
+          actionFail("No element for select");
+          break;
+        }
+        (target as HTMLSelectElement).value = action.data.value || "";
+        target.dispatchEvent(new Event("change", { bubbles: true }));
+        actionSuccess();
+        break;
+
+      case "hover":
+        if (!target) {
+          actionFail("No element for hover");
+          break;
+        }
+        target.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+        actionSuccess();
+        break;
+
+      case "double_click":
+      case "right_click":
+        if (!target) {
+          actionFail("No element for right/double click");
+          break;
+        }
+        // We can unify these with custom events:
+        const eType =
+          action.type === "double_click" ? "dblclick" : "contextmenu";
+        target.dispatchEvent(new MouseEvent(eType, { bubbles: true }));
+        actionSuccess();
+        break;
+
+      case "submit_form":
+        if (!target) {
+          actionFail("No element for submit_form");
+          break;
+        }
+        // If it's a form
+        if (target instanceof HTMLFormElement) {
+          target.submit();
+        } else {
+          // Try to find a parent form
+          const formEl = target.closest("form");
+          if (formEl) formEl.submit();
+          else actionFail("submit_form: no form found");
+        }
+        actionSuccess();
+        break;
+
+      case "key_press":
+        // e.g. sending a key event to window or element
+        const key = action.data.key || "Enter";
+        const keyEvent = new KeyboardEvent("keydown", { key, bubbles: true });
+        (target || window.document).dispatchEvent(keyEvent);
+        actionSuccess();
+        break;
+
+      case "extract_content":
+        // Possibly do something more advanced, e.g. extracting text from target
+        // For now, just success
+        actionSuccess();
+        break;
+
+      case "done":
+        // The AI says we're fully done
+        actionSuccess("Done action invoked.");
+        break;
+
       default:
-        console.error("[content.ts] Unknown action type:", action.type);
+        console.warn("[content.ts] Unknown or no-OP action type:", action.type);
         chrome.runtime.sendMessage({
           type: "ACTION_FAILED",
-          error: "Unknown action type",
+          error: `Unknown action: ${action.type}`,
         });
-        return;
     }
-    chrome.runtime.sendMessage({ type: "ACTION_SUCCESS" });
+  }
+
+  function actionSuccess(msg?: string) {
+    chrome.runtime.sendMessage({ type: "ACTION_SUCCESS", message: msg });
+  }
+
+  function actionFail(errorMsg: string) {
+    console.error("[content.ts]", errorMsg);
+    chrome.runtime.sendMessage({
+      type: "ACTION_FAILED",
+      error: errorMsg,
+    });
   }
 
   /******************************************************
-   * 7) Sidebar Handling (RESTORED)
+   * 7) Sidebar Handling
    ******************************************************/
   function toggleSidebar() {
     if (!sidebarContainer) injectSidebar();
@@ -239,9 +336,6 @@ if (!window[AGENT_KEY]) {
     document.body.classList.toggle("sidebar-hidden", !sidebarVisible);
   }
 
-  /******************************************************
-   * 7) Sidebar Handling (RESTORED `injectSidebar`)
-   ******************************************************/
   function injectSidebar() {
     if (document.getElementById("agent-chrome-root")) return;
 
@@ -249,6 +343,7 @@ if (!window[AGENT_KEY]) {
     sidebarContainer.id = "agent-chrome-root";
     document.body.appendChild(sidebarContainer);
 
+    // If no styling injected, add some
     if (!document.getElementById("agent-chrome-style")) {
       const style = document.createElement("style");
       style.id = "agent-chrome-style";
@@ -257,11 +352,11 @@ if (!window[AGENT_KEY]) {
       body.sidebar-hidden { width: 100% !important; margin-right: 0 !important; }
       #agent-chrome-root { position: fixed; top: 0; right: 0; width: 400px; height: 100vh; background: white; box-shadow: -2px 0 5px rgba(0, 0, 0, 0.1); z-index: 2147483647; transition: transform 0.3s ease-in-out; }
       #agent-chrome-root.hidden { transform: translateX(100%); }
-    `;
+      `;
       document.head.appendChild(style);
     }
 
-    // ✅ Inject sidebar.js for React App (RESTORED from your original code)
+    // Add your React sidebar script
     const script = document.createElement("script");
     script.type = "module";
     script.src = chrome.runtime.getURL("sidebar.js");
@@ -272,21 +367,21 @@ if (!window[AGENT_KEY]) {
   }
 
   /******************************************************
-   * 8) Listen for Messages from Content Script (RESTORED)
+   * 8) Listen for "USER_COMMAND" from ChatWidget
    ******************************************************/
   window.addEventListener("message", (event: MessageEvent) => {
-    if (event.origin !== window.location.origin || event.source !== window)
+    if (event.origin !== window.location.origin || event.source !== window) {
       return;
+    }
 
-    const data = event.data as { type: string; command?: string };
-
-    if (data.type === "USER_COMMAND" && data.command) {
+    const data = event.data;
+    if (data?.type === "USER_COMMAND" && data.command) {
       console.log(
-        "[content.ts] Received command from ChatWidget:",
+        "[content.ts] ChatWidget command -> background:",
         data.command
       );
 
-      // Forward the command to background.ts for AI processing
+      // Forward to background
       chrome.runtime.sendMessage({
         type: "PROCESS_COMMAND",
         command: data.command,
@@ -295,12 +390,30 @@ if (!window[AGENT_KEY]) {
     }
   });
 
-  /******************************************************
-   * 5) Extract **ALL** Available Data for Each Element
-   ******************************************************/
-  function extractPageElements() {
+  /**
+   * Extracts interactive elements from the current document, excluding elements within the sidebar,
+   * and returns an array of `PageElement` objects containing metadata about each element.
+   *
+   * @returns {PageElement[]} An array of objects representing interactive elements on the page.
+   *
+   * @typedef {Object} PageElement
+   * @property {number} index - The index of the element.
+   * @property {string} tagName - The tag name of the element.
+   * @property {string} selector - A CSS selector that uniquely identifies the element.
+   * @property {string} text - A short text snippet or placeholder text of the element.
+   * @property {string} fullText - The full text content of the element or its closest parent div.
+   * @property {Record<string, string | null>} attributes - A record of the element's attributes.
+   * @property {string} [role] - The ARIA role of the element, if any.
+   * @property {string} [accessibleLabel] - The accessible label of the element, if any.
+   * @property {Object} boundingBox - The bounding box of the element.
+   * @property {number} boundingBox.x - The x-coordinate of the element's bounding box.
+   * @property {number} boundingBox.y - The y-coordinate of the element's bounding box.
+   * @property {number} boundingBox.width - The width of the element's bounding box.
+   * @property {number} boundingBox.height - The height of the element's bounding box.
+   */
+  function extractPageElements(): PageElement[] {
     const elements: Array<{
-      id: number;
+      index: number;
       tagName: string;
       selector: string;
       text: string;
@@ -313,72 +426,111 @@ if (!window[AGENT_KEY]) {
 
     let idx = 1;
 
-    document
-      .querySelectorAll("button, a, input, textarea, select, label, div[role]")
-      .forEach((el) => {
-        if (!(el instanceof HTMLElement)) return;
+    // Utility to check if an element is interactive by tagName/role
+    function isElementInteractive(el: HTMLElement): boolean {
+      const interactiveTags = [
+        "BUTTON",
+        "A",
+        "INPUT",
+        "TEXTAREA",
+        "SELECT",
+        "LABEL",
+      ];
+      if (interactiveTags.includes(el.tagName)) return true;
+      if (el.hasAttribute("role") && el.getAttribute("role")?.trim())
+        return true;
+      return false;
+    }
 
-        const selector = el.id
-          ? `#${el.id}`
-          : el.className
-          ? `.${el.className.replace(/\s+/g, ".")}`
-          : `tag:${el.tagName.toLowerCase()}`;
+    // Query all elements in the document, excluding the sidebar
+    document.querySelectorAll("*:not(#agent-chrome-root *)").forEach((el) => {
+      if (!(el instanceof HTMLElement)) return;
 
-        const textSnippet = (
-          el.textContent ||
-          el.getAttribute("placeholder") ||
-          ""
-        )
-          .trim()
-          .slice(0, 50);
-        const parentDiv = el.closest("div");
-        const fullText = parentDiv
-          ? parentDiv.innerText.trim().slice(0, 200)
-          : textSnippet;
+      // Determine if interactive
+      const interactive = isElementInteractive(el);
 
-        const attributes: Record<string, string | null> = {};
-        Array.from(el.attributes).forEach((attr) => {
-          attributes[attr.name] = attr.value;
-        });
+      // Skip non-interactive elements
+      if (!interactive) return;
 
-        const role = el.getAttribute("role") || null;
-        const accessibleLabel =
-          el.getAttribute("aria-label") ||
-          el.getAttribute("alt") ||
-          el.innerText.trim() ||
-          null;
+      // Build a best guess selector
+      let selector: string;
+      if (el.id) {
+        selector = `#${CSS.escape(el.id)}`;
+      } else if (el.className) {
+        selector = `.${el.className.trim().replace(/\s+/g, ".")}`;
+      } else {
+        selector = `tag:${el.tagName.toLowerCase()}`;
+      }
 
-        const rect = el.getBoundingClientRect();
-        const boundingBox = {
-          x: rect.left + window.scrollX,
-          y: rect.top + window.scrollY,
-          width: rect.width,
-          height: rect.height,
-        };
+      // Derive a short text snippet (or placeholder text)
+      const textSnippet = (
+        el.textContent ||
+        el.getAttribute("placeholder") ||
+        ""
+      ).trim();
 
-        elements.push({
-          id: idx++,
-          tagName: el.tagName.toLowerCase(),
-          selector,
-          text: textSnippet,
-          fullText,
-          attributes,
-          role: role ? role : undefined,
-          accessibleLabel: accessibleLabel ? accessibleLabel : undefined,
-          boundingBox,
-        });
+      // Possibly collect fuller text from a parent div
+      const parentDiv = el.closest("div");
+      const fullText = parentDiv ? parentDiv.innerText.trim() : textSnippet;
 
-        drawDebugHighlight(el, selector);
+      // Gather attributes
+      const attributes: Record<string, string | null> = {};
+      Array.from(el.attributes).forEach((attr) => {
+        attributes[attr.name] = attr.value;
       });
+
+      // Check for role/aria
+      const role = el.getAttribute("role") || undefined;
+      const accessibleLabel =
+        el.getAttribute("aria-label") ||
+        el.getAttribute("alt") ||
+        el.innerText.trim() ||
+        undefined;
+
+      // Compute bounding box
+      const rect = el.getBoundingClientRect();
+      const boundingBox = {
+        x: rect.left + window.scrollX,
+        y: rect.top + window.scrollY,
+        width: rect.width,
+        height: rect.height,
+      };
+
+      elements.push({
+        index: idx++, // renamed from "id"
+        tagName: el.tagName.toLowerCase(),
+        selector,
+        text: textSnippet,
+        fullText,
+        attributes,
+        role,
+        accessibleLabel,
+        boundingBox,
+      });
+
+      // Optionally highlight ONLY if interactive
+      drawDebugHighlight(el, idx, selector);
+    });
 
     return elements;
   }
 
-  /******************************************************
-   * 6) Draw a Debug Highlight on Extracted Elements
-   ******************************************************/
-  function drawDebugHighlight(element: HTMLElement, selector: string) {
+  /**
+   * Optional debug highlight function
+   * You can disable for non-interactive elements, or highlight all
+   */
+  /**
+   * Draws a debug highlight overlay around an element,
+   * labeling it with [index] and the selector.
+   */
+  function drawDebugHighlight(
+    element: HTMLElement,
+    index: number,
+    selector: string
+  ) {
     const rect = element.getBoundingClientRect();
+
+    // Create the main overlay
     const overlay = document.createElement("div");
     overlay.className = "debug-highlight";
     overlay.style.position = "absolute";
@@ -391,8 +543,23 @@ if (!window[AGENT_KEY]) {
     overlay.style.height = `${rect.height}px`;
     overlay.style.backgroundColor = "rgba(0, 0, 255, 0.1)";
 
+    // Create a label that shows the [index] and selector
+    const label = document.createElement("div");
+    label.innerText = `[${index}] ${selector}`;
+    label.style.position = "absolute";
+    label.style.top = "0";
+    label.style.left = "0";
+    label.style.backgroundColor = "rgba(255, 255, 255, 0.9)";
+    label.style.color = "#000";
+    label.style.fontSize = "10px";
+    label.style.fontFamily = "monospace";
+    label.style.padding = "2px 4px";
+    label.style.pointerEvents = "none";
+
+    overlay.appendChild(label);
     document.body.appendChild(overlay);
 
-    setTimeout(() => overlay.remove(), 5000);
+    // Remove the overlay after a few seconds
+    setTimeout(() => overlay.remove(), 3000);
   }
 }

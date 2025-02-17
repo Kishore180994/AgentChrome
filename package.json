@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "dotenv": "^16.4.7",
     "highlight.js": "^11.11.1",
     "lucide-react": "^0.294.0",
     "openai": "^4.77.0",

@@ -18,6 +18,7 @@ export interface InputTextAction {
   input_text: {
     index: number; // e.g. element index
     text: string; // text to type
+    selector: string; // e.g. CSS selector
   };
 }
 
@@ -25,6 +26,7 @@ export interface InputTextAction {
 export interface ClickElementAction {
   click_element: {
     index: number; // element index
+    selector: string; // e.g. CSS selector
   };
 }
 
@@ -64,6 +66,7 @@ export interface ScrollAction {
 export interface SubmitFormAction {
   submit_form: {
     index?: number; // element index if needed
+    selector?: string; // e.g. CSS selector
   };
 }
 

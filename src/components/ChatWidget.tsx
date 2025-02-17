@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from "react";
-import { chatWithOpenAI } from "../services/openai/api";
 import { Send, Eye, EyeOff } from "lucide-react";
 import Markdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -22,8 +21,6 @@ export function ChatWidget() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isWatching, setIsWatching] = useState(false);
-  const [sessionId] = useState(() => `session-${Date.now()}`); // Unique session per chat
-
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to the latest message
