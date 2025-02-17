@@ -391,42 +391,66 @@ if (!window[AGENT_KEY]) {
   });
 
   /**
-   * Extracts interactive elements from the current document, excluding elements within the sidebar,
-   * and returns an array of `PageElement` objects containing metadata about each element.
+   * Extracts interactive, visible elements within the viewport,
+   * skipping those that have no meaningful text.
    *
-   * @returns {PageElement[]} An array of objects representing interactive elements on the page.
+   * @returns {PageElement[]} filtered array of elements
    *
    * @typedef {Object} PageElement
-   * @property {number} index - The index of the element.
-   * @property {string} tagName - The tag name of the element.
-   * @property {string} selector - A CSS selector that uniquely identifies the element.
-   * @property {string} text - A short text snippet or placeholder text of the element.
-   * @property {string} fullText - The full text content of the element or its closest parent div.
-   * @property {Record<string, string | null>} attributes - A record of the element's attributes.
-   * @property {string} [role] - The ARIA role of the element, if any.
-   * @property {string} [accessibleLabel] - The accessible label of the element, if any.
-   * @property {Object} boundingBox - The bounding box of the element.
-   * @property {number} boundingBox.x - The x-coordinate of the element's bounding box.
-   * @property {number} boundingBox.y - The y-coordinate of the element's bounding box.
-   * @property {number} boundingBox.width - The width of the element's bounding box.
-   * @property {number} boundingBox.height - The height of the element's bounding box.
+   * @property {number} index
+   * @property {string} tagName
+   * @property {string} selector
+   * @property {string} text
+   * @property {string} fullText
+   * @property {Record<string, string | null>} attributes
+   * @property {string} [role]
+   * @property {string} [accessibleLabel]
+   * @property {Object} boundingBox
+   * @property {number} boundingBox.x
+   * @property {number} boundingBox.y
+   * @property {number} boundingBox.width
+   * @property {number} boundingBox.height
    */
   function extractPageElements(): PageElement[] {
-    const elements: Array<{
-      index: number;
-      tagName: string;
-      selector: string;
-      text: string;
-      fullText: string;
-      attributes: Record<string, string | null>;
-      role?: string;
-      accessibleLabel?: string;
-      boundingBox: { x: number; y: number; width: number; height: number };
-    }> = [];
-
+    const elements: PageElement[] = [];
     let idx = 1;
 
-    // Utility to check if an element is interactive by tagName/role
+    // 1) Check if the element is visible (not display:none, not visibility:hidden, and nonzero bounding box)
+    function isVisible(el: HTMLElement): boolean {
+      const style = window.getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden")
+        return false;
+
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return false;
+
+      return true;
+    }
+
+    // 2) Check if the element is in the current viewport (i.e., partially or fully)
+    function isInViewport(el: HTMLElement): boolean {
+      const rect = el.getBoundingClientRect();
+      return (
+        rect.bottom >= 0 &&
+        rect.right >= 0 &&
+        rect.top <=
+          (window.innerHeight || document.documentElement.clientHeight) &&
+        rect.left <= (window.innerWidth || document.documentElement.clientWidth)
+      );
+    }
+
+    // 3) Extract meaningful text from element
+    function getMeaningfulText(el: HTMLElement): string {
+      // Prefer aria-label, alt, placeholder, then fallback to textContent
+      const label =
+        el.getAttribute("aria-label") ||
+        el.getAttribute("alt") ||
+        el.getAttribute("placeholder") ||
+        el.textContent;
+      return (label || "").trim();
+    }
+
+    // 4) Check if the element is likely interactive by tag or role
     function isElementInteractive(el: HTMLElement): boolean {
       const interactiveTags = [
         "BUTTON",
@@ -436,23 +460,45 @@ if (!window[AGENT_KEY]) {
         "SELECT",
         "LABEL",
       ];
-      if (interactiveTags.includes(el.tagName)) return true;
-      if (el.hasAttribute("role") && el.getAttribute("role")?.trim())
+      if (interactiveTags.includes(el.tagName)) {
+        // Special case for <a>, require a meaningful href
+        if (el.tagName === "A") {
+          const href = el.getAttribute("href");
+          if (!href || href === "#") return false;
+        }
         return true;
+      }
+
+      // If it has a role, check if it's not purely presentational
+      const roleAttr = el.getAttribute("role");
+      if (
+        roleAttr &&
+        roleAttr.trim() &&
+        !["presentation", "none"].includes(roleAttr.trim())
+      ) {
+        return true;
+      }
+
       return false;
     }
 
-    // Query all elements in the document, excluding the sidebar
     document.querySelectorAll("*:not(#agent-chrome-root *)").forEach((el) => {
       if (!(el instanceof HTMLElement)) return;
 
-      // Determine if interactive
-      const interactive = isElementInteractive(el);
+      // A) Must be interactive
+      if (!isElementInteractive(el)) return;
 
-      // Skip non-interactive elements
-      if (!interactive) return;
+      // B) Must be visible
+      if (!isVisible(el)) return;
 
-      // Build a best guess selector
+      // C) Must be in the viewport (uncomment to filter out offscreen elements)
+      if (!isInViewport(el)) return;
+
+      // D) Extract meaningful text and skip if there's none
+      const textSnippet = getMeaningfulText(el);
+      if (!textSnippet) return;
+
+      // E) Build a best-guess selector
       let selector: string;
       if (el.id) {
         selector = `#${CSS.escape(el.id)}`;
@@ -462,32 +508,26 @@ if (!window[AGENT_KEY]) {
         selector = `tag:${el.tagName.toLowerCase()}`;
       }
 
-      // Derive a short text snippet (or placeholder text)
-      const textSnippet = (
-        el.textContent ||
-        el.getAttribute("placeholder") ||
-        ""
-      ).trim();
-
-      // Possibly collect fuller text from a parent div
-      const parentDiv = el.closest("div");
-      const fullText = parentDiv ? parentDiv.innerText.trim() : textSnippet;
-
-      // Gather attributes
+      // F) Whitelist of attributes to keep
       const attributes: Record<string, string | null> = {};
+      const attributeWhitelist = [
+        "href",
+        "id",
+        "type",
+        "name",
+        "value",
+        "title",
+        "aria-label",
+        "alt",
+        "placeholder",
+      ];
       Array.from(el.attributes).forEach((attr) => {
-        attributes[attr.name] = attr.value;
+        if (attributeWhitelist.includes(attr.name)) {
+          attributes[attr.name] = attr.value;
+        }
       });
 
-      // Check for role/aria
-      const role = el.getAttribute("role") || undefined;
-      const accessibleLabel =
-        el.getAttribute("aria-label") ||
-        el.getAttribute("alt") ||
-        el.innerText.trim() ||
-        undefined;
-
-      // Compute bounding box
+      // G) Compute bounding box
       const rect = el.getBoundingClientRect();
       const boundingBox = {
         x: rect.left + window.scrollX,
@@ -496,19 +536,19 @@ if (!window[AGENT_KEY]) {
         height: rect.height,
       };
 
+      // H) Finally, add to our result array
       elements.push({
-        index: idx++, // renamed from "id"
+        index: idx++,
         tagName: el.tagName.toLowerCase(),
         selector,
-        text: textSnippet,
-        fullText,
+        text: textSnippet.slice(0, 100), // truncated snippet
+        fullText: "", // or you can collect a snippet from the parent container
         attributes,
-        role,
-        accessibleLabel,
+        role: el.getAttribute("role") || undefined,
+        accessibleLabel:
+          el.getAttribute("aria-label") || el.getAttribute("alt") || undefined,
         boundingBox,
       });
-
-      // Optionally highlight ONLY if interactive
       drawDebugHighlight(el, idx, selector);
     });
 
