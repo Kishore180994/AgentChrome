@@ -560,6 +560,7 @@ function sendActionToActiveTab(a: LocalAction) {
  ********************************************************/
 chrome.runtime.onMessage.addListener(async (msg, _sender, resp) => {
   if (msg.type === "PROCESS_COMMAND") {
+    await chrome.storage.local.set({ conversationHistory: [] });
     const [activeTab] = await chrome.tabs.query({
       active: true,
       currentWindow: true,

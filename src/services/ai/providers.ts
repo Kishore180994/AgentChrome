@@ -105,7 +105,7 @@ function processTextData(textData: ChatMessage[]): ChatMessage[] {
 
         if (delimiterIndex !== -1) {
           // Create a new ChatMessage with the truncated text.
-          const truncatedText = textContent.substring(0, delimiterIndex);
+          const truncatedText = textContent.substring(0, delimiterIndex - 2);
           processedData.push({
             ...currentMessage, // Copy other properties of the original message
             parts: [{ text: truncatedText }], // Replace the parts array with the truncated text
@@ -213,11 +213,11 @@ export async function callAI(
 ): Promise<AgentResponseFormat | null> {
   switch (provider) {
     case "openai":
-      return callOpenAI(messages);
+      return await callOpenAI(messages);
     case "gemini":
       // Example "geminiKey" or fetch from storage
       const geminiKey = "AIzaSyDcDTlmwYLVRflcPIR9oklm5IlTUNzhu0Q";
-      return callGemini(messages, geminiKey);
+      return await callGemini(messages, geminiKey);
     default:
       throw new Error(`[callAI] Unknown provider: ${provider}`);
   }
