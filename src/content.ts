@@ -111,8 +111,12 @@ if (!window[AGENT_KEY]) {
         if (message.action?.data?.selector) {
           highlightElement(message.action.data.selector);
         }
-        executeDOMAction(message.action);
-        sendResponse({ success: true });
+        try {
+          executeDOMAction(message.action);
+          sendResponse({ success: true });
+        } catch (error: any) {
+          sendResponse({ success: false, error: error.message });
+        }
         return true;
 
       case "TOGGLE_SIDEBAR":
@@ -202,6 +206,25 @@ if (!window[AGENT_KEY]) {
     }
   }
 
+  async function simulatePaste(target: HTMLElement, text: string) {
+    // Focus the canvas/editor area first
+    target.focus();
+
+    // Write text to clipboard (requires user permission)
+    await navigator.clipboard.writeText(text);
+
+    // Dispatch a paste event
+    const pasteEvent = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: new DataTransfer(), // Fallback for some browsers
+    });
+
+    // For browsers that support `clipboardData`
+    pasteEvent.clipboardData?.setData("text/plain", text);
+    target.dispatchEvent(pasteEvent);
+  }
+
   function performLocalDOMAction(
     target: HTMLElement | null,
     action: LocalAction
@@ -218,8 +241,19 @@ if (!window[AGENT_KEY]) {
           actionFail("No element for input_text");
           break;
         }
-        (target as HTMLInputElement).value = action.data.text || "";
-        target.dispatchEvent(new Event("input", { bubbles: true }));
+
+        const text = action.data.text || "";
+
+        // Check if the target element is a canvas
+        if (target.tagName.toUpperCase() === "CANVAS") {
+          // Simulate keyboard events for canvas-based text input
+          simulatePaste(target, text);
+        } else {
+          // For non-canvas elements, use the standard input approach
+          (target as HTMLInputElement).value = text;
+          target.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+
         actionSuccess();
         break;
 
@@ -391,6 +425,61 @@ if (!window[AGENT_KEY]) {
   });
 
   /**
+   * Clears previous debug highlight overlays in the provided Document.
+   */
+  function clearDebugHighlights(doc: Document): void {
+    doc.querySelectorAll(".debug-highlight").forEach((el) => el.remove());
+  }
+
+  function getRandomColor(): string {
+    return `#${Math.floor(Math.random() * 16777215).toString(16)}`;
+  }
+  /**
+   * Draw a debug highlight overlay on the element.
+   * The debugOffset is used to adjust positioning in case of an iframe.
+   */
+  function drawDebugHighlight(
+    element: HTMLElement,
+    index: number,
+    _selector: string
+  ): void {
+    const overlay = document.createElement("div");
+    overlay.classList.add("debug-highlight");
+
+    const rect = element.getBoundingClientRect();
+
+    overlay.className = "debug-highlight";
+    overlay.style.position = "absolute";
+    overlay.style.border = `2px solid ${getRandomColor()}`;
+    overlay.style.pointerEvents = "none";
+    overlay.style.zIndex = "999999";
+    overlay.style.top = `${rect.top + window.scrollY}px`;
+    overlay.style.left = `${rect.left + window.scrollX}px`;
+    overlay.style.width = `${rect.width}px`;
+    overlay.style.height = `${rect.height}px`;
+    overlay.style.backgroundColor = "rgba(0, 0, 255, 0.1)";
+
+    // Create a label that shows the [index] and selector
+    const label = document.createElement("div");
+    label.innerText = `[${index}]`;
+    label.style.position = "absolute";
+    label.style.top = "0";
+    label.style.right = "0";
+    label.style.backgroundColor = "rgba(255, 255, 255, 0.9)";
+    label.style.color = "#000";
+    label.style.fontSize = "10px";
+    label.style.fontFamily = "monospace";
+    label.style.padding = "2px 4px";
+    label.style.pointerEvents = "none";
+
+    overlay.appendChild(label);
+    document.body.appendChild(overlay);
+
+    // Remove the overlay after a few seconds
+    setTimeout(() => overlay.remove(), 3000);
+  }
+
+  /**
    * Extracts interactive, visible elements within the viewport,
    * skipping those that have no meaningful text.
    *
@@ -412,6 +501,7 @@ if (!window[AGENT_KEY]) {
    * @property {number} boundingBox.height
    */
   function extractPageElements(): PageElement[] {
+    clearDebugHighlights(document);
     const elements: PageElement[] = [];
     let idx = 1;
 
@@ -420,10 +510,8 @@ if (!window[AGENT_KEY]) {
       const style = window.getComputedStyle(el);
       if (style.display === "none" || style.visibility === "hidden")
         return false;
-
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return false;
-
       return true;
     }
 
@@ -443,10 +531,10 @@ if (!window[AGENT_KEY]) {
     function getMeaningfulText(el: HTMLElement): string {
       // Prefer aria-label, alt, placeholder, then fallback to textContent
       const label =
+        el.textContent ||
         el.getAttribute("aria-label") ||
         el.getAttribute("alt") ||
-        el.getAttribute("placeholder") ||
-        el.textContent;
+        el.getAttribute("placeholder");
       return (label || "").trim();
     }
 
@@ -459,17 +547,19 @@ if (!window[AGENT_KEY]) {
         "TEXTAREA",
         "SELECT",
         "LABEL",
+        "AREA",
+        "CANVAS",
       ];
       if (interactiveTags.includes(el.tagName)) {
-        // Special case for <a>, require a meaningful href
+        // Special case: for <a>, require a meaningful href
         if (el.tagName === "A") {
           const href = el.getAttribute("href");
           if (!href || href === "#") return false;
         }
+        // For canvas, we always want to include it (handled later)
         return true;
       }
-
-      // If it has a role, check if it's not purely presentational
+      // Also consider elements with a non-presentational role as interactive.
       const roleAttr = el.getAttribute("role");
       if (
         roleAttr &&
@@ -478,7 +568,6 @@ if (!window[AGENT_KEY]) {
       ) {
         return true;
       }
-
       return false;
     }
 
@@ -488,17 +577,18 @@ if (!window[AGENT_KEY]) {
       // A) Must be interactive
       if (!isElementInteractive(el)) return;
 
-      // B) Must be visible
-      if (!isVisible(el)) return;
+      // Determine if this is a canvas element.
+      const isCanvas = el.tagName.toUpperCase() === "CANVAS";
 
-      // C) Must be in the viewport (uncomment to filter out offscreen elements)
-      if (!isInViewport(el)) return;
+      if (!isCanvas) {
+        // For non-canvas elements, apply additional filters:
+        if (!isVisible(el)) return;
+        if (!isInViewport(el)) return;
+        const textSnippet = getMeaningfulText(el);
+        if (!textSnippet) return;
+      }
 
-      // D) Extract meaningful text and skip if there's none
-      const textSnippet = getMeaningfulText(el);
-      if (!textSnippet) return;
-
-      // E) Build a best-guess selector
+      // B) Build a best-guess selector.
       let selector: string;
       if (el.id) {
         selector = `#${CSS.escape(el.id)}`;
@@ -508,7 +598,7 @@ if (!window[AGENT_KEY]) {
         selector = `tag:${el.tagName.toLowerCase()}`;
       }
 
-      // F) Whitelist of attributes to keep
+      // C) Whitelist of attributes to keep.
       const attributes: Record<string, string | null> = {};
       const attributeWhitelist = [
         "href",
@@ -527,7 +617,7 @@ if (!window[AGENT_KEY]) {
         }
       });
 
-      // G) Compute bounding box
+      // D) Compute bounding box.
       const rect = el.getBoundingClientRect();
       const boundingBox = {
         x: rect.left + window.scrollX,
@@ -536,13 +626,20 @@ if (!window[AGENT_KEY]) {
         height: rect.height,
       };
 
-      // H) Finally, add to our result array
+      // E) Get the text snippet.
+      // For canvas elements, use a default text if none exists.
+      let textSnippet = getMeaningfulText(el);
+      if (isCanvas && !textSnippet) {
+        textSnippet = "Canvas Element";
+      }
+
+      // F) Add the element to our results.
       elements.push({
         index: idx++,
         tagName: el.tagName.toLowerCase(),
         selector,
         text: textSnippet.slice(0, 100), // truncated snippet
-        fullText: "", // or you can collect a snippet from the parent container
+        fullText: "", // or collect additional context if desired
         attributes,
         role: el.getAttribute("role") || undefined,
         accessibleLabel:
@@ -553,53 +650,5 @@ if (!window[AGENT_KEY]) {
     });
 
     return elements;
-  }
-
-  /**
-   * Optional debug highlight function
-   * You can disable for non-interactive elements, or highlight all
-   */
-  /**
-   * Draws a debug highlight overlay around an element,
-   * labeling it with [index] and the selector.
-   */
-  function drawDebugHighlight(
-    element: HTMLElement,
-    index: number,
-    selector: string
-  ) {
-    const rect = element.getBoundingClientRect();
-
-    // Create the main overlay
-    const overlay = document.createElement("div");
-    overlay.className = "debug-highlight";
-    overlay.style.position = "absolute";
-    overlay.style.border = "2px solid blue";
-    overlay.style.pointerEvents = "none";
-    overlay.style.zIndex = "999999";
-    overlay.style.top = `${rect.top + window.scrollY}px`;
-    overlay.style.left = `${rect.left + window.scrollX}px`;
-    overlay.style.width = `${rect.width}px`;
-    overlay.style.height = `${rect.height}px`;
-    overlay.style.backgroundColor = "rgba(0, 0, 255, 0.1)";
-
-    // Create a label that shows the [index] and selector
-    const label = document.createElement("div");
-    label.innerText = `[${index}] ${selector}`;
-    label.style.position = "absolute";
-    label.style.top = "0";
-    label.style.left = "0";
-    label.style.backgroundColor = "rgba(255, 255, 255, 0.9)";
-    label.style.color = "#000";
-    label.style.fontSize = "10px";
-    label.style.fontFamily = "monospace";
-    label.style.padding = "2px 4px";
-    label.style.pointerEvents = "none";
-
-    overlay.appendChild(label);
-    document.body.appendChild(overlay);
-
-    // Remove the overlay after a few seconds
-    setTimeout(() => overlay.remove(), 3000);
   }
 }

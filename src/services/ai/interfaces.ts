@@ -11,7 +11,7 @@ export type Role = "model" | "user";
 /**
  * Represents a chat message in the system.
  */
-export interface ChatMessage {
+export interface GeminiChatMessage {
   role: Role;
   parts: Array<Parts>;
 }
@@ -100,4 +100,11 @@ export interface PageElement {
      */
     height: number;
   };
+}
+
+export interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }

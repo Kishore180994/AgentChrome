@@ -8,7 +8,7 @@ import { AgentResponseFormat } from "../../types/responseFormat";
  *******************************************************/
 import { GoogleGenerativeAI } from "@google/generative-ai"; // or import {...} from "@google/generative-ai";
 import { agentPrompt } from "../../utils/prompts";
-import { ChatMessage, Parts, Role } from "./interfaces";
+import { GeminiChatMessage } from "./interfaces";
 
 ///////////////////////////////////////////////////////////////////////////////////
 // Single global references for OpenAI and Gemini
@@ -24,7 +24,7 @@ let geminiModel: any = null; // typed as ReturnType<GoogleGenerativeAI['getGener
  * - Returns the raw result as AgentResponseFormat or null
  ********************************************************/
 export async function callOpenAI(
-  messages: ChatMessage[],
+  messages: GeminiChatMessage[],
   openaiKeyOverride?: string
 ): Promise<AgentResponseFormat | null> {
   console.debug("[callOpenAI] Called with messages:", messages.length);
@@ -82,12 +82,12 @@ export async function callOpenAI(
  * @param {ChatMessage[]} textData - An array of chat messages.
  * @returns {ChatMessage[]} - A processed array of chat messages.
  */
-function processTextData(textData: ChatMessage[]): ChatMessage[] {
+function processTextData(textData: GeminiChatMessage[]): GeminiChatMessage[] {
   if (!textData || !Array.isArray(textData) || textData.length === 0) {
     return []; // Return empty array if input is invalid or empty.
   }
 
-  const processedData: ChatMessage[] = [];
+  const processedData: GeminiChatMessage[] = [];
   for (let i = 0; i < textData.length; i++) {
     if (i === textData.length - 1) {
       // Last message: keep the full content.
@@ -128,7 +128,7 @@ function processTextData(textData: ChatMessage[]): ChatMessage[] {
  * - Returns an AgentResponseFormat or null
  ********************************************************/
 export async function callGemini(
-  messages: ChatMessage[],
+  messages: GeminiChatMessage[],
   geminiKey: string
 ): Promise<AgentResponseFormat | null> {
   console.debug("[callGemini] Called with messages:", messages.length);
@@ -164,7 +164,7 @@ export async function callGemini(
   //    Typically "history" might be an array of {author, content}
   //    We'll store all but the last user message in "history"
   //    Then send the last user message as the final .sendMessage() call
-  const chatHistory: ChatMessage[] = processTextData(messages);
+  const chatHistory: GeminiChatMessage[] = processTextData(messages);
   console.log("[callGemini] chatHistory:", chatHistory);
   // 4) Start a chat session
   const chatSession = geminiModel.startChat({
@@ -209,7 +209,7 @@ export type AIProvider = "openai" | "gemini";
 
 export async function callAI(
   provider: AIProvider,
-  messages: ChatMessage[]
+  messages: GeminiChatMessage[]
 ): Promise<AgentResponseFormat | null> {
   switch (provider) {
     case "openai":

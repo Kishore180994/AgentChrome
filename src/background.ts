@@ -217,6 +217,7 @@ async function processCommand(
 ) {
   // Gather the page's interactive elements
   const pageState = await fetchPageElements(tabId);
+  console.log("[background.ts] Page elements:", pageState);
   // Gather all existing tabs
   const allTabs = await getAllTabs();
 
@@ -360,9 +361,9 @@ async function executeLocalActions(
   evaluation?: string,
   pageElements: PageElement[] = []
 ) {
-  // console.log("[background.ts] Executing local actions:", actions);
   if (index >= actions.length) {
-    // console.log("[background.ts] All actions completed => asking AI next step");
+    // All actions have been acknowledged by content script.
+    // Now, if needed, call processCommand to get the next set of steps.
     await processCommand(
       tabIdRef.value,
       evaluation
@@ -374,8 +375,6 @@ async function executeLocalActions(
   }
 
   const action = actions[index];
-  // console.log("[background.ts] Running local action:", action);
-
   executionHistory.push({
     step: action.description || action.type,
     status: "pending",
@@ -384,13 +383,13 @@ async function executeLocalActions(
   sendExecutionUpdate();
 
   try {
-    // console.log("[background.ts] Performing action:", action);
+    // Await the execution of this action, which now includes waiting for the content script's ack.
     await performLocalAction(action, tabIdRef, pageElements);
     executionHistory[executionHistory.length - 1].status = "success";
     sendExecutionUpdate();
 
-    // Move on
-    executeLocalActions(
+    // Proceed to the next action after acknowledgement.
+    await executeLocalActions(
       actions,
       index + 1,
       tabIdRef,
@@ -399,17 +398,7 @@ async function executeLocalActions(
       pageElements
     );
   } catch (err) {
-    // Handle normal errors
-    if (err instanceof Error && err.message === "PROCESS_COMPLETED") {
-      console.log("[background.ts] Process completed successfully");
-      executionHistory[executionHistory.length - 1].status = "success";
-      executionHistory[executionHistory.length - 1].message =
-        "Process completed";
-      sendExecutionUpdate();
-      return;
-    }
-
-    console.error("[background.ts] Action error:", err);
+    // Retry or fallback logic remains similar.
     const hist = executionHistory[executionHistory.length - 1];
     hist.status = "failed";
     hist.message = String(err);
@@ -418,7 +407,7 @@ async function executeLocalActions(
     if (hist.retries < 2) {
       hist.retries++;
       console.log("[background.ts] Retrying failed action...");
-      executeLocalActions(
+      await executeLocalActions(
         actions,
         index,
         tabIdRef,
@@ -427,8 +416,10 @@ async function executeLocalActions(
         pageElements
       );
     } else {
-      console.log("[background.ts] Max retries => ask AI for alt plan...");
-      processCommand(
+      console.log(
+        "[background.ts] Max retries reached, asking AI for alternative steps..."
+      );
+      await processCommand(
         tabIdRef.value,
         `Action "${action.type}" kept failing. Next?`,
         false
@@ -483,7 +474,6 @@ async function performLocalAction(
     case "submit_form":
     case "key_press":
     case "extract": {
-      // If we have a data.index, let's look up the PageElement and use its selector
       const elementIndex = a.data.index;
       if (typeof elementIndex === "number") {
         const foundEl = pageElements.find((pe) => pe.index === elementIndex);
@@ -492,13 +482,10 @@ async function performLocalAction(
             `Element not found in pageElements for index ${elementIndex}`
           );
         }
-        // Overwrite/attach the selector to action
         a.data.selector = foundEl.selector;
-        console.log("[background.ts] Updated Local Action", a);
       }
-
-      // Now send the action (with updated selector, if any) to the active tab
-      sendActionToActiveTab(a);
+      // Now wait for the content script to process the action
+      await sendActionToActiveTab(a);
       break;
     }
 
@@ -544,14 +531,25 @@ async function verifyOrOpenTab(urlPart: string, tabIdRef: { value: number }) {
 /********************************************************
  * 12) Pass an action to content script
  ********************************************************/
-function sendActionToActiveTab(a: LocalAction) {
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs[0]?.id) {
-      chrome.tabs.sendMessage(tabs[0].id, {
-        type: "PERFORM_ACTION",
-        action: a,
-      });
-    }
+function sendActionToActiveTab(a: LocalAction): Promise<any> {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(
+          tabs[0].id,
+          { type: "PERFORM_ACTION", action: a },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              reject(chrome.runtime.lastError);
+            } else {
+              resolve(response);
+            }
+          }
+        );
+      } else {
+        reject("No active tab found");
+      }
+    });
   });
 }
 
