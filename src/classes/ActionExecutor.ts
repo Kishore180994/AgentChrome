@@ -24,13 +24,19 @@ export class ActionExecutor {
           }
           break;
         case "scroll":
-          await this.handleScroll(data.offset);
+          await this.handleScroll(data.offset, data.direction);
           break;
         case "hover":
           await this.handleHover(data.selector);
           break;
         case "submit_form":
           await this.handleSubmitForm(data.selector);
+          break;
+        case "extract":
+          await this.handleExtract(data.selector);
+          break;
+        case "key_press":
+          await this.handleKeyPress(data.selector, data.key);
           break;
         default:
           throw new Error(`Unknown action type: ${type}`);
@@ -87,11 +93,32 @@ export class ActionExecutor {
   /**
    * Handles scroll actions.
    */
-  private async handleScroll(offset?: number): Promise<void> {
-    window.scrollBy({
-      top: offset || 200,
+  private async handleScroll(
+    offset?: number,
+    direction?: string
+  ): Promise<void> {
+    const scrollOptions: ScrollToOptions = {
       behavior: "smooth",
-    });
+    };
+
+    switch (direction) {
+      case "up":
+        scrollOptions.top = -(offset || 200);
+        break;
+      case "down":
+        scrollOptions.top = offset || 200;
+        break;
+      case "left":
+        scrollOptions.left = -(offset || 200);
+        break;
+      case "right":
+        scrollOptions.left = offset || 200;
+        break;
+      default:
+        throw new Error(`Unknown scroll direction: ${direction}`);
+    }
+
+    window.scrollBy(scrollOptions);
   }
 
   /**
@@ -135,5 +162,45 @@ export class ActionExecutor {
         throw new Error("submit_form: no form found");
       }
     }
+  }
+
+  /**
+   * Handles extract actions on elements, including those inside iframes.
+   */
+  private async handleExtract(selector?: string): Promise<void> {
+    const { element, ownerDocument } = selector
+      ? querySelectorWithIframes(selector)
+      : { element: null, ownerDocument: null };
+    if (!element) {
+      throw new Error(`Element not found for selector: ${selector}`);
+    }
+    // Ensure the element is treated as an HTMLElement in its own context
+    if (!(element instanceof ownerDocument!.defaultView!.HTMLElement)) {
+      throw new Error(`Element is not an HTMLElement: ${selector}`);
+    }
+    // Extract content from the element
+    const content = element.textContent || "";
+    console.log(`[ActionExecutor] Extracted content: ${content}`);
+  }
+
+  /**
+   * Handles key press actions on elements, including those inside iframes.
+   */
+  private async handleKeyPress(selector?: string, key?: string): Promise<void> {
+    const { element, ownerDocument } = selector
+      ? querySelectorWithIframes(selector)
+      : { element: null, ownerDocument: null };
+    if (!element) {
+      throw new Error(`Element not found for selector: ${selector}`);
+    }
+    // Ensure the element is treated as an HTMLElement in its own context
+    if (!(element instanceof ownerDocument!.defaultView!.HTMLElement)) {
+      throw new Error(`Element is not an HTMLElement: ${selector}`);
+    }
+    const keyEvent = new KeyboardEvent("keydown", {
+      key: key || "Enter",
+      bubbles: true,
+    });
+    element.dispatchEvent(keyEvent);
   }
 }

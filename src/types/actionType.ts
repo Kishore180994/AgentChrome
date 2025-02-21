@@ -43,6 +43,8 @@ export type LocalActionType =
   | "submit_form"
   | "key_press"
   | "scroll"
+  | "scroll_down"
+  | "scroll_up"
   | "done"
   | "wait"; // fallback
 

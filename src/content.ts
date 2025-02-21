@@ -34,6 +34,14 @@ if (!window[AGENT_KEY]) {
           elements,
         });
         break;
+      case "EXECUTION_UPDATE":
+        const { currentTask, history } = message;
+        console.log("[content.ts] Received EXECUTION_UPDATE:", {
+          currentTask,
+          history,
+        });
+        sidebarManager.updateHorizontalBar(currentTask, history);
+        break;
       default:
         break;
     }
@@ -68,6 +76,15 @@ if (!window[AGENT_KEY]) {
       case "PING":
         sendResponse({ success: true });
         return true;
+      case "EXECUTION_UPDATE":
+        const { currentTask, history } = message;
+        console.log("[content.ts] Received EXECUTION_UPDATE:", {
+          currentTask,
+          history,
+        });
+        sidebarManager.updateHorizontalBar(currentTask, history);
+        sendResponse({ success: true });
+        return true;
       default:
         sendResponse({ success: false, error: "Unknown message type" });
         return true;
@@ -81,6 +98,9 @@ if (!window[AGENT_KEY]) {
 
     const data = event.data;
     if (data?.type === "USER_COMMAND" && data.command) {
+      // Close sidebar and show horizontal bar when a command is sent
+      sidebarManager.closeSidebar();
+      sidebarManager.showHorizontalBar();
       chrome.runtime.sendMessage({
         type: "PROCESS_COMMAND",
         command: data.command,
