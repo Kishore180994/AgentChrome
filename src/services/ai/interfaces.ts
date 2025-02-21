@@ -11,7 +11,7 @@ export type Role = "model" | "user";
 /**
  * Represents a chat message in the system.
  */
-export interface ChatMessage {
+export interface GeminiChatMessage {
   role: Role;
   parts: Array<Parts>;
 }
@@ -79,25 +79,12 @@ export interface PageElement {
   /**
    * The bounding box of the element, containing its position and dimensions.
    */
-  boundingBox: {
-    /**
-     * The x-coordinate of the top-left corner of the bounding box.
-     */
-    x: number;
+  boundingBox: BoundingBox;
+}
 
-    /**
-     * The y-coordinate of the top-left corner of the bounding box.
-     */
-    y: number;
-
-    /**
-     * The width of the bounding box.
-     */
-    width: number;
-
-    /**
-     * The height of the bounding box.
-     */
-    height: number;
-  };
+export interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }

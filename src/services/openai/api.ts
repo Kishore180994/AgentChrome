@@ -1,7 +1,7 @@
 /// <reference types="@types/chrome" />
 
 import { AgentResponseFormat } from "../../types/responseFormat";
-import { ChatMessage } from "../ai/interfaces";
+import { GeminiChatMessage } from "../ai/interfaces";
 import { AIProvider, callAI } from "../ai/providers";
 
 const MAX_RETRIES = 3;
@@ -60,12 +60,12 @@ export async function chatWithAI(
  *
  * @param userMsg - The message from the user to be included in the conversation.
  * @param currentState - An optional object representing the current state of the application.
- * @returns A promise that resolves to an array of `ChatMessage` objects representing the prepared conversation.
+ * @returns A promise that resolves to an array of `GeminiChatMessage` objects representing the prepared conversation.
  */
 async function prepareConversation(
   userMsg: string,
   currentState: Record<string, any> = {}
-): Promise<ChatMessage[]> {
+): Promise<GeminiChatMessage[]> {
   const existingHistory = await getConversationHistory();
   // Filter out old system messages from the history
   const pruned = existingHistory.filter((m) => m.role !== "model");
@@ -77,11 +77,11 @@ async function prepareConversation(
   // Combine pruned history and user message, then slice
   const combined = [
     ...pruned,
-    { role: "user", parts: [{ text: userMsgWithState }] } as ChatMessage,
+    { role: "user", parts: [{ text: userMsgWithState }] } as GeminiChatMessage,
   ];
 
   // Add only the latest system messages
-  const final: ChatMessage[] = [...combined];
+  const final: GeminiChatMessage[] = [...combined];
 
   return final;
 }
@@ -96,7 +96,7 @@ async function prepareConversation(
  * @throws Will throw an error if all retry attempts fail.
  */
 async function sendWithRetry(
-  conversation: ChatMessage[],
+  conversation: GeminiChatMessage[],
   sessionId: string,
   retries = MAX_RETRIES
 ): Promise<any> {
@@ -186,15 +186,15 @@ function parseAgentResponseFormat(apiResponse: any): AgentResponseFormat {
 /**
  * Updates the conversation history by appending a new message from the model.
  *
- * @param {ChatMessage[]} conversation - The current conversation history.
+ * @param {GeminiChatMessage[]} conversation - The current conversation history.
  * @param {string} agentJSON - The JSON string representing the agent's response.
  * @returns {Promise<void>} A promise that resolves when the conversation history is updated in local storage.
  */
 async function updateConversationHistory(
-  conversation: ChatMessage[],
+  conversation: GeminiChatMessage[],
   agentJSON: string
 ) {
-  const newHistory: ChatMessage[] = [
+  const newHistory: GeminiChatMessage[] = [
     ...conversation,
     { role: "model", parts: [{ text: agentJSON }] },
   ];
@@ -205,9 +205,9 @@ async function updateConversationHistory(
 /**
  * Retrieves the conversation history from local storage.
  *
- * @returns {Promise<ChatMessage[]>} A promise that resolves to an array of `ChatMessage` objects representing the conversation history.
+ * @returns {Promise<GeminiChatMessage[]>} A promise that resolves to an array of `GeminiChatMessage` objects representing the conversation history.
  */
-async function getConversationHistory(): Promise<ChatMessage[]> {
+async function getConversationHistory(): Promise<GeminiChatMessage[]> {
   const result = await chrome.storage.local.get("conversationHistory");
   return result.conversationHistory || [];
 }

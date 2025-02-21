@@ -6,16 +6,22 @@ const Sidebar: React.FC = () => {
     <div
       id="agent-chrome-sidebar"
       className="
-        fixed right-0 top-0
-        h-screen w-[400px]
-        bg-gray-900/80
-        backdrop-blur-md
-        ring-1 ring-inset ring-gray-500/50
-        shadow-xl
+        w-[400px]
+        h-screen
+        bg-gradient-to-t
+        from-gray-900/90
+        to-black/90
+        backdrop-blur-xl
+        border-l
+        border-cyan-500/30
+        shadow-2xl
         z-[9999]
         overflow-y-auto
-        transition-transform duration-300
-        border-l border-gray-700/50
+        transition-transform
+        duration-300
+        ease-in-out
+        text-gray-100
+        p-4
       "
     >
       <App />

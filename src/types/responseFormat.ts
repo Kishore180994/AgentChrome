@@ -23,6 +23,7 @@ import { AgentActionItem } from "./actionType";
  * The `current_state` portion
  */
 export interface CurrentState {
+  user_command?: string;
   /**
    * Quick detailed summary of new info from the current page
    * which is not yet in the task history memory. Be specific
