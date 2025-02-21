@@ -79,27 +79,7 @@ export interface PageElement {
   /**
    * The bounding box of the element, containing its position and dimensions.
    */
-  boundingBox: {
-    /**
-     * The x-coordinate of the top-left corner of the bounding box.
-     */
-    x: number;
-
-    /**
-     * The y-coordinate of the top-left corner of the bounding box.
-     */
-    y: number;
-
-    /**
-     * The width of the bounding box.
-     */
-    width: number;
-
-    /**
-     * The height of the bounding box.
-     */
-    height: number;
-  };
+  boundingBox: BoundingBox;
 }
 
 export interface BoundingBox {

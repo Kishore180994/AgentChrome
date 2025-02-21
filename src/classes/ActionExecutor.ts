@@ -1,0 +1,139 @@
+import { LocalAction } from "../types/actionType";
+import { querySelectorWithIframes } from "../utils/executionManager";
+import { DOMManager } from "./DOMManager";
+
+export class ActionExecutor {
+  private domManager: DOMManager;
+
+  constructor(domManager: DOMManager) {
+    this.domManager = domManager;
+  }
+
+  async execute(action: LocalAction): Promise<void> {
+    const { type, data } = action;
+    try {
+      switch (type) {
+        case "click":
+          await this.handleClick(data.selector);
+          break;
+        case "input_text":
+          if (typeof data.selector === "string") {
+            await this.handleInputText(data.selector, data.text || "");
+          } else {
+            throw new Error(`Selector is not a string: ${data.selector}`);
+          }
+          break;
+        case "scroll":
+          await this.handleScroll(data.offset);
+          break;
+        case "hover":
+          await this.handleHover(data.selector);
+          break;
+        case "submit_form":
+          await this.handleSubmitForm(data.selector);
+          break;
+        default:
+          throw new Error(`Unknown action type: ${type}`);
+      }
+    } catch (error: any) {
+      console.error(
+        `[ActionExecutor] Failed to execute action "${type}":`,
+        error.message
+      );
+      throw error; // Re-throw the error for upstream handling
+    }
+  }
+
+  /**
+   * Handles click actions on elements, including those inside iframes.
+   */
+  private async handleClick(selector?: string): Promise<void> {
+    const result = selector
+      ? querySelectorWithIframes(selector)
+      : { element: null, ownerDocument: null };
+    const { element, ownerDocument } = result || {
+      element: null,
+      ownerDocument: null,
+    };
+    if (!element) {
+      throw new Error(`Element not found for selector: ${selector}`);
+    }
+    // Ensure the element is treated as an HTMLElement in its own context
+    if (!(element instanceof ownerDocument!.defaultView!.HTMLElement)) {
+      throw new Error(`Element is not an HTMLElement: ${selector}`);
+    }
+    element.click();
+  }
+
+  /**
+   * Handles input text actions on elements, including those inside iframes.
+   */
+  private async handleInputText(selector: string, text: string): Promise<void> {
+    const { element, ownerDocument } = querySelectorWithIframes(selector);
+    if (!element) {
+      throw new Error(`Element not found for selector: ${selector}`);
+    }
+    // Check if the element is either an HTMLInputElement or HTMLTextAreaElement in its own context
+    if (
+      !(element instanceof ownerDocument!.defaultView!.HTMLInputElement) &&
+      !(element instanceof ownerDocument!.defaultView!.HTMLTextAreaElement)
+    ) {
+      throw new Error(`Element is not an input or textarea: ${selector}`);
+    }
+    element.value = text;
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  /**
+   * Handles scroll actions.
+   */
+  private async handleScroll(offset?: number): Promise<void> {
+    window.scrollBy({
+      top: offset || 200,
+      behavior: "smooth",
+    });
+  }
+
+  /**
+   * Handles hover actions on elements, including those inside iframes.
+   */
+  private async handleHover(selector?: string): Promise<void> {
+    const { element, ownerDocument } = selector
+      ? querySelectorWithIframes(selector)
+      : { element: null, ownerDocument: null };
+    if (!element) {
+      throw new Error(`Element not found for selector: ${selector}`);
+    }
+    // Ensure the element is treated as an HTMLElement in its own context
+    if (!(element instanceof ownerDocument!.defaultView!.HTMLElement)) {
+      throw new Error(`Element is not an HTMLElement: ${selector}`);
+    }
+    element.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+  }
+
+  /**
+   * Handles form submission actions on elements, including those inside iframes.
+   */
+  private async handleSubmitForm(selector?: string): Promise<void> {
+    const { element, ownerDocument } = selector
+      ? querySelectorWithIframes(selector)
+      : { element: null, ownerDocument: null };
+    if (!element) {
+      throw new Error(`Element not found for selector: ${selector}`);
+    }
+    // Ensure the element is treated as an HTMLElement in its own context
+    if (!(element instanceof ownerDocument!.defaultView!.HTMLElement)) {
+      throw new Error(`Element is not an HTMLElement: ${selector}`);
+    }
+    if (element instanceof ownerDocument!.defaultView!.HTMLFormElement) {
+      element.submit();
+    } else {
+      const formEl = element.closest("form");
+      if (formEl) {
+        formEl.submit();
+      } else {
+        throw new Error("submit_form: no form found");
+      }
+    }
+  }
+}

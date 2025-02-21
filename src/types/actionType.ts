@@ -13,6 +13,39 @@
  *   { "extract_content": { selectors: [".price", ".title"] } }
  */
 
+export interface LocalAction {
+  id: string;
+  type: string;
+  data: {
+    selector?: string;
+    value?: string;
+    text?: string; // For input_text or key_press
+    index?: number; // Possibly used for referencing an element
+    key?: string; // For key_press
+    duration?: number;
+    url?: string;
+    offset?: number;
+    direction?: "up" | "down";
+    // ... add more as needed
+  };
+  description?: string;
+}
+
+export type LocalActionType =
+  | "click"
+  | "click_element"
+  | "input_text"
+  | "navigate"
+  | "verify"
+  | "open_tab"
+  | "go_to_url"
+  | "extract"
+  | "submit_form"
+  | "key_press"
+  | "scroll"
+  | "done"
+  | "wait"; // fallback
+
 /** For "input_text": fill text into an element at "index" */
 export interface InputTextAction {
   input_text: {
