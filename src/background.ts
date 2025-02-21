@@ -336,9 +336,12 @@ async function processCommand(
           executionHistories[tabId].length - 1
         ].message = `Success - Completed: ${currentTasks[tabId]}`;
         sendExecutionUpdate(tabId);
+        // Close horizontal bar and open sidebar
+        chrome.tabs.sendMessage(tabId, { type: "HIDE_HORIZONTAL_BAR" });
+        chrome.tabs.sendMessage(tabId, { type: "TOGGLE_SIDEBAR" });
         resetExecutionState(tabId);
       }
-      return; // Exit without further prompting
+      return;
     }
 
     executionHistories[tabId][executionHistories[tabId].length - 1].status =
@@ -600,6 +603,7 @@ async function performLocalAction(
     ":",
     a
   );
+  const elementIndex = a.data.index;
   switch (a.type) {
     case "go_to_url":
       if (a.data.url) {
@@ -650,8 +654,6 @@ async function performLocalAction(
     case "input_text":
     case "submit_form":
     case "key_press":
-    case "extract": {
-      const elementIndex = a.data.index;
       if (a.data.selector && typeof elementIndex === "number") {
         const foundEl = pageElements.find((pe) => pe.index === elementIndex);
         if (!foundEl || foundEl.selector !== a.data.selector) {
@@ -689,7 +691,54 @@ async function performLocalAction(
       await sendActionToTab(a, tabIdRef.value);
       console.log("[background.ts] Action acknowledged by tab", tabIdRef.value);
       break;
-    }
+    case "extract":
+      if (a.data.selector && typeof elementIndex === "number") {
+        const foundEl = pageElements.find((pe) => pe.index === elementIndex);
+        if (!foundEl || foundEl.selector !== a.data.selector) {
+          throw new Error(
+            `[background.ts] Selector validation failed for index ${elementIndex}`
+          );
+        }
+        console.log(
+          "[background.ts] Selector validated for index",
+          elementIndex,
+          ":",
+          a.data.selector
+        );
+      } else if (a.data.selector) {
+        console.log(
+          "[background.ts] Using provided selector:",
+          a.data.selector
+        );
+      } else if (typeof elementIndex === "number") {
+        const foundEl = pageElements.find((pe) => pe.index === elementIndex);
+        if (!foundEl) {
+          throw new Error(
+            `[background.ts] Element not found for index ${elementIndex}`
+          );
+        }
+        a.data.selector = foundEl.selector;
+        console.log(
+          "[background.ts] Updated action selector from index",
+          elementIndex,
+          "to:",
+          a.data.selector
+        );
+      } else {
+        console.log(
+          "[background.ts] No selector or index provided, proceeding without validation"
+        );
+      }
+      console.log(
+        "[background.ts] Sending action to tab",
+        tabIdRef.value,
+        ":",
+        a
+      );
+      await sendActionToTab(a, tabIdRef.value);
+      console.log("[background.ts] Action acknowledged by tab", tabIdRef.value);
+      break;
+
     case "scroll":
       console.log(
         "[background.ts] Sending scroll action to tab",

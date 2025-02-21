@@ -35,12 +35,13 @@ if (!window[AGENT_KEY]) {
         });
         break;
       case "EXECUTION_UPDATE":
-        const { currentTask, history } = message;
-        console.log("[content.ts] Received EXECUTION_UPDATE:", {
-          currentTask,
-          history,
-        });
-        sidebarManager.updateHorizontalBar(currentTask, history);
+        const { taskHistory } = message;
+        console.log("[content.ts] Received EXECUTION_UPDATE:", taskHistory);
+        sidebarManager.updateHorizontalBar(taskHistory);
+        break;
+      case "HIDE_HORIZONTAL_BAR":
+        console.log("[content.ts] Hiding horizontal bar");
+        sidebarManager.hideHorizontalBar();
         break;
       default:
         break;
@@ -77,12 +78,14 @@ if (!window[AGENT_KEY]) {
         sendResponse({ success: true });
         return true;
       case "EXECUTION_UPDATE":
-        const { currentTask, history } = message;
-        console.log("[content.ts] Received EXECUTION_UPDATE:", {
-          currentTask,
-          history,
-        });
-        sidebarManager.updateHorizontalBar(currentTask, history);
+        const { taskHistory } = message;
+        console.log("[content.ts] Received EXECUTION_UPDATE:", taskHistory);
+        sidebarManager.updateHorizontalBar(taskHistory);
+        sendResponse({ success: true });
+        return true;
+      case "HIDE_HORIZONTAL_BAR":
+        console.log("[content.ts] Hiding horizontal bar");
+        sidebarManager.hideHorizontalBar();
         sendResponse({ success: true });
         return true;
       default:
