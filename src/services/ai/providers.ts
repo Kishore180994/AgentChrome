@@ -129,7 +129,8 @@ function processTextData(textData: GeminiChatMessage[]): GeminiChatMessage[] {
  ********************************************************/
 export async function callGemini(
   messages: GeminiChatMessage[],
-  geminiKey: string
+  geminiKey: string,
+  screenShotLink?: string
 ): Promise<AgentResponseFormat | null> {
   console.debug("[callGemini] Called with messages:", messages.length);
 
@@ -175,12 +176,17 @@ export async function callGemini(
   // The last user message to send explicitly
   const lastMsg = messages[messages.length - 1];
   console.log("[callGemini] lastMsg:", lastMsg);
-  const lastUserText =
+  let lastUserText =
     typeof lastMsg.parts[0].text === "string"
       ? lastMsg.parts[0].text
       : JSON.stringify(lastMsg.parts[0].text);
 
-  // 5) Send the last user message
+  // Append screenshot link or base64 to the message if provided
+  if (screenShotLink) {
+    lastUserText += ` Here is a screenshot for context: ${screenShotLink}`;
+  }
+
+  // 6) Send the last user message with multimodal support (image URL)
   const result = await chatSession.sendMessage(lastUserText);
   // e.g. gemini returns the result in result.response.text()
   const raw = result.response?.text() || "";
@@ -209,7 +215,8 @@ export type AIProvider = "openai" | "gemini";
 
 export async function callAI(
   provider: AIProvider,
-  messages: GeminiChatMessage[]
+  messages: GeminiChatMessage[],
+  screenShotLink?: string
 ): Promise<AgentResponseFormat | null> {
   switch (provider) {
     case "openai":
@@ -217,7 +224,7 @@ export async function callAI(
     case "gemini":
       // Example "geminiKey" or fetch from storage
       const geminiKey = "AIzaSyDcDTlmwYLVRflcPIR9oklm5IlTUNzhu0Q";
-      return await callGemini(messages, geminiKey);
+      return await callGemini(messages, geminiKey, screenShotLink);
     default:
       throw new Error(`[callAI] Unknown provider: ${provider}`);
   }

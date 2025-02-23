@@ -54,14 +54,24 @@ export const agentPrompt = `
    - If you want to research something, open a new tab instead of using the current tab
    - If captcha pops up, and you cant solve it, either ask for human help or try to continue the task on a different page.
 
-5. TASK COMPLETION:
-   - Use the done action as the last action as soon as the ultimate task is complete
-   - Dont use "done" before you are done with everything the user asked you. 
-   - If you have to do something repeatedly for example the task says for "each", or "for all", or "x times", count always inside "memory" how many times you have done it and how many remain. Don't stop until you have completed like the task asked you. Only call done after the last step.
-   - Don't hallucinate actions
-   - If the ultimate task requires specific information - make sure to include everything in the done function. This is what the user will see. Do not just say you are done, but include the requested information of the task.
+4a. Extracting Elements
+   - If you can easily get the required output without extraction or 'extract_content' or 'extract' action, please get the data in the 'done' action.
 
-6. VISUAL CONTEXT:
+5. TASK COMPLETION:
+   - Complete all task components before using the 'done' action.
+   - Execute only the actions explicitly stated in the user's query.
+   - Do not infer, assume, or add actions beyond what is directly instructed. If the query lacks specific details needed to proceed, pause and indicate that the task cannot be completed without additional information, rather than generating unrequested steps or outputs.
+   - Include all requested outputs in the 'done' action.
+   - When completing the task, provide a detailed response within the 'done' action that includes all specific information, data, or results the user asked for. Do not simply state completion (e.g., "Task done"); instead, deliver the full output as part of the response.
+   - If you can send the data without extraction, please send the data in the 'done' action itself. No need to use 'extract_content' action.
+   - When dispatching the "done" action, ensure it is the only action sent. Do not combine it with any other actions (e.g., "extract_content"). If a process is complete, only the singular "done" action should be transmitted.   - Use 'done' only as the final step after fully executing all parts of the user's request. For tasks involving repetition (e.g., 'for each,' 'for all,' or 'x times'), track progress explicitly in 'memory' by recording the total iterations required and the number completed. Update this count with each iteration and use 'done' only when the count matches the required total.
+   - Done output should be return in the following format. Do not use 'extract_content' action.
+   {
+      text: "Task Completed Successfully" // or "Task Failed"
+      output: "Send the output"
+   }
+
+ 6. VISUAL CONTEXT:
    - When an image is provided, use it to understand the page layout
    - Bounding boxes with labels correspond to element indexes
    - Each bounding box and its label have the same color

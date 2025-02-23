@@ -4,12 +4,59 @@ export class SidebarManager {
   private isSidebarVisible = false;
   private isHorizontalBarVisible = false;
   private isBarExpanded = false;
+  private tabId: number | null = null;
+
+  constructor(tabId?: number) {
+    if (tabId) {
+      this.tabId = tabId;
+      this.isSidebarVisible = false; // Start with sidebar hidden until toggled
+      this.isHorizontalBarVisible = false; // Start with horizontal bar hidden
+      this.loadState(tabId);
+    }
+  }
+
   private executionSteps: {
     step: string;
     status: string;
     message?: string;
   }[] = [];
-  // private currentTask: string = "Processing...";
+
+  private async syncState(): Promise<void> {
+    if (!this.tabId) return;
+    const state = {
+      isSidebarVisible: this.isSidebarVisible,
+      isHorizontalBarVisible: this.isHorizontalBarVisible,
+      isBarExpanded: this.isBarExpanded,
+      executionSteps: this.executionSteps,
+    };
+    await chrome.storage.sync.set({ [`sidebarState_${this.tabId}`]: state });
+  }
+
+  private async loadState(tabId: number): Promise<void> {
+    const result = await chrome.storage.sync.get([`sidebarState_${tabId}`]);
+    const state = result[`sidebarState_${tabId}`] || {
+      isSidebarVisible: false,
+      isHorizontalBarVisible: false,
+      isBarExpanded: false,
+      executionSteps: [],
+    };
+    this.isSidebarVisible = state.isSidebarVisible;
+    this.isHorizontalBarVisible = state.isHorizontalBarVisible;
+    this.isBarExpanded = state.isBarExpanded;
+    this.executionSteps = state.executionSteps;
+    this.tabId = tabId;
+    this.updateStyles();
+  }
+
+  static getInstance(tabId: number): SidebarManager {
+    let instance = (window as any)[`sidebarManager_${tabId}`] as SidebarManager;
+    if (!instance) {
+      instance = new SidebarManager(tabId);
+      (window as any)[`sidebarManager_${tabId}`] = instance;
+      instance.loadState(tabId);
+    }
+    return instance;
+  }
 
   // Inject Sidebar
   injectSidebar(): void {
@@ -48,6 +95,7 @@ export class SidebarManager {
 
     this.isSidebarVisible = true;
     this.updateStyles();
+    this.syncState();
   }
 
   // Inject Horizontal Bar with Glossy, Modern CSS
@@ -183,6 +231,7 @@ export class SidebarManager {
 
     this.isHorizontalBarVisible = false;
     this.updateStyles();
+    this.syncState();
   }
 
   // Toggle Sidebar Visibility
@@ -190,6 +239,7 @@ export class SidebarManager {
     if (!this.sidebarContainer) this.injectSidebar();
     this.isSidebarVisible = !this.isSidebarVisible;
     this.updateStyles();
+    this.syncState();
   }
 
   // Explicitly Close Sidebar
@@ -197,13 +247,17 @@ export class SidebarManager {
     if (!this.sidebarContainer) return;
     this.isSidebarVisible = false;
     this.updateStyles();
+    this.syncState();
   }
 
   // Show Horizontal Bar
   showHorizontalBar(): void {
     if (!this.horizontalBarContainer) this.injectHorizontalBar();
-    this.isHorizontalBarVisible = true;
-    this.updateStyles();
+    if (!this.isHorizontalBarVisible) {
+      this.isHorizontalBarVisible = true;
+      this.updateStyles();
+      this.syncState();
+    }
   }
 
   hideHorizontalBar(): void {
@@ -211,49 +265,55 @@ export class SidebarManager {
     this.isHorizontalBarVisible = false;
     this.isBarExpanded = false; // Reset expansion state
     this.updateStyles();
+    this.syncState();
   }
 
   updateHorizontalBar(
     taskHistory: { step: string; status: string; message?: string }[]
   ): void {
     if (!this.horizontalBarContainer) return;
-    this.executionSteps = taskHistory;
+    // Only update if steps have changed
+    if (JSON.stringify(this.executionSteps) !== JSON.stringify(taskHistory)) {
+      this.executionSteps = taskHistory;
+      const currentStep = taskHistory[taskHistory.length - 1]; // Latest step
+      const stepText = this.horizontalBarContainer.querySelector("#step-text");
+      const spinner = this.horizontalBarContainer.querySelector(
+        "#step-spinner"
+      ) as HTMLElement;
+      const history =
+        this.horizontalBarContainer.querySelector("#step-history");
 
-    const currentStep = taskHistory[taskHistory.length - 1]; // Latest step
-    const stepText = this.horizontalBarContainer.querySelector("#step-text");
-    const spinner = this.horizontalBarContainer.querySelector(
-      "#step-spinner"
-    ) as HTMLElement;
-    const history = this.horizontalBarContainer.querySelector("#step-history");
+      if (stepText && spinner) {
+        stepText.textContent = currentStep
+          ? `${currentStep.step}${
+              currentStep.message ? ` - ${currentStep.message}` : ""
+            }`
+          : "Processing...";
+        spinner.style.display =
+          currentStep && currentStep.status === "pending"
+            ? "inline-block"
+            : "none";
+        console.log(
+          "[SidebarManager] Updated stepText to:",
+          stepText.textContent
+        );
+      }
 
-    if (stepText && spinner) {
-      stepText.textContent = currentStep
-        ? `${currentStep.step}${
-            currentStep.message ? ` - ${currentStep.message}` : ""
-          }`
-        : "Processing...";
-      spinner.style.display =
-        currentStep && currentStep.status === "pending"
-          ? "inline-block"
-          : "none";
-      console.log(
-        "[SidebarManager] Updated stepText to:",
-        stepText.textContent
-      );
-    }
+      if (history && this.isBarExpanded) {
+        history.innerHTML = taskHistory
+          .map(
+            (step) =>
+              `<div>${step.step}: ${step.status}${
+                step.message ? ` - ${step.message}` : ""
+              }</div>`
+          )
+          .join("");
+        history.classList.add("expanded");
+      } else if (history) {
+        history.classList.remove("expanded");
+      }
 
-    if (history && this.isBarExpanded) {
-      history.innerHTML = taskHistory
-        .map(
-          (step) =>
-            `<div>${step.step}: ${step.status}${
-              step.message ? ` - ${step.message}` : ""
-            }</div>`
-        )
-        .join("");
-      history.classList.add("expanded");
-    } else if (history) {
-      history.classList.remove("expanded");
+      this.syncState();
     }
   }
 
@@ -273,6 +333,7 @@ export class SidebarManager {
     }
 
     this.updateStyles();
+    this.syncState();
   }
 
   // Apply Styles Based on Visibility and Expansion
@@ -292,5 +353,6 @@ export class SidebarManager {
         this.isBarExpanded
       );
     }
+    this.syncState();
   }
 }

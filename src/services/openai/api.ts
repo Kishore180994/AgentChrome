@@ -21,7 +21,8 @@ let currentProvider: AIProvider = "gemini";
 export async function chatWithAI(
   userMessage: string,
   sessionId: string,
-  currentState: Record<string, any> = {}
+  currentState: Record<string, any> = {},
+  screenShotLink?: string
 ): Promise<AgentResponseFormat> {
   // console.log(`[chatWithOpenAI] session=${sessionId}`, {
   //   userMessagePreview: userMessage.slice(0, 50),
@@ -42,7 +43,11 @@ export async function chatWithAI(
 
   try {
     const conversation = await prepareConversation(userMessage, currentState);
-    const response = await sendWithRetry(conversation, sessionId);
+    const response = await sendWithRetry(
+      conversation,
+      sessionId,
+      screenShotLink
+    );
 
     const parsed = parseAgentResponseFormat(response);
     await updateConversationHistory(conversation, JSON.stringify(parsed));
@@ -98,11 +103,12 @@ async function prepareConversation(
 async function sendWithRetry(
   conversation: GeminiChatMessage[],
   sessionId: string,
+  screenShotLink?: string,
   retries = MAX_RETRIES
 ): Promise<any> {
   try {
     console.debug(`[sendWithRetry][${sessionId}] requesting AI...`);
-    const resp = await callAI(currentProvider, conversation);
+    const resp = await callAI(currentProvider, conversation, screenShotLink);
     return resp;
   } catch (err) {
     console.error(`[sendWithRetry][${sessionId}] error=`, err);
@@ -112,7 +118,12 @@ async function sendWithRetry(
         retries - 1
       );
       await new Promise((res) => setTimeout(res, 1000));
-      return sendWithRetry(conversation, sessionId, retries - 1);
+      return sendWithRetry(
+        conversation,
+        sessionId,
+        screenShotLink,
+        retries - 1
+      );
     }
     throw err;
   }

@@ -6,8 +6,13 @@ import {
   LocalAction,
   LocalActionType,
 } from "./types/actionType";
+import {
+  generateRandomHash,
+  uploadScreenshot,
+} from "./services/s3UploadService";
 
-// **Execution Tracking & Connection**
+const s3UploadUserHash = generateRandomHash();
+const activeAutomationTabs: Set<number> = new Set();
 const executionHistories: Record<
   number,
   { step: string; status: "pending" | "success" | "failed"; message?: string }[]
@@ -15,6 +20,43 @@ const executionHistories: Record<
 const recentActionsMap: Record<number, string[]> = {};
 const currentTasks: Record<number, string> = {};
 const activePorts: Record<number, chrome.runtime.Port> = {};
+let showHorizontalBarDebounce: { [tabId: number]: NodeJS.Timeout } = {};
+
+function debounceShowHorizontalBar(tabId: number, delay: number = 1000): void {
+  if (showHorizontalBarDebounce[tabId]) {
+    clearTimeout(showHorizontalBarDebounce[tabId]);
+  }
+  showHorizontalBarDebounce[tabId] = setTimeout(() => {
+    sendMessageToContent(tabId, { type: "SHOW_HORIZONTAL_BAR" });
+    delete showHorizontalBarDebounce[tabId];
+  }, delay);
+}
+
+async function captureAndUploadScreenshot(tabId: number): Promise<string> {
+  let screenshot: string | null = null;
+
+  try {
+    // Retrieve the tab to get its window id
+    const tab = await chrome.tabs.get(tabId);
+    // Use the windowId for capturing the visible tab
+    screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, {
+      format: "png",
+    });
+  } catch (err) {
+    console.error("[background.ts] Error capturing screenshot:", err);
+    throw err;
+  }
+
+  // Use the modular S3 upload service
+  try {
+    // Pass screenshot first and tabId second as expected by uploadScreenshot
+    const screenshotLink = await uploadScreenshot(s3UploadUserHash, screenshot);
+    return screenshotLink;
+  } catch (err) {
+    console.error("[background.ts] Error uploading screenshot to S3:", err);
+    throw err;
+  }
+}
 
 /********************************************************
  * 4) Utility: sendExecutionUpdate
@@ -50,6 +92,9 @@ chrome.action.onClicked.addListener(async (tab) => {
   if (!tab?.id) return;
   await ensureContentScriptInjected(tab.id);
   sendMessageToContent(tab.id, { type: "TOGGLE_SIDEBAR" });
+  if (activeAutomationTabs.has(tab.id)) {
+    activeAutomationTabs.delete(tab.id); // Clear any prior automation state
+  }
 });
 
 function sendMessageToContent(tabId: number, msg: any) {
@@ -68,6 +113,10 @@ function sendMessageToContent(tabId: number, msg: any) {
   }
 }
 
+chrome.tabs.onRemoved.addListener((tabId, _removeInfo) => {
+  activeAutomationTabs.delete(tabId);
+});
+
 async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
   console.log(
     "[background.ts] Ensuring content script is injected for tab",
@@ -80,23 +129,37 @@ async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
           "[background.ts] No response to PING, injecting content script on tab",
           tabId
         );
-        chrome.scripting.executeScript(
-          { target: { tabId }, files: ["content.js"] },
-          () => {
+        chrome.scripting
+          .executeScript({ target: { tabId }, files: ["content.js"] })
+          .then(() => {
             setTimeout(() => {
               console.log(
                 "[background.ts] Content script injected on tab",
                 tabId
               );
+              // Only show horizontal bar if tab is in active automation and debounce
+              if (activeAutomationTabs.has(tabId)) {
+                debounceShowHorizontalBar(tabId);
+              }
               resolve(true);
             }, 500);
-          }
-        );
+          })
+          .catch((err) => {
+            console.error(
+              "[background.ts] Error injecting content script:",
+              err
+            );
+            resolve(false);
+          });
       } else {
         console.log(
           "[background.ts] Content script already active on tab",
           tabId
         );
+        // Only show horizontal bar if tab is in active automation and debounce
+        if (activeAutomationTabs.has(tabId)) {
+          debounceShowHorizontalBar(tabId);
+        }
         resolve(true);
       }
     });
@@ -195,6 +258,9 @@ async function processCommand(
   initialCommand: string,
   actionHistory: string[] = []
 ) {
+  // Add tab to active automation tabs
+  activeAutomationTabs.add(tabId);
+
   if (!executionHistories[tabId]) {
     executionHistories[tabId] = [];
   }
@@ -249,10 +315,12 @@ async function processCommand(
     const fullContextMessage = `${contextMessage}. ${recentActionsStr}`;
 
     console.log("[background.ts] Calling AI with context:", fullContextMessage);
+    const screenShotLink = await captureAndUploadScreenshot(tabId);
     const raw = await chatWithAI(
       fullContextMessage,
       "session-id",
-      currentState
+      currentState,
+      screenShotLink
     );
     console.log("[background.ts] Received raw AI response:", raw);
 
@@ -298,6 +366,13 @@ async function processCommand(
       ].message = `Success - Completed: ${currentTasks[tabId]}`;
       sendExecutionUpdate(tabId);
       resetExecutionState(tabId);
+
+      // Close horizontal bar and open vertical sidebar for all active tabs
+      for (const activeTabId of activeAutomationTabs) {
+        chrome.tabs.sendMessage(activeTabId, { type: "HIDE_HORIZONTAL_BAR" });
+        chrome.tabs.sendMessage(activeTabId, { type: "TOGGLE_SIDEBAR" });
+      }
+      activeAutomationTabs.clear();
       return;
     }
 
@@ -325,22 +400,19 @@ async function processCommand(
       pageState,
       executedActions
     );
-
     // Check if "done" was the last action
-    if (localActions.some((a) => a.type === "done")) {
-      console.log("[background.ts] Process completed with 'done' action");
-      if (executionHistories[tabId].length > 0) {
-        executionHistories[tabId][executionHistories[tabId].length - 1].status =
-          "success";
-        executionHistories[tabId][
-          executionHistories[tabId].length - 1
-        ].message = `Success - Completed: ${currentTasks[tabId]}`;
-        sendExecutionUpdate(tabId);
-        // Close horizontal bar and open sidebar
-        chrome.tabs.sendMessage(tabId, { type: "HIDE_HORIZONTAL_BAR" });
-        chrome.tabs.sendMessage(tabId, { type: "TOGGLE_SIDEBAR" });
-        resetExecutionState(tabId);
+    const doneAction = localActions.find((a) => a.type === "done");
+    if (doneAction) {
+      // Close horizontal bar and open vertical sidebar for all active tabs
+      for (const activeTabId of activeAutomationTabs) {
+        chrome.tabs.sendMessage(activeTabId, { type: "HIDE_HORIZONTAL_BAR" });
+        chrome.tabs.sendMessage(activeTabId, { type: "TOGGLE_SIDEBAR" });
       }
+
+      chrome.tabs.sendMessage(tabIdRef.value, {
+        type: "DISPLAY_MESSAGE",
+        response: doneAction,
+      });
       return;
     }
 
@@ -356,15 +428,17 @@ async function processCommand(
       ...executedActions,
     ].slice(-5);
 
-    const memoryPart = memory ? `Memory: ${memory}` : "";
-    const goalPart = next_goal ? `Next goal: ${next_goal}` : "";
-    const objectivePart = user_command ? `Main objective: ${user_command}` : "";
+    const memoryPart = memory ? `Summary of previous actions: ${memory}` : "";
+    const goalPart = next_goal ? `Next step to perform: ${next_goal}` : "";
+    const objectivePart = user_command
+      ? `Ultimate objective: ${user_command}`
+      : "";
     const promptParts = [
-      evaluation || "",
+      evaluation ? `Evaluation of previous goal: ${evaluation}` : "",
       memoryPart,
       goalPart,
       objectivePart,
-      "Given this context, scan the current document elements and suggest the next steps to achieve the next goal while keeping the main objective in mind.",
+      "Based on the current state and the screenshot (if provided), provide the next specific actions to achieve the next goal while considering the main objective.",
     ]
       .filter(Boolean)
       .join(". ");
@@ -436,44 +510,85 @@ function mapAiItemToLocalAction(item: AgentActionItem): LocalAction {
 
   let type: LocalActionType = "wait";
   let description = actionName;
+  let data: any = {};
 
   switch (actionName) {
     case "click_element":
       type = "click";
+      data = {
+        url: params.url,
+        text: params.text,
+        index: params.index,
+        selector: params.selector || "",
+      };
       break;
     case "input_text":
       type = "input_text";
+      data = {
+        text: params.text,
+        index: params.index,
+        selector: params.selector || "",
+      };
       break;
     case "open_tab":
     case "go_to_url":
+    case "refresh_page":
     case "navigate":
       type = "navigate";
+      data = {
+        url: params.url,
+      };
       break;
     case "extract_content":
       type = "extract";
+      data = {
+        selector: params.selector || "",
+        index: params.index,
+      };
       break;
     case "submit_form":
       type = "submit_form";
+      data = {
+        selector: params.selector || "",
+        index: params.index,
+      };
       break;
     case "key_press":
       type = "key_press";
+      data = {
+        key: params.key,
+      };
       break;
     case "scroll_down":
       type = "scroll";
-      params.direction = "down";
+      data = {
+        direction: "down",
+        offset: params.offset | 200,
+      };
       break;
     case "scroll_up":
       type = "scroll";
-      params.direction = "up";
+      data = {
+        direction: "up",
+        offset: params.offset | 200,
+      };
       break;
     case "scroll":
       type = "scroll";
+      data = {
+        direction: params.direction,
+        offset: params.offset | 200,
+      };
       break;
     case "verify":
       type = "verify";
       break;
     case "done":
       type = "done";
+      data = {
+        text: params.message || "Task completed successfully.", // Use message if provided, else default
+        ...params, // Include all other params to preserve additional data
+      };
       break;
     default:
       console.warn(
@@ -487,15 +602,7 @@ function mapAiItemToLocalAction(item: AgentActionItem): LocalAction {
     id: Date.now().toString(),
     type,
     description,
-    data: {
-      url: params.url,
-      text: params.text,
-      index: params.index,
-      selector: params.selector || "",
-      key: params.key,
-      direction: params.direction,
-      offset: params.offset,
-    },
+    data,
   };
   console.log("[background.ts] Mapped action:", mappedAction);
   return mappedAction;
@@ -691,6 +798,12 @@ async function performLocalAction(
       await sendActionToTab(a, tabIdRef.value);
       console.log("[background.ts] Action acknowledged by tab", tabIdRef.value);
       break;
+    case "refresh":
+      console.log("[background.ts] Refreshing tab", tabIdRef.value);
+      await chrome.tabs.reload(tabIdRef.value);
+      await waitForTabLoad(tabIdRef.value);
+      console.log("[background.ts] Tab", tabIdRef.value, "refreshed");
+      break;
     case "extract":
       if (a.data.selector && typeof elementIndex === "number") {
         const foundEl = pageElements.find((pe) => pe.index === elementIndex);
@@ -754,7 +867,7 @@ async function performLocalAction(
       break;
     case "done":
       console.log("[background.ts] AI indicates all tasks are done");
-      break; // Simply complete the action
+      break;
     case "wait":
       console.log("[background.ts] Waiting for 2 seconds");
       await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -783,6 +896,7 @@ async function verifyOrOpenTab(urlPart: string, tabIdRef: { value: number }) {
       "Activating it"
     );
     await chrome.tabs.update(found.id, { active: true });
+    activeAutomationTabs.add(found.id);
     await waitForTabLoad(found.id);
     console.log("[background.ts] Tab", found.id, "loaded and active");
     tabIdRef.value = found.id;
@@ -794,6 +908,7 @@ async function verifyOrOpenTab(urlPart: string, tabIdRef: { value: number }) {
     const newTab = await createTab(`https://${urlPart}`);
     if (newTab && newTab.id) {
       tabIdRef.value = newTab.id;
+      activeAutomationTabs.add(newTab.id);
       console.log(
         "[background.ts] New tab created, updated tabIdRef to:",
         newTab.id
@@ -921,9 +1036,22 @@ function waitForTabLoad(tabId: number): Promise<void> {
   });
 }
 
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === "complete" && activeAutomationTabs.has(tabId)) {
+    ensureContentScriptInjected(tabId).then(() => {
+      // Only send if the horizontal bar isn’t already visible
+      const bar = document.getElementById("agent-chrome-bar");
+      if (!bar || bar.classList.contains("hidden")) {
+        debounceShowHorizontalBar(tabId);
+      }
+    });
+  }
+});
+
 async function navigateTab(tabId: number, url: string): Promise<void> {
   console.log("[background.ts] Updating tab", tabId, "to URL:", url);
   await chrome.tabs.update(tabId, { url });
+  activeAutomationTabs.add(tabId);
   await waitForTabLoad(tabId);
   console.log("[background.ts] Tab", tabId, "navigated to", url);
   await ensureContentScriptInjected(tabId);
@@ -938,6 +1066,7 @@ async function createTab(url: string): Promise<chrome.tabs.Tab> {
         changeInfo: chrome.tabs.TabChangeInfo
       ) => {
         if (tabId === tab.id && changeInfo.status === "complete") {
+          activeAutomationTabs.add(tab.id);
           console.log("[background.ts] New tab", tab.id, "created and loaded");
           chrome.tabs.onUpdated.removeListener(listener);
           await ensureContentScriptInjected(tab.id);

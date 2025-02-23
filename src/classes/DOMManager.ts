@@ -9,6 +9,20 @@ export class DOMManager {
     doc.querySelectorAll(".debug-highlight").forEach((el) => el.remove());
   }
 
+  getCssSelector = (el: any) => {
+    let path = [];
+    while (el.parentNode) {
+      let index = 0;
+      let sibling = el;
+      while ((sibling = sibling.previousElementSibling)) {
+        index++;
+      }
+      path.unshift(`${el.tagName.toLowerCase()}:nth-child(${index + 1})`);
+      el = el.parentNode;
+    }
+    return path.join(" > ");
+  };
+
   /**
    * Draws a debug highlight overlay on the element.
    */
@@ -67,17 +81,13 @@ export class DOMManager {
     ) => {
       // Select all relevant elements: textarea, input, button, a, h1-h6
       const querySelector =
-        "textarea, input, button, a, h1, h2, h3, h4, h5, h6";
+        "textarea, input, button, a, h1, h2, h3, h4, h5, h6, small";
       doc.querySelectorAll(querySelector).forEach((el) => {
         // Build selector
         let selector = "";
         if (el.id) {
           selector = `#${CSS.escape(el.id)}`;
-        } else if (el.className) {
-          selector = `.${el.className.trim().replace(/\s+/g, ".")}`;
-        } else {
-          selector = `tag:${el.tagName.toLowerCase()}`;
-        }
+        } else selector = this.getCssSelector(el);
 
         // Get meaningful text snippet
         const textSnippet = this.getMeaningfulText(el);

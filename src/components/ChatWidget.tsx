@@ -7,7 +7,7 @@ import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 // Message interface
 interface Message {
   id?: string;
-  role: "user" | "assistant";
+  role: "user" | "model";
   content: string;
   actions?: Array<{
     type: string;
@@ -38,13 +38,55 @@ export function ChatWidget() {
   // Listen for AI responses from content.ts
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      // Verify the event comes from the same origin for security
       if (event.origin !== window.location.origin) return;
+
       if (event.data.type === "COMMAND_RESPONSE") {
-        console.log("[ChatWidget] Received AI response:", event.data.response);
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: event.data.response },
+        // Destructure the nested response from the event data
+        const { response: receivedResponse } = event.data;
+        console.log("[ChatWidget] Received AI response:", receivedResponse);
+
+        // The response object contains another response with a data object
+        const { response } = receivedResponse;
+        const { data } = response;
+        const { text, output } = data;
+
+        let formattedOutput;
+
+        // Since output is always a string containing JSON,
+        // we attempt to parse it and pretty-print if it represents an object or array.
+        if (typeof output === "string") {
+          try {
+            const parsedOutput = JSON.parse(output);
+            if (typeof parsedOutput === "object" && parsedOutput !== null) {
+              const prettyJson = JSON.stringify(parsedOutput, null, 2);
+              formattedOutput = `\`\`\`json\n${prettyJson}\n\`\`\``;
+            } else {
+              // If the parsed value is a simple JSON value, use the raw output
+              formattedOutput = output;
+            }
+          } catch (error) {
+            // If JSON parsing fails, treat the output as plain text
+            formattedOutput = output;
+          }
+        } else {
+          // If output isn't a string, fallback to converting it to a JSON string
+          formattedOutput = `\`\`\`json\n${JSON.stringify(
+            output,
+            null,
+            2
+          )}\n\`\`\``;
+        }
+
+        // Update the messages state with the text and formatted output
+        setMessages((prevMessages) => [
+          ...prevMessages,
+          { role: "model", content: text },
+          { role: "model", content: formattedOutput },
         ]);
+
+        // Indicate that loading is complete
+        setIsLoading(false);
       }
     };
 
@@ -154,13 +196,15 @@ export function ChatWidget() {
             </div>
           </div>
         ))}
-        {isLoading && (
+        {isLoading ? (
           <div className="ext-flex ext-justify-start">
             <div className="ext-bg-gray-800/80 ext-text-cyan-300 ext-p-3 ext-rounded-lg ext-text-sm ext-italic ext-relative ext-overflow-hidden ext-shadow-md">
               Analyzing...
               <span className="ext-absolute ext-inset-0 ext-bg-gradient-to-r ext-from-transparent ext-via-cyan-400/20 ext-to-transparent ext-opacity-50 ext-animate-pulse" />
             </div>
           </div>
+        ) : (
+          <div></div>
         )}
         {error && (
           <div className="ext-flex ext-justify-center">
