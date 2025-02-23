@@ -28,10 +28,10 @@ if (!window[AGENT_KEY]) {
     name: `content-script-${tabId}`,
   });
 
-  port.onMessage.addListener((message) => {
+  port.onMessage.addListener(async (message) => {
     switch (message.type) {
       case "PERFORM_ACTION":
-        actionExecutor.execute(message.action);
+        await actionExecutor.execute(message.action);
         return true;
       case "TOGGLE_SIDEBAR":
         sidebarManager.toggleSidebar();
@@ -43,11 +43,21 @@ if (!window[AGENT_KEY]) {
           elements,
         });
         return true;
+
       case "EXECUTION_UPDATE":
         const { taskHistory } = message;
         console.log("[content.ts] Received EXECUTION_UPDATE:", taskHistory);
         sidebarManager.updateHorizontalBar(taskHistory);
+        window.postMessage(
+          {
+            type: "COMMAND_RESPONSE",
+            response: taskHistory,
+            responseType: "EXECUTION_UPDATE",
+          },
+          "*"
+        );
         return true;
+
       case "HIDE_HORIZONTAL_BAR":
         console.log("[content.ts] Hiding horizontal bar");
         sidebarManager.hideHorizontalBar();
@@ -119,6 +129,10 @@ if (!window[AGENT_KEY]) {
         const { taskHistory } = message;
         console.log("[content.ts] Received EXECUTION_UPDATE:", taskHistory);
         sidebarManager.updateHorizontalBar(taskHistory);
+        window.postMessage(
+          { type: "COMMAND_RESPONSE", response: message },
+          "*"
+        );
         sendResponse({ success: true, tabId: currentTabId });
         return true;
       case "HIDE_HORIZONTAL_BAR":

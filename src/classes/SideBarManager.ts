@@ -1,3 +1,5 @@
+import { TaskHistory } from "../types/actionType";
+
 export class SidebarManager {
   private sidebarContainer: HTMLDivElement | null = null;
   private horizontalBarContainer: HTMLDivElement | null = null;
@@ -268,9 +270,7 @@ export class SidebarManager {
     this.syncState();
   }
 
-  updateHorizontalBar(
-    taskHistory: { step: string; status: string; message?: string }[]
-  ): void {
+  updateHorizontalBar(taskHistory: TaskHistory[]): void {
     if (!this.horizontalBarContainer) return;
     // Only update if steps have changed
     if (JSON.stringify(this.executionSteps) !== JSON.stringify(taskHistory)) {

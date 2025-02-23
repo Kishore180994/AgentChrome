@@ -57,6 +57,12 @@ export interface InputTextAction {
   };
 }
 
+export interface TaskHistory {
+  step: string;
+  status: string;
+  message?: string;
+}
+
 /** For "click_element": click the element at "index" */
 export interface ClickElementAction {
   click_element: {
