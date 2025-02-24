@@ -11,6 +11,7 @@ import {
   uploadScreenshot,
 } from "./services/s3UploadService";
 
+let automationStopped: boolean = false;
 const s3UploadUserHash = generateRandomHash();
 const activeAutomationTabs: Set<number> = new Set();
 const executionHistories: Record<
@@ -258,6 +259,13 @@ async function processCommand(
   initialCommand: string,
   actionHistory: string[] = []
 ) {
+  // If automation has been stopped, do nothing
+  if (automationStopped) {
+    console.log(
+      "[background.ts] Automation has been stopped. Not processing further commands."
+    );
+    return;
+  }
   // Add tab to active automation tabs
   activeAutomationTabs.add(tabId);
 
@@ -269,12 +277,10 @@ async function processCommand(
   }
 
   console.log(
-    "[background.ts] Starting processCommand with tabId:",
+    "[background.ts] recentActionsMap for tab",
     tabId,
-    "command:",
-    contextMessage,
-    "initialCommand:",
-    initialCommand
+    ":",
+    recentActionsMap[tabId]
   );
 
   const pageState = await fetchPageElements(tabId);
@@ -391,7 +397,7 @@ async function processCommand(
     );
 
     const executedActions: string[] = [];
-    await executeLocalActions(
+    const resultBack = await executeLocalActions(
       localActions,
       0,
       tabIdRef,
@@ -400,9 +406,13 @@ async function processCommand(
       pageState,
       executedActions
     );
+
+    console.log(`[background.ts] Extracted content: ${resultBack}`);
     // Check if "done" was the last action
     const doneAction = localActions.find((a) => a.type === "done");
     if (doneAction) {
+      // Set the global flag to prevent further AI calls until a new command is issued.
+      automationStopped = true;
       // Close horizontal bar and open vertical sidebar for all active tabs
       for (const activeTabId of activeAutomationTabs) {
         chrome.tabs.sendMessage(activeTabId, { type: "HIDE_HORIZONTAL_BAR" });
@@ -433,11 +443,15 @@ async function processCommand(
     const objectivePart = user_command
       ? `Ultimate objective: ${user_command}`
       : "";
+    const extractedContent = resultBack
+      ? `Extracted content: ${resultBack}`
+      : "";
     const promptParts = [
       evaluation ? `Evaluation of previous goal: ${evaluation}` : "",
       memoryPart,
       goalPart,
       objectivePart,
+      extractedContent,
       "Based on the current state and the screenshot (if provided), provide the next specific actions to achieve the next goal while considering the main objective.",
     ]
       .filter(Boolean)
@@ -619,7 +633,7 @@ async function executeLocalActions(
   currentState: CurrentState,
   pageElements: PageElement[] = [],
   executedActions: string[] = []
-) {
+): Promise<any> {
   const tabId = tabIdRef.value;
   if (!executionHistories[tabId]) {
     executionHistories[tabId] = [];
@@ -632,7 +646,7 @@ async function executeLocalActions(
     console.log(
       "[background.ts] All actions executed for task, returning control to processCommand"
     );
-    return;
+    return "ACTIONS_COMPLETED";
   }
 
   const action = actions[index];
@@ -643,18 +657,25 @@ async function executeLocalActions(
 
   while (retryCount <= maxRetries) {
     try {
-      await performLocalAction(action, tabIdRef, pageElements);
+      const output = await performLocalAction(action, tabIdRef, pageElements);
       console.log("[background.ts] Action succeeded:", action);
-
       const actionDesc =
         action.type === "click" || action.type === "click_element"
           ? `Clicked on ${action.data.selector || action.data.index}`
           : action.type === "navigate"
           ? `Navigated to ${action.data.url}`
+          : action.type === "extract"
+          ? `Extracted content from ${
+              action.data.selector || action.data.index
+            }`
           : action.type;
       executedActions.push(actionDesc);
 
-      await executeLocalActions(
+      if (output) {
+        return output;
+      }
+
+      const result = await executeLocalActions(
         actions,
         index + 1,
         tabIdRef,
@@ -663,7 +684,10 @@ async function executeLocalActions(
         pageElements,
         executedActions
       );
-      return; // Exit on success
+      if (result === "ACTIONS_COMPLETED") {
+        return "ACTIONS_COMPLETED";
+      }
+      return result;
     } catch (err) {
       console.error("[background.ts] Action failed:", action, "Error:", err);
       retryCount++;
@@ -690,7 +714,7 @@ async function executeLocalActions(
           currentState.user_command || "No Initial Command",
           recentActionsMap[tabId]
         );
-        return; // Exit after prompting AI
+        return;
       }
     }
   }
@@ -703,7 +727,7 @@ async function performLocalAction(
   a: LocalAction,
   tabIdRef: { value: number },
   pageElements: PageElement[]
-) {
+): Promise<any> {
   console.log(
     "[background.ts] Performing action on tab",
     tabIdRef.value,
@@ -848,9 +872,9 @@ async function performLocalAction(
         ":",
         a
       );
-      await sendActionToTab(a, tabIdRef.value);
+      const response = await sendActionToTab(a, tabIdRef.value);
       console.log("[background.ts] Action acknowledged by tab", tabIdRef.value);
-      break;
+      return response?.result || null;
 
     case "scroll":
       console.log(
@@ -924,7 +948,7 @@ async function verifyOrOpenTab(urlPart: string, tabIdRef: { value: number }) {
 async function sendActionToTab(
   action: LocalAction,
   tabId: number
-): Promise<void> {
+): Promise<any> {
   console.log("[background.ts] Sending action to tab", tabId, ":", action);
   await ensureContentScriptInjected(tabId);
   return new Promise((resolve, reject) => {
@@ -947,7 +971,8 @@ async function sendActionToTab(
             ":",
             response
           );
-          resolve();
+          console.log(`[sendActionToTab] Extracted content: ${response}`);
+          resolve(response);
         } else {
           console.error(
             "[background.ts] Action failed, response from tab",
@@ -967,6 +992,8 @@ async function sendActionToTab(
  ********************************************************/
 chrome.runtime.onMessage.addListener(async (msg, _sender, resp) => {
   if (msg.type === "PROCESS_COMMAND") {
+    // Reset the flag for new commands
+    automationStopped = false;
     console.log("[background.ts] Received PROCESS_COMMAND:", msg);
     await chrome.storage.local.set({ conversationHistory: [] });
     const [activeTab] = await chrome.tabs.query({

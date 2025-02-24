@@ -9,7 +9,7 @@ export class ActionExecutor {
     this.domManager = domManager;
   }
 
-  async execute(action: LocalAction): Promise<void> {
+  async execute(action: LocalAction): Promise<any> {
     const { type, data } = action;
     try {
       switch (type) {
@@ -33,8 +33,11 @@ export class ActionExecutor {
           await this.handleSubmitForm(data.selector);
           break;
         case "extract":
-          await this.handleExtract(data.selector);
-          break;
+          const extractedData = await this.handleExtract(data.selector);
+          console.log(
+            `[ActionExecutor.ts] Extracted content: ${extractedData}`
+          );
+          return extractedData;
         case "key_press":
           await this.handleKeyPress(data.selector, data.key);
           break;
@@ -167,7 +170,7 @@ export class ActionExecutor {
   /**
    * Handles extract actions on elements, including those inside iframes.
    */
-  private async handleExtract(selector?: string): Promise<void> {
+  private async handleExtract(selector?: string): Promise<string> {
     const { element, ownerDocument } = selector
       ? querySelectorWithIframes(selector)
       : { element: null, ownerDocument: null };
@@ -181,6 +184,7 @@ export class ActionExecutor {
     // Extract content from the element
     const content = element.textContent || "";
     console.log(`[ActionExecutor] Extracted content: ${content}`);
+    return content;
   }
 
   /**

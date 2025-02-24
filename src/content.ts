@@ -103,8 +103,8 @@ if (!window[AGENT_KEY]) {
       case "PERFORM_ACTION":
         actionExecutor
           .execute(message.action)
-          .then(() => {
-            sendResponse({ success: true, tabId: currentTabId });
+          .then((result) => {
+            sendResponse({ success: true, result, tabId: currentTabId });
           })
           .catch((error: any) => {
             sendResponse({
