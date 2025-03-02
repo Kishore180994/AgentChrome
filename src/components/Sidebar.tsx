@@ -5,24 +5,18 @@ const Sidebar: React.FC = () => {
   return (
     <div
       id="agent-chrome-sidebar"
-      className="
-        w-[400px]
-        h-screen
-        bg-gradient-to-t
-        from-gray-900/90
-        to-black/90
-        backdrop-blur-xl
-        border-l
-        border-cyan-500/30
-        shadow-2xl
-        z-[9999]
-        overflow-y-auto
-        transition-transform
-        duration-300
-        ease-in-out
-        text-gray-100
-        p-4
-      "
+      style={{
+        width: "100%",
+        height: "100%",
+        background:
+          "linear-gradient(to top, rgba(17, 24, 39, 0.9), rgba(0, 0, 0, 0.9))",
+        backdropFilter: "blur(12px)",
+        borderLeft: "1px solid rgba(6, 182, 212, 0.3)",
+        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+        overflowY: "auto",
+        color: "#f3f4f6",
+        padding: "16px",
+      }}
     >
       <App />
     </div>

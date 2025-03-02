@@ -321,12 +321,11 @@ async function processCommand(
     const fullContextMessage = `${contextMessage}. ${recentActionsStr}`;
 
     console.log("[background.ts] Calling AI with context:", fullContextMessage);
-    const screenShotLink = await captureAndUploadScreenshot(tabId);
+    // const screenShotLink = await captureAndUploadScreenshot(tabId);
     const raw = await chatWithAI(
       fullContextMessage,
       "session-id",
-      currentState,
-      screenShotLink
+      currentState
     );
     console.log("[background.ts] Received raw AI response:", raw);
 

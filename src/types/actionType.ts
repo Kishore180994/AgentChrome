@@ -17,6 +17,7 @@ export interface LocalAction {
   id: string;
   type: string;
   data: {
+    xPath?: string;
     selector?: string;
     value?: string;
     text?: string; // For input_text or key_press

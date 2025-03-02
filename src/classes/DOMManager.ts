@@ -9,19 +9,59 @@ export class DOMManager {
     doc.querySelectorAll(".debug-highlight").forEach((el) => el.remove());
   }
 
-  getCssSelector = (el: any) => {
-    let path = [];
-    while (el.parentNode) {
+  /**
+   * Generates a CSS selector by walking up to the root.
+   */
+  getCssSelector(el: Element): string {
+    const path: string[] = [];
+    let current: Element | null = el;
+    while (current && current.nodeType === Node.ELEMENT_NODE) {
       let index = 0;
-      let sibling = el;
-      while ((sibling = sibling.previousElementSibling)) {
+      let sibling = current.previousElementSibling;
+      while (sibling) {
         index++;
+        sibling = sibling.previousElementSibling;
       }
-      path.unshift(`${el.tagName.toLowerCase()}:nth-child(${index + 1})`);
-      el = el.parentNode;
+      path.unshift(`${current.tagName.toLowerCase()}:nth-child(${index + 1})`);
+      current = current.parentElement;
     }
     return path.join(" > ");
-  };
+  }
+
+  /**
+   * Generates an XPath by walking up to the root.
+   * Short-circuits if the element has an ID.
+   */
+  getElementXPath(el: Element): string {
+    // If element has an ID, we can short-circuit
+    if (el.id) {
+      return `//*[@id="${el.id}"]`;
+    }
+
+    const segments: string[] = [];
+    let current: Element | null = el;
+
+    while (current && current.nodeType === Node.ELEMENT_NODE) {
+      let index = 1;
+      let sibling = current.previousSibling;
+      // Count how many siblings of the same nodeName appear before this node
+      while (sibling) {
+        if (
+          sibling.nodeType === Node.ELEMENT_NODE &&
+          sibling.nodeName === current.nodeName
+        ) {
+          index++;
+        }
+        sibling = sibling.previousSibling;
+      }
+      const nodeName = current.nodeName.toLowerCase();
+      segments.unshift(`${nodeName}[${index}]`);
+      current = current.parentElement;
+    }
+
+    // Combine the segments into a full path
+    return "/" + segments.join("/");
+  }
 
   /**
    * Draws a debug highlight overlay on the element.
@@ -73,21 +113,46 @@ export class DOMManager {
     this.clearDebugHighlights();
     const elements: PageElement[] = [];
     let idx = 1;
-
+    const interactiveRoles = [
+      "button",
+      "textarea",
+      "textbox",
+      "listbox",
+      "option",
+      // "link",
+      // "checkbox",
+      // "radio",
+      // "textbox",
+      // "combobox",
+      // "option",
+      // "searchbox",
+      // "switch",
+      // "tab",
+      // "menuitem",
+    ];
     // Recursive function to process a document and its iframes
     const processDocument = (
       doc: Document,
       iframeOffset: { x: number; y: number } = { x: 0, y: 0 }
     ) => {
-      // Select all relevant elements: textarea, input, button, a, h1-h6
+      const roleSelector = interactiveRoles
+        .map((role) => `[role="${role}"]`)
+        .join(", ");
+      // Select relevant elements: textarea, input, button, a, h1-h6, small
       const querySelector =
-        "textarea, input, button, a, h1, h2, h3, h4, h5, h6, small";
+        "textarea, input, button, a, h1, h2, h3, h4, h5, h6, small, canvas, " +
+        roleSelector;
       doc.querySelectorAll(querySelector).forEach((el) => {
-        // Build selector
-        let selector = "";
+        // Build CSS selector
+        let cssSelector = "";
         if (el.id) {
-          selector = `#${CSS.escape(el.id)}`;
-        } else selector = this.getCssSelector(el);
+          cssSelector = `#${CSS.escape(el.id)}`;
+        } else {
+          cssSelector = this.getCssSelector(el);
+        }
+
+        // Build XPath
+        const xPath = this.getElementXPath(el);
 
         // Get meaningful text snippet
         const textSnippet = this.getMeaningfulText(el);
@@ -105,7 +170,7 @@ export class DOMManager {
         elements.push({
           index: idx++,
           tagName: el.tagName.toLowerCase(),
-          selector,
+          selector: cssSelector, // old 'selector'
           text: textSnippet.slice(0, 100),
           fullText: "",
           attributes: this.getElementAttributes(el),
@@ -115,10 +180,12 @@ export class DOMManager {
             el.getAttribute("alt") ||
             undefined,
           boundingBox,
+          // We can store xPath in a new field
+          xPath: xPath,
         });
 
         // Draw debug highlight
-        this.drawDebugHighlight(el, idx, selector, iframeOffset);
+        this.drawDebugHighlight(el, idx, cssSelector, iframeOffset);
       });
 
       // Process nested iframes
@@ -138,7 +205,8 @@ export class DOMManager {
             y: iframeRect.top + window.scrollY,
           };
 
-          processDocument(iframeDoc, iframeOffsetAdjusted); // Recursively process the iframe's document
+          // Recursively process the iframe's document
+          processDocument(iframeDoc, iframeOffsetAdjusted);
         } catch (e) {
           // Handle iframe access error
         }
@@ -153,27 +221,49 @@ export class DOMManager {
 
   /**
    * Executes a LocalAction on the DOM.
+   * Now supports both CSS selectors and XPath.
    */
   executeAction(action: LocalAction): void {
     try {
-      const sel = action.data.selector || "";
-      let element = sel ? (document.querySelector(sel) as HTMLElement) : null;
+      // We can store the user’s desired locator in either `action.data.selector` (CSS) or `action.data.xPath`
+      const cssSelector = action.data.selector || "";
+      const xPath = action.data.xPath || "";
 
-      if (!element && sel) {
-        // Attempt to scroll down to see if element appears
+      let element: HTMLElement | null = null;
+
+      // 1) If xPath is specified, try that first
+      if (xPath) {
+        element = this.queryByXPath(xPath);
+      }
+      // 2) If no xPath or not found by xPath, fall back to CSS
+      if (!element && cssSelector) {
+        element = document.querySelector(cssSelector) as HTMLElement | null;
+      }
+
+      // If element not found, attempt a scroll + retry
+      if (!element && (xPath || cssSelector)) {
         window.scrollTo(0, document.body.scrollHeight);
-
         setTimeout(() => {
-          element = document.querySelector(sel) as HTMLElement;
-          if (!element) {
-            throw new Error(`Element not found for selector: ${sel}`);
+          let delayedElement: HTMLElement | null = null;
+
+          if (xPath) {
+            delayedElement = this.queryByXPath(xPath);
           }
-          this.performLocalDOMAction(element, action);
+          if (!delayedElement && cssSelector) {
+            delayedElement = document.querySelector(cssSelector) as HTMLElement;
+          }
+
+          if (!delayedElement) {
+            throw new Error(
+              `Element not found for xPath: "${xPath}" or selector: "${cssSelector}"`
+            );
+          }
+          this.performLocalDOMAction(delayedElement, action);
         }, 1000);
       } else if (element) {
         this.performLocalDOMAction(element, action);
       } else {
-        // No selector or not needed
+        // No selector or xPath, or not needed for the action
         this.performLocalDOMAction(null, action);
       }
     } catch (error: any) {
@@ -198,7 +288,6 @@ export class DOMManager {
         if (!target) {
           throw new Error("No element for input_text");
         }
-
         const text = action.data.text || "";
 
         // Check if the target element is a canvas
@@ -214,6 +303,7 @@ export class DOMManager {
         if (target) {
           target.scrollIntoView({ behavior: "smooth", block: "center" });
         } else {
+          // No target element, scroll by offset
           window.scrollBy({
             top: action.data.offset || 200,
             behavior: "smooth",
@@ -260,9 +350,11 @@ export class DOMManager {
         break;
 
       case "key_press":
-        const key = action.data.key || "Enter";
-        const keyEvent = new KeyboardEvent("keydown", { key, bubbles: true });
-        (target || window.document).dispatchEvent(keyEvent);
+        {
+          const key = action.data.key || "Enter";
+          const keyEvent = new KeyboardEvent("keydown", { key, bubbles: true });
+          (target || window.document).dispatchEvent(keyEvent);
+        }
         break;
 
       case "extract_content":
@@ -270,11 +362,26 @@ export class DOMManager {
         break;
 
       case "done":
+        // No-op
         break;
 
       default:
         throw new Error(`Unknown action: ${action.type}`);
     }
+  }
+
+  /**
+   * Query the DOM by an XPath string.
+   */
+  private queryByXPath(xPath: string): HTMLElement | null {
+    const result = document.evaluate(
+      xPath,
+      document,
+      null,
+      XPathResult.FIRST_ORDERED_NODE_TYPE,
+      null
+    );
+    return result.singleNodeValue as HTMLElement | null;
   }
 
   /**

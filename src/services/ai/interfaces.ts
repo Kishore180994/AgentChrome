@@ -72,6 +72,11 @@ export interface PageElement {
   role?: string;
 
   /**
+   * The XPath of the element, if any.
+   */
+  xPath?: string;
+
+  /**
    * The accessible label of the element, if any.
    */
   accessibleLabel?: string;

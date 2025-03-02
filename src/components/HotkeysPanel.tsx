@@ -5,15 +5,15 @@ export const HotkeysPanel: React.FC = () => {
   return (
     <div
       className="
-        ext-relative ext-bg-gray-800/80 ext-p-6 ext-rounded-xl
-        ext-ring-1 ext-ring-inset ext-ring-gray-500/50
-        ext-shadow-xl ext-backdrop-blur-md
+        d4m-relative d4m-bg-gray-800/80 d4m-p-6 d4m-rounded-xl
+        d4m-ring-1 d4m-ring-inset d4m-ring-gray-500/50
+        d4m-shadow-xl d4m-backdrop-blur-md
       "
     >
-      <h2 className="ext-text-sm ext-font-semibold ext-text-cyan-200 ext-mb-3">
+      <h2 className="d4m-text-sm d4m-font-semibold d4m-text-cyan-200 d4m-mb-3">
         Hotkeys
       </h2>
-      <div className="ext-space-y-3">
+      <div className="d4m-space-y-3">
         <HotkeyItem keys={["⌘", "Shift", "L"]} action="Toggle Listening" />
         <HotkeyItem keys={["⌘", "Shift", "W"]} action="Toggle Watching" />
         <HotkeyItem keys={["⌘", "Click"]} action="Perform Action" />

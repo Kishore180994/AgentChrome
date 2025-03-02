@@ -1,25 +1,14 @@
-import React, { useState, useEffect } from "react";
-import { Settings } from "lucide-react";
+import React, { useEffect } from "react";
 import { ContentScriptMessage } from "./types/messages";
 import {
   // sendToContentScript,
   handleContentScriptMessages,
 } from "./lib/messaging";
 
-import { SettingsModal } from "./components/SettingsModal";
 import { ChatWidget } from "./components/ChatWidget";
-import { ExecutionSteps } from "./components/ExecutionSteps";
 
 /** Top-level App */
 const App = () => {
-  // State management
-  const [state, setState] = useState({
-    isWatching: false,
-    isSettingsOpen: false,
-    error: null,
-    expandedSection: "execution",
-  });
-
   // Listen for messages from the content script
   useEffect(() => {
     const cleanup = handleContentScriptMessages(

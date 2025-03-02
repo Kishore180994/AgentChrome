@@ -82,15 +82,30 @@ export class ActionExecutor {
     if (!element) {
       throw new Error(`Element not found for selector: ${selector}`);
     }
-    // Check if the element is either an HTMLInputElement or HTMLTextAreaElement in its own context
+
+    // Handle standard input or textarea
     if (
-      !(element instanceof ownerDocument!.defaultView!.HTMLInputElement) &&
-      !(element instanceof ownerDocument!.defaultView!.HTMLTextAreaElement)
+      element instanceof ownerDocument!.defaultView!.HTMLInputElement ||
+      element instanceof ownerDocument!.defaultView!.HTMLTextAreaElement
     ) {
-      throw new Error(`Element is not an input or textarea: ${selector}`);
+      element.value = text;
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
     }
-    element.value = text;
-    element.dispatchEvent(new Event("input", { bubbles: true }));
+
+    // Handle Gmail and other `contentEditable` elements
+    if (
+      (element as HTMLElement).isContentEditable ||
+      element instanceof HTMLCanvasElement
+    ) {
+      ((element as HTMLElement) || (element as HTMLCanvasElement)).focus();
+      document.execCommand("insertText", false, text);
+      return;
+    }
+
+    // Fallback: Set innerText for unexpected cases
+    ((element as HTMLElement) || (element as HTMLCanvasElement)).innerText =
+      text;
   }
 
   /**

@@ -205,20 +205,20 @@ export function ChatWidget() {
   };
 
   return (
-    <div className="ext-w-full ext-h-full ext-border-cyan-500/30 ext-shadow-2xl ext-flex ext-flex-col ext-text-gray-100 ext-p-4 ext-rounded-xl">
+    <div className="d4m-w-full d4m-h-full d4m-border-cyan-500/30 d4m-shadow-2xl d4m-flex d4m-flex-col d4m-text-gray-100 d4m-p-4 d4m-rounded-xl">
       {/* Header */}
-      <div className="ext-flex ext-justify-between ext-items-center ext-mb-4 ext-pb-2 ext-border-b ext-border-cyan-700/40">
-        <div className="ext-text-lg ext-font-bold ext-tracking-wide ext-text-cyan-400 ext-text-shadow-[0_0_8px_rgba(0,255,255,0.7)]">
+      <div className="d4m-flex d4m-justify-between d4m-items-center d4m-mb-4 d4m-pb-2 d4m-border-b d4m-border-cyan-700/40">
+        <div className="d4m-text-lg d4m-font-bold d4m-tracking-wide d4m-text-cyan-400 d4m-text-shadow-[0_0_8px_rgba(0,255,255,0.7)]">
           D4M Agent
         </div>
         <button
           onClick={toggleWatching}
-          className="ext-p-2 ext-rounded-full ext-bg-gray-800 ext-text-gray-400 ext-ring-1 ext-ring-cyan-500/50 ext-hover:bg-gray-700"
+          className="d4m-p-2 d4m-rounded-full d4m-bg-gray-800 d4m-text-gray-400 d4m-ring-1 d4m-ring-cyan-500/50 d4m-hover:bg-gray-700"
         >
           {isWatching ? (
-            <Eye className="ext-w-5 ext-h-5" />
+            <Eye className="d4m-w-5 d4m-h-5" />
           ) : (
-            <EyeOff className="ext-w-5 ext-h-5" />
+            <EyeOff className="d4m-w-5 d4m-h-5" />
           )}
         </button>
       </div>
@@ -226,30 +226,28 @@ export function ChatWidget() {
       {/* Messages Container */}
       <div
         ref={messagesContainerRef}
-        className="ext-flex-1 ext-overflow-y-auto ext-space-y-4 ext-px-2 ext-scrollbar-thin ext-scrollbar-thumb-cyan-500/50"
+        className="d4m-flex-1 d4m-overflow-y-auto d4m-space-y-4 d4m-px-2 d4m-scrollbar-thin d4m-scrollbar-thumb-cyan-500/50"
       >
         {processedMessages.map((item, index) => {
           if (item.type === "single") {
             const message = item.message!;
             return (
-              <div key={index} className="ext-flex ext-flex-col ext-mb-4">
-                <div className="ext-flex ext-items-center ext-space-x-2 ext-mb-1">
+              <div key={index} className="d4m-flex d4m-flex-col d4m-mb-4">
+                <div className="d4m-flex d4m-items-center d4m-space-x-2 d4m-mb-1">
                   {message.role === "user" ? (
-                    <img
-                      src="https://via.placeholder.com/24"
-                      alt="User"
-                      className="ext-w-6 ext-h-6 ext-rounded-full"
-                    />
+                    <div className="d4m-w-6 d4m-h-6 d4m-rounded-full d4m-bg-gray-700 d4m-flex d4m-items-center d4m-justify-center">
+                      <span className="d4m-text-white d4m-text-xs">AI</span>
+                    </div>
                   ) : (
-                    <div className="ext-w-6 ext-h-6 ext-rounded-full ext-bg-gray-700 ext-flex ext-items-center ext-justify-center">
-                      <span className="ext-text-white ext-text-xs">AI</span>
+                    <div className="d4m-w-6 d4m-h-6 d4m-rounded-full d4m-bg-gray-700 d4m-flex d4m-items-center d4m-justify-center">
+                      <span className="d4m-text-white d4m-text-xs">AI</span>
                     </div>
                   )}
-                  <span className="ext-text-sm ext-font-medium ext-text-white">
+                  <span className="d4m-text-sm d4m-font-medium d4m-text-white">
                     {message.role === "user" ? "You" : "D4M Agent"}
                   </span>
                 </div>
-                <div className="ext-text-white ext-text-sm ext-ml-8">
+                <div className="d4m-text-white d4m-text-sm d4m-ml-8">
                   <Markdown
                     components={{
                       code({ children, className }) {
@@ -258,18 +256,18 @@ export function ChatWidget() {
                           <SyntaxHighlighter
                             language={match[1]}
                             style={oneDark}
-                            className="ext-rounded-md ext-shadow-inner"
+                            className="d4m-rounded-md d4m-shadow-inner"
                           >
                             {String(children).replace(/\n$/, "")}
                           </SyntaxHighlighter>
                         ) : (
-                          <code className="ext-bg-gray-900 ext-px-1 ext-py-0.5 ext-rounded ext-text-cyan-300">
+                          <code className="d4m-bg-gray-900 d4m-px-1 d4m-py-0.5 d4m-rounded d4m-text-cyan-300">
                             {children}
                           </code>
                         );
                       },
                       p: ({ children }) => (
-                        <p className="ext-mt-1 ext-text-sm ext-leading-relaxed">
+                        <p className="d4m-mt-1 d4m-text-sm d4m-leading-relaxed">
                           {children}
                         </p>
                       ),
@@ -282,23 +280,23 @@ export function ChatWidget() {
             );
           } else if (item.type === "modelGroup") {
             return (
-              <div key={index} className="ext-flex ext-flex-col ext-mb-4">
+              <div key={index} className="d4m-flex d4m-flex-col d4m-mb-4">
                 {item.messages!.map((message, idx) => (
-                  <div key={idx} className="ext-flex ext-flex-col ext-mb-2">
-                    <div className="ext-flex ext-items-center ext-space-x-2 ext-mb-1">
-                      <div className="ext-w-6 ext-h-6 ext-rounded-full ext-bg-gray-700 ext-flex ext-items-center ext-justify-center">
-                        <span className="ext-text-white ext-text-xs">AI</span>
+                  <div key={idx} className="d4m-flex d4m-flex-col d4m-mb-2">
+                    <div className="d4m-flex d4m-items-center d4m-space-x-2 d4m-mb-1">
+                      <div className="d4m-w-6 d4m-h-6 d4m-rounded-full d4m-bg-gray-700 d4m-flex d4m-items-center d4m-justify-center">
+                        <span className="d4m-text-white d4m-text-xs">AI</span>
                       </div>
-                      <span className="ext-text-sm ext-font-medium ext-text-white">
+                      <span className="d4m-text-sm d4m-font-medium d4m-text-white">
                         D4M Agent
                       </span>
                       {idx === 0 && item.timestamp && (
-                        <span className="ext-text-xs ext-text-gray-400">
+                        <span className="d4m-text-xs d4m-text-gray-400">
                           ({item.timestamp})
                         </span>
                       )}
                     </div>
-                    <div className="ext-text-white ext-text-sm ext-ml-8">
+                    <div className="d4m-text-white d4m-text-sm d4m-ml-8">
                       <Markdown
                         components={{
                           code({ children, className }) {
@@ -309,12 +307,12 @@ export function ChatWidget() {
                               <SyntaxHighlighter
                                 language={match[1]}
                                 style={oneDark}
-                                className="ext-rounded-md ext-shadow-inner"
+                                className="d4m-rounded-md d4m-shadow-inner"
                               >
                                 {String(children).replace(/\n$/, "")}
                               </SyntaxHighlighter>
                             ) : (
-                              <code className="ext-bg-gray-900 ext-px-1 ext-py-0.5 ext-rounded ext-text-cyan-300">
+                              <code className="d4m-bg-gray-900 d4m-px-1 d4m-py-0.5 d4m-rounded d4m-text-cyan-300">
                                 {children}
                               </code>
                             );
@@ -333,27 +331,27 @@ export function ChatWidget() {
             return (
               <div
                 key={index}
-                className="ext-bg-gray-800 ext-p-2 ext-rounded-lg ext-shadow-md ext-mb-4 ext-border ext-border-cyan-500/30"
+                className="d4m-bg-gray-800 d4m-p-2 d4m-rounded-lg d4m-shadow-md d4m-mb-4 d4m-border d4m-border-cyan-500/30"
               >
                 <div
-                  className="ext-flex ext-justify-between ext-items-center ext-cursor-pointer"
+                  className="d4m-flex d4m-justify-between d4m-items-center d4m-cursor-pointer"
                   onClick={() => toggleExecutionGroup(index)}
                 >
-                  <h6 className="ext-font-bold ext-text-cyan-400 ext-mb-1">
+                  <h6 className="d4m-font-bold d4m-text-cyan-400 d4m-mb-1">
                     Task Execution Steps
                   </h6>
                   {isExpanded ? (
-                    <ChevronUp className="ext-w-5 ext-h-5 ext-text-cyan-400" />
+                    <ChevronUp className="d4m-w-5 d4m-h-5 d4m-text-cyan-400" />
                   ) : (
-                    <ChevronDown className="ext-w-5 ext-h-5 ext-text-cyan-400" />
+                    <ChevronDown className="d4m-w-5 d4m-h-5 d4m-text-cyan-400" />
                   )}
                 </div>
                 {isExpanded && (
-                  <ul className="ext-space-y-2 ext-mt-2">
+                  <ul className="d4m-space-y-2 d4m-mt-2">
                     {item.taskHistories!.map((taskHistory, idx) => (
                       <li
                         key={idx}
-                        className="ext-text-sm ext-italic ext-text-gray-300"
+                        className="d4m-text-sm d4m-italic d4m-text-gray-300"
                       >
                         {taskHistory.step}: {taskHistory.status}{" "}
                         {taskHistory.message && `- ${taskHistory.message}`}
@@ -367,12 +365,12 @@ export function ChatWidget() {
           return null;
         })}
         {isLoading && (
-          <div className="ext-bg-gray-800 ext-text-cyan-300 ext-p-3 ext-rounded-lg ext-text-sm ext-italic">
+          <div className="d4m-bg-gray-800 d4m-text-cyan-300 d4m-p-3 d4m-rounded-lg d4m-text-sm d4m-italic">
             Analyzing...
           </div>
         )}
         {error && (
-          <div className="ext-bg-red-800 ext-text-red-100 ext-p-3 ext-rounded-lg ext-text-sm">
+          <div className="d4m-bg-red-800 d4m-text-red-100 d4m-p-3 d4m-rounded-lg d4m-text-sm">
             {error}
           </div>
         )}
@@ -381,15 +379,15 @@ export function ChatWidget() {
       {/* Input Form */}
       <form
         onSubmit={handleSubmit}
-        className="ext-mt-4 ext-p-2 ext-bg-gray-800 ext-shadow-inner"
+        className="d4m-mt-4 d4m-p-2 d4m-bg-gray-800 d4m-shadow-inner"
       >
-        <div className="ext-flex ext-items-center ext-space-x-2">
+        <div className="d4m-flex d4m-items-center d4m-space-x-2">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Enter command..."
-            className="ext-flex-1 ext-px-3 ext-py-2 ext-bg-gray-900 ext-border ext-border-gray-700 ext-rounded-md ext-text-sm ext-text-white ext-focus:outline-none ext-focus:ring-2 ext-focus:ring-cyan-500 ext-placeholder-gray-400 ext-resize-none"
+            className="d4m-flex-1 d4m-px-3 d4m-py-2 d4m-bg-gray-900 d4m-border d4m-border-gray-700 d4m-rounded-md d4m-text-sm d4m-text-white d4m-focus:outline-none d4m-focus:ring-2 d4m-focus:ring-cyan-500 d4m-placeholder-gray-400 d4m-resize-none"
             disabled={isLoading}
             rows={1}
             style={{ height: "auto", overflowY: "hidden" }}
@@ -402,9 +400,9 @@ export function ChatWidget() {
           <button
             type="submit"
             disabled={isLoading || !input.trim()}
-            className="ext-bg-cyan-600 ext-text-white ext-hover:bg-cyan-700 ext-p-2 ext-rounded-md ext-transition-colors ext-duration-200 ext-disabled:bg-gray-600 ext-disabled:cursor-not-allowed"
+            className="d4m-bg-cyan-600 d4m-text-white d4m-hover:bg-cyan-700 d4m-p-2 d4m-rounded-md d4m-transition-colors d4m-duration-200 d4m-disabled:bg-gray-600 d4m-disabled:cursor-not-allowed"
           >
-            <Send className="ext-w-5 ext-h-5" />
+            <Send className="d4m-w-5 d4m-h-5" />
           </button>
         </div>
       </form>

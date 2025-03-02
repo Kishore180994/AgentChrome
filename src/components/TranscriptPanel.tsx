@@ -10,21 +10,21 @@ export const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
   return (
     <div
       className="
-        ext-relative ext-bg-gray-800/80 ext-p-6 ext-rounded-xl
-        ext-ring-1 ext-ring-inset ext-ring-gray-500/50
-        ext-shadow-xl ext-backdrop-blur-md
+        d4m-relative d4m-bg-gray-800/80 d4m-p-6 d4m-rounded-xl
+        d4m-ring-1 d4m-ring-inset d4m-ring-gray-500/50
+        d4m-shadow-xl d4m-backdrop-blur-md
       "
     >
-      <h2 className="ext-text-sm ext-font-semibold ext-text-cyan-200 ext-mb-3">
+      <h2 className="d4m-text-sm d4m-font-semibold d4m-text-cyan-200 d4m-mb-3">
         Transcript
       </h2>
-      <div className="ext-space-y-3 ext-whitespace-pre-wrap">
+      <div className="d4m-space-y-3 d4m-whitespace-pre-wrap">
         {transcript ? (
-          <p className="ext-text-sm ext-text-gray-200 ext-leading-relaxed">
+          <p className="d4m-text-sm d4m-text-gray-200 d4m-leading-relaxed">
             {transcript}
           </p>
         ) : (
-          <p className="ext-text-sm ext-text-gray-400 ext-italic">
+          <p className="d4m-text-sm d4m-text-gray-400 d4m-italic">
             Start listening to see the transcript...
           </p>
         )}
