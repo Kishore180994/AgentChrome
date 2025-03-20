@@ -21,10 +21,10 @@ const App = () => {
   }, []);
 
   return (
-    <div className="ext-h-screen ext-overflow-auto ext-from-gray-900 ext-via-black ext-to-gray-900 ext-text-gray-100">
-      <div className="ext-max-w-5xl ext-mx-auto ext-space-y-8 ext-flex-col ext-h-full ext-from-gray-900/90 ext-to-black/90 ext-border-cyan-500/30 ext-shadow-2xl ext-rounded-xl">
+    <div className="d4m-h-screen d4m-overflow-auto d4m-from-gray-900 d4m-via-black d4m-to-gray-900 d4m-text-gray-100">
+      <div className="d4m-max-w-5xl d4m-mx-auto d4m-space-y-8 d4m-flex-col d4m-h-full d4m-from-gray-900/90 d4m-to-black/90 d4m-border-cyan-500/30 d4m-shadow-2xl d4m-rounded-xl">
         {/* Chat Widget */}
-        <div className="ext-flex-1 ext-h-full">
+        <div className="d4m-flex-1 d4m-h-full">
           <ChatWidget />
         </div>
       </div>

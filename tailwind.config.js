@@ -5,5 +5,8 @@ export default {
   theme: {
     extend: {},
   },
+  corePlugins: {
+    preflight: false, // Disable Tailwind's global reset
+  },
   plugins: [],
 };
