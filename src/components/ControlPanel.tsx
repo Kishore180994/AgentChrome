@@ -22,17 +22,17 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   return (
     <div
       className="
-        ext-relative ext-bg-gray-800/80 ext-p-6 ext-rounded-xl
-        ext-ring-1 ext-ring-inset ext-ring-gray-500/50
-        ext-shadow-xl ext-backdrop-blur-md
-        ext-space-y-4
+        d4m-relative d4m-bg-gray-800/80 d4m-p-6 d4m-rounded-xl
+        d4m-ring-1 d4m-ring-inset d4m-ring-gray-500/50
+        d4m-shadow-xl d4m-backdrop-blur-md
+        d4m-space-y-4
       "
     >
-      <h2 className="ext-text-sm ext-font-semibold ext-text-cyan-200">
+      <h2 className="d4m-td4m-sm d4m-font-semibold d4m-td4m-cyan-200">
         Control Panel
       </h2>
 
-      <div className="ext-flex ext-items-center ext-justify-between ext-gap-4">
+      <div className="d4m-flex d4m-items-center d4m-justify-between d4m-gap-4">
         <ControlButton
           onClick={onToggleListening}
           icon={isListening ? MicOff : Mic}
@@ -52,15 +52,15 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
       {/* Error Display */}
       {error && (
-        <div className="ext-mt-4 ext-p-4 ext-bg-red-800/40 ext-border ext-border-red-700 ext-rounded-md ext-shadow-sm">
-          <div className="ext-flex ext-items-start ext-gap-3">
-            <AlertCircle className="ext-w-6 ext-h-6 ext-text-red-300 ext-flex-shrink-0" />
+        <div className="d4m-mt-4 d4m-p-4 d4m-bg-red-800/40 d4m-border d4m-border-red-700 d4m-rounded-md d4m-shadow-sm">
+          <div className="d4m-flex d4m-items-start d4m-gap-3">
+            <AlertCircle className="d4m-w-6 d4m-h-6 d4m-td4m-red-300 d4m-flex-shrink-0" />
             <div>
-              <h3 className="ext-text-sm ext-font-semibold ext-text-red-200">
+              <h3 className="d4m-td4m-sm d4m-font-semibold d4m-td4m-red-200">
                 {error.message}
               </h3>
               {error.details && (
-                <p className="ext-mt-2 ext-text-sm ext-text-red-100">
+                <p className="d4m-mt-2 d4m-td4m-sm d4m-td4m-red-100">
                   {error.details}
                 </p>
               )}

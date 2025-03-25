@@ -17,6 +17,7 @@ export interface LocalAction {
   id: string;
   type: string;
   data: {
+    xPath?: string;
     selector?: string;
     value?: string;
     text?: string; // For input_text or key_press
@@ -26,6 +27,7 @@ export interface LocalAction {
     url?: string;
     offset?: number;
     direction?: "up" | "down";
+    question?: string;
     // ... add more as needed
   };
   description?: string;
@@ -46,7 +48,9 @@ export type LocalActionType =
   | "scroll_down"
   | "scroll_up"
   | "done"
-  | "wait"; // fallback
+  | "ask"
+  | "wait"
+  | "refetch"; // fallback
 
 /** For "input_text": fill text into an element at "index" */
 export interface InputTextAction {
@@ -55,6 +59,12 @@ export interface InputTextAction {
     text: string; // text to type
     selector: string; // e.g. CSS selector
   };
+}
+
+export interface TaskHistory {
+  step: string;
+  status: string;
+  message?: string;
 }
 
 /** For "click_element": click the element at "index" */
@@ -108,7 +118,8 @@ export interface SubmitFormAction {
 /** For "key_press": press a key. e.g. ENTER, ESC, etc. */
 export interface KeyPressAction {
   key_press: {
-    key: string; // e.g. "Enter", "Escape", "ArrowDown"
+    key: string;
+    selector?: string; // e.g. "Enter", "Escape", "ArrowDown"
   };
 }
 
@@ -122,6 +133,12 @@ export interface VerifyAction {
 /** For "done": indicates the ultimate task is complete */
 export interface DoneAction {
   done: {}; // no parameters
+}
+
+export interface AskAction {
+  ask: {
+    question: string;
+  };
 }
 
 /**
@@ -146,4 +163,5 @@ export type AgentActionItem =
   | SubmitFormAction
   | KeyPressAction
   | VerifyAction
-  | DoneAction;
+  | DoneAction
+  | AskAction;

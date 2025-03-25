@@ -7,21 +7,21 @@ interface HotkeyItemProps {
 
 export const HotkeyItem: React.FC<HotkeyItemProps> = ({ keys, action }) => {
   return (
-    <div className="ext-flex ext-items-center ext-space-x-2">
+    <div className="d4m-flex d4m-items-center d4m-space-x-2">
       {/* Key Combination */}
-      <div className="ext-flex ext-space-x-1">
+      <div className="d4m-flex d4m-space-x-1">
         {keys.map((key, index) => (
           <kbd
             key={index}
             className="
-              ext-px-2 ext-py-1
-              ext-bg-gray-700/60
-              ext-text-cyan-200
-              ext-ring-1 ring-gray-500/50
-              ext-rounded
-              ext-text-xs
-              ext-font-medium
-              ext-shadow-sm
+              d4m-px-2 d4m-py-1
+              d4m-bg-gray-700/60
+              d4m-text-cyan-200
+              d4m-ring-1 ring-gray-500/50
+              d4m-rounded
+              d4m-text-xs
+              d4m-font-medium
+              d4m-shadow-sm
             "
           >
             {key}
@@ -30,7 +30,7 @@ export const HotkeyItem: React.FC<HotkeyItemProps> = ({ keys, action }) => {
       </div>
 
       {/* Description */}
-      <span className="ext-text-sm ext-text-gray-200">{action}</span>
+      <span className="d4m-text-sm d4m-text-gray-200">{action}</span>
     </div>
   );
 };

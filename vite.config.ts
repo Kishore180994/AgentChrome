@@ -44,7 +44,7 @@ export default defineConfig({
         main: resolve(__dirname, "index.html"),
         background: resolve(__dirname, "src/background.ts"),
         content: resolve(__dirname, "src/content.ts"),
-        sidebar: resolve(__dirname, "src/sidebar.tsx"),
+        sidebar: resolve(__dirname, "sidepanel.html"),
       },
       output: {
         entryFileNames: "[name].js",

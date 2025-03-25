@@ -1,22 +1,23 @@
 {
   "manifest_version": 3,
-  "name": "AI Assistant",
-  "version": "1.0.1",
+  "name": "Do4Me.ai",
+  "version": "1.1.0",
   "description": "An AI assistant that can help with browsing tasks through voice commands and screen analysis",
   "permissions": [
     "storage",
     "tabs",
     "activeTab",
     "scripting",
-    "desktopCapture"
+    "desktopCapture",
+    "sidePanel",
+    "https://api.anthropic.com/*"
   ],
   "host_permissions": [
     "*://*/*"
   ],
- "content_security_policy": {
-  "extension_pages": "script-src 'self'; connect-src 'self' https://api.openai.com https://*.openai.com https://generativelanguage.googleapis.com; object-src 'none';"
-},
-
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; img-src 'self' https://doforme.s3.us-east-1.amazonaws.com; connect-src 'self' https://api.openai.com https://*.openai.com https://generativelanguage.googleapis.com https://doforme.s3.us-east-1.amazonaws.com https://api.anthropic.com/v1/messages; object-src 'none';"
+  },
   "action": {
     "default_icon": {
       "16": "icons/icon16.png",
@@ -33,15 +34,19 @@
     "service_worker": "background.js",
     "type": "module"
   },
+ "side_panel": {
+    "default_path": "sidepanel.html"
+  },
   "content_scripts": [
     {
       "matches": ["*://*/*"],
-      "js": ["content.js", "index.js", "sidebar.js"],
+      "js": ["content.js"],
       "css": ["index.css"]
     }
   ],
   "web_accessible_resources": [{
     "resources": [
+      "sidepanel.html",
       "sidebar.js",
       "storage.js",
       "index.html",
@@ -49,7 +54,9 @@
       "index.js",
       "main.js",
       "*.js.map",
-      "assets/*"
+      "assets/*",
+      "node_modules/@aws-sdk/client-s3/dist/browser/*.js",
+      "s3UploadService.js"
     ],
     "matches": ["*://*/*"]
   }],

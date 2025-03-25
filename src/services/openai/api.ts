@@ -1,6 +1,6 @@
 /// <reference types="@types/chrome" />
 
-import { AgentResponseFormat } from "../../types/responseFormat";
+import { AgentResponseFormat, MemoryState } from "../../types/responseFormat";
 import { GeminiChatMessage } from "../ai/interfaces";
 import { AIProvider, callAI } from "../ai/providers";
 
@@ -13,7 +13,7 @@ let currentProvider: AIProvider = "gemini";
  * @param userMessage - The message from the user to be sent to the AI.
  * @param sessionId - The unique identifier for the current session.
  * @param currentState - The current state of the conversation, represented as a record of key-value pairs.
- * @param isInitialCommand - A boolean indicating if this is the initial command in the conversation.
+ * @param screenShotDataUrl - An optional data URL of a screenshot to be sent to the AI (e.g., for Gemini vision capabilities).
  * @returns A promise that resolves to an `AgentResponseFormat` object containing the AI's response.
  *
  * @throws Will return a fallback response if an error occurs during the process.
@@ -21,35 +21,56 @@ let currentProvider: AIProvider = "gemini";
 export async function chatWithAI(
   userMessage: string,
   sessionId: string,
-  currentState: Record<string, any> = {}
+  currentState: Record<string, any> = {},
+  screenShotDataUrl?: string
 ): Promise<AgentResponseFormat> {
-  // console.log(`[chatWithOpenAI] session=${sessionId}`, {
-  //   userMessagePreview: userMessage.slice(0, 50),
-  //   isInitialCommand,
-  //   currentStateCount: Object.keys(currentState).length,
-  // });
-
   // Fallback if something fails
   const fallback: AgentResponseFormat = {
     current_state: {
       page_summary: "",
       evaluation_previous_goal: "Unknown",
-      memory: "",
+      memory: {} as MemoryState,
+      current_goal: "",
       next_goal: "",
+      next_goal_elements_type: [],
     },
     action: [],
   };
 
   try {
-    const conversation = await prepareConversation(userMessage, currentState);
-    const response = await sendWithRetry(conversation, sessionId);
+    // Capture screenshot if using Gemini and no screenshot is provided
+    let finalScreenShotDataUrl = screenShotDataUrl;
+    if (currentProvider === "gemini" && !finalScreenShotDataUrl) {
+      const [tab] = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+      if (tab && tab.id) {
+        finalScreenShotDataUrl = await new Promise((resolve) => {
+          chrome.tabs.captureVisibleTab(
+            tab.windowId,
+            { format: "png" },
+            (dataUrl) => {
+              resolve(dataUrl);
+            }
+          );
+        });
+      }
+    }
 
+    const conversation = await prepareConversation(userMessage, currentState);
+    const response = await sendWithRetry(
+      conversation,
+      sessionId,
+      finalScreenShotDataUrl
+    );
+    console.log("[chatWithAI] response", response);
     const parsed = parseAgentResponseFormat(response);
     await updateConversationHistory(conversation, JSON.stringify(parsed));
 
     return parsed;
   } catch (err) {
-    console.error("[chatWithOpenAI] Fatal error => fallback", err);
+    console.error("[chatWithAI] Fatal error => fallback", err);
     return fallback;
   }
 }
@@ -68,15 +89,15 @@ async function prepareConversation(
 ): Promise<GeminiChatMessage[]> {
   const existingHistory = await getConversationHistory();
   // Filter out old system messages from the history
-  const pruned = existingHistory.filter((m) => m.role !== "model");
+  // const pruned = existingHistory.filter((m) => m.role !== "model");
 
   // Add the current URL, currentState to the userMsg
-  const userMsgWithState = `${userMsg} && 
+  const userMsgWithState = `${userMsg} &&
 
   Current DOM Elements on Page: ${JSON.stringify(currentState, null, 2)}`;
   // Combine pruned history and user message, then slice
   const combined = [
-    ...pruned,
+    ...existingHistory,
     { role: "user", parts: [{ text: userMsgWithState }] } as GeminiChatMessage,
   ];
 
@@ -91,6 +112,7 @@ async function prepareConversation(
  *
  * @param conversation - An array of chat messages to be sent to the AI.
  * @param sessionId - A unique identifier for the session.
+ * @param screenShotDataUrl - An optional data URL of a screenshot to be sent to the AI.
  * @param retries - The number of retry attempts left (default is MAX_RETRIES).
  * @returns A promise that resolves with the AI response or rejects with an error after all retries are exhausted.
  * @throws Will throw an error if all retry attempts fail.
@@ -98,11 +120,12 @@ async function prepareConversation(
 async function sendWithRetry(
   conversation: GeminiChatMessage[],
   sessionId: string,
+  screenShotDataUrl?: string,
   retries = MAX_RETRIES
 ): Promise<any> {
   try {
     console.debug(`[sendWithRetry][${sessionId}] requesting AI...`);
-    const resp = await callAI(currentProvider, conversation);
+    const resp = await callAI(currentProvider, conversation, screenShotDataUrl);
     return resp;
   } catch (err) {
     console.error(`[sendWithRetry][${sessionId}] error=`, err);
@@ -112,7 +135,12 @@ async function sendWithRetry(
         retries - 1
       );
       await new Promise((res) => setTimeout(res, 1000));
-      return sendWithRetry(conversation, sessionId, retries - 1);
+      return sendWithRetry(
+        conversation,
+        sessionId,
+        screenShotDataUrl,
+        retries - 1
+      );
     }
     throw err;
   }
@@ -146,15 +174,17 @@ function parseAgentResponseFormat(apiResponse: any): AgentResponseFormat {
       current_state: {
         page_summary: "",
         evaluation_previous_goal: "Unknown",
-        memory: "",
+        memory: {} as MemoryState,
+        current_goal: "",
         next_goal: "",
+        next_goal_elements_type: [],
       },
       action: [],
     };
   }
 
   try {
-    if (!apiResponse.current_state || !apiResponse.action) {
+    if (!apiResponse.current_state) {
       console.warn(
         "[parseAgentResponseFormat] missing current_state/action => fallback"
       );
@@ -162,8 +192,10 @@ function parseAgentResponseFormat(apiResponse: any): AgentResponseFormat {
         current_state: {
           page_summary: "",
           evaluation_previous_goal: "Unknown",
-          memory: "",
+          memory: {} as MemoryState,
+          current_goal: "",
           next_goal: "",
+          next_goal_elements_type: [],
         },
         action: [],
       };
@@ -175,8 +207,10 @@ function parseAgentResponseFormat(apiResponse: any): AgentResponseFormat {
       current_state: {
         page_summary: "",
         evaluation_previous_goal: "Unknown",
-        memory: "",
+        memory: {} as MemoryState,
+        current_goal: "",
         next_goal: "",
+        next_goal_elements_type: [],
       },
       action: [],
     };

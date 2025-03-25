@@ -1,72 +1,41 @@
-import { CurrentState } from "./types/responseFormat";
 import { PageElement } from "./services/ai/interfaces";
 import { chatWithAI } from "./services/openai/api";
 import {
   AgentActionItem,
+  AskAction,
   LocalAction,
   LocalActionType,
 } from "./types/actionType";
+import { AIResponseFormat } from "./types/responseFormat";
 
-// **Execution Tracking & Connection**
-const executionHistories: Record<
-  number,
-  { step: string; status: "pending" | "success" | "failed"; message?: string }[]
-> = {};
+let automationStopped: boolean = false;
+const activeAutomationTabs: Set<number> = new Set();
 const recentActionsMap: Record<number, string[]> = {};
 const currentTasks: Record<number, string> = {};
 const activePorts: Record<number, chrome.runtime.Port> = {};
 
-/********************************************************
- * 4) Utility: sendExecutionUpdate
- ********************************************************/
-function sendExecutionUpdate(tabId: number) {
-  const history = executionHistories[tabId] || [];
-  console.log(
-    "[background.ts] Sending execution update to tab",
-    tabId,
-    ":",
-    history
-  );
-  try {
-    chrome.tabs.sendMessage(tabId, {
-      type: "EXECUTION_UPDATE",
-      taskHistory: history,
-    });
-  } catch (err) {
-    console.warn(
-      "[background.ts] Failed to send exec update to tab",
-      tabId,
-      ":",
-      err
-    );
-  }
-}
-
-/********************************************************
- * 5) Toggle Sidebar & Content Script Injection
- ********************************************************/
 chrome.action.onClicked.addListener(async (tab) => {
   console.log("[background.ts] Extension action clicked, tab:", tab);
   if (!tab?.id) return;
+  // Open the side panel for the current tab
+  chrome.sidePanel.open({ windowId: tab.windowId });
+  await chrome.sidePanel.setOptions({
+    tabId: tab.id,
+    enabled: true,
+    path: "sidepanel.html",
+  });
+
+  // Ensure content script is injected
   await ensureContentScriptInjected(tab.id);
-  sendMessageToContent(tab.id, { type: "TOGGLE_SIDEBAR" });
+
+  if (activeAutomationTabs.has(tab.id)) {
+    activeAutomationTabs.delete(tab.id); // Clear any prior automation state
+  }
 });
 
-function sendMessageToContent(tabId: number, msg: any) {
-  console.log(
-    "[background.ts] Sending message to content script on tab",
-    tabId,
-    ":",
-    msg
-  );
-  if (activePorts[tabId]) {
-    activePorts[tabId].postMessage(msg);
-  } else {
-    ensureContentScriptInjected(tabId).then(() => {
-      chrome.tabs.sendMessage(tabId, msg);
-    });
-  }
-}
+chrome.tabs.onRemoved.addListener((tabId, _removeInfo) => {
+  activeAutomationTabs.delete(tabId);
+});
 
 async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
   console.log(
@@ -80,9 +49,9 @@ async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
           "[background.ts] No response to PING, injecting content script on tab",
           tabId
         );
-        chrome.scripting.executeScript(
-          { target: { tabId }, files: ["content.js"] },
-          () => {
+        chrome.scripting
+          .executeScript({ target: { tabId }, files: ["content.js"] })
+          .then(() => {
             setTimeout(() => {
               console.log(
                 "[background.ts] Content script injected on tab",
@@ -90,8 +59,14 @@ async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
               );
               resolve(true);
             }, 500);
-          }
-        );
+          })
+          .catch((err) => {
+            console.error(
+              "[background.ts] Error injecting content script:",
+              err
+            );
+            resolve(false);
+          });
       } else {
         console.log(
           "[background.ts] Content script already active on tab",
@@ -108,6 +83,7 @@ async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
  ********************************************************/
 async function fetchPageElements(
   tabId: number,
+  elementsType: string[],
   retries = 3
 ): Promise<PageElement[]> {
   console.log("[background.ts] Fetching page elements for tab", tabId);
@@ -116,7 +92,11 @@ async function fetchPageElements(
       const elements = await new Promise<PageElement[]>((resolve, reject) => {
         chrome.tabs.sendMessage(
           tabId,
-          { type: "GET_PAGE_ELEMENTS" },
+          {
+            type: "GET_PAGE_ELEMENTS",
+            elementType: elementsType.length ? elementsType : ["ALL"],
+            tabId: tabId,
+          },
           (resp) => {
             if (chrome.runtime.lastError) {
               console.warn(
@@ -193,25 +173,32 @@ async function processCommand(
   tabId: number,
   contextMessage: string,
   initialCommand: string,
-  actionHistory: string[] = []
+  actionHistory: string[] = [],
+  element_types: string[]
 ) {
-  if (!executionHistories[tabId]) {
-    executionHistories[tabId] = [];
+  if (automationStopped) {
+    console.log(
+      "[background.ts] Automation has been stopped. Not processing further commands."
+    );
+    return;
   }
+  activeAutomationTabs.add(tabId);
+
   if (!recentActionsMap[tabId]) {
     recentActionsMap[tabId] = [];
   }
 
   console.log(
-    "[background.ts] Starting processCommand with tabId:",
+    "[background.ts] recentActionsMap for tab",
     tabId,
-    "command:",
-    contextMessage,
-    "initialCommand:",
-    initialCommand
+    ":",
+    recentActionsMap[tabId]
   );
 
-  const pageState = await fetchPageElements(tabId);
+  const pageState = await fetchPageElements(
+    tabId,
+    element_types.length ? element_types : ["ALL"]
+  );
   const allTabs = await getAllTabs();
 
   let tabUrl: string;
@@ -249,6 +236,11 @@ async function processCommand(
     const fullContextMessage = `${contextMessage}. ${recentActionsStr}`;
 
     console.log("[background.ts] Calling AI with context:", fullContextMessage);
+    /** ========================================
+     * CHAT WITH AI
+     * =========================================
+     **/
+
     const raw = await chatWithAI(
       fullContextMessage,
       "session-id",
@@ -256,18 +248,30 @@ async function processCommand(
     );
     console.log("[background.ts] Received raw AI response:", raw);
 
-    const { current_state, action } = raw;
-    if (!current_state || !action) {
+    const { current_state } = raw;
+    let { action } = raw;
+    if (!current_state) {
       console.warn("[background.ts] Missing current_state or action, stopping");
+      return;
+    }
+
+    if (!action) {
+      action = current_state.action || [];
+    }
+
+    if (!action) {
+      console.warn("[background.ts] No actions returned, stopping");
       return;
     }
 
     current_state.user_command = initialCommand;
 
-    const {
+    let {
       page_summary,
       evaluation_previous_goal: evaluation,
       memory,
+      current_goal,
+      next_goal_elements_type: element_type,
       next_goal,
       user_command,
     } = current_state;
@@ -277,27 +281,34 @@ async function processCommand(
       evaluation,
       memory,
       next_goal,
+      current_goal,
+      element_type,
       user_command,
     });
 
     currentTasks[tabId] = next_goal || "Processing...";
-    executionHistories[tabId].push({
-      step: currentTasks[tabId],
-      status: "pending",
+    const tabIdRef = { value: tabId };
+
+    chrome.tabs.sendMessage(tabIdRef.value, {
+      type: "MEMORY_UPDATE",
+      response: memory,
     });
-    sendExecutionUpdate(tabId);
+
+    chrome.runtime.sendMessage({
+      type: "MEMORY_UPDATE",
+      response: memory,
+    });
+    chrome.tabs.sendMessage(tabIdRef.value, {
+      type: "MEMORY_UPDATE",
+      response: memory,
+    });
 
     if (!action.length) {
       console.log(
         "[background.ts] No actions returned, process possibly complete"
       );
-      executionHistories[tabId][executionHistories[tabId].length - 1].status =
-        "success";
-      executionHistories[tabId][
-        executionHistories[tabId].length - 1
-      ].message = `Success - Completed: ${currentTasks[tabId]}`;
-      sendExecutionUpdate(tabId);
       resetExecutionState(tabId);
+      activeAutomationTabs.clear();
       return;
     }
 
@@ -309,14 +320,13 @@ async function processCommand(
       localActions
     );
 
-    const tabIdRef = { value: tabId };
     console.log(
       "[background.ts] Starting action execution with tabIdRef:",
       tabIdRef.value
     );
 
     const executedActions: string[] = [];
-    await executeLocalActions(
+    const resultBack = await executeLocalActions(
       localActions,
       0,
       tabIdRef,
@@ -326,45 +336,50 @@ async function processCommand(
       executedActions
     );
 
-    // Check if "done" was the last action
-    if (localActions.some((a) => a.type === "done")) {
-      console.log("[background.ts] Process completed with 'done' action");
-      if (executionHistories[tabId].length > 0) {
-        executionHistories[tabId][executionHistories[tabId].length - 1].status =
-          "success";
-        executionHistories[tabId][
-          executionHistories[tabId].length - 1
-        ].message = `Success - Completed: ${currentTasks[tabId]}`;
-        sendExecutionUpdate(tabId);
-        // Close horizontal bar and open sidebar
-        chrome.tabs.sendMessage(tabId, { type: "HIDE_HORIZONTAL_BAR" });
-        chrome.tabs.sendMessage(tabId, { type: "TOGGLE_SIDEBAR" });
-        resetExecutionState(tabId);
-      }
+    console.log(`[background.ts] Extracted content: ${resultBack}`);
+    const doneAction = localActions.find((a) => a.type === "done");
+    const refetchAction = localActions.find((a) => a.type == "refetch");
+    if (doneAction) {
+      automationStopped = true;
+      chrome.tabs.sendMessage(tabIdRef.value, {
+        type: "DISPLAY_MESSAGE",
+        response: doneAction,
+      });
       return;
     }
 
-    executionHistories[tabId][executionHistories[tabId].length - 1].status =
-      "success";
-    executionHistories[tabId][
-      executionHistories[tabId].length - 1
-    ].message = `Success - Completed: ${currentTasks[tabId]}`;
-    sendExecutionUpdate(tabId);
+    if (refetchAction) {
+      chrome.tabs.sendMessage(tabIdRef.value, {
+        type: "DISPLAY_MESSAGE",
+        response: {
+          ...refetchAction,
+          data: { ...refetchAction.data, text: "Refetching page elements" },
+        },
+      });
+      element_types = ["ALL"];
+      element_type = ["ALL"];
+    }
 
     recentActionsMap[tabId] = [
       ...recentActionsMap[tabId],
       ...executedActions,
     ].slice(-5);
 
-    const memoryPart = memory ? `Memory: ${memory}` : "";
-    const goalPart = next_goal ? `Next goal: ${next_goal}` : "";
-    const objectivePart = user_command ? `Main objective: ${user_command}` : "";
+    const memoryPart = memory ? `Summary of previous actions: ${memory}` : "";
+    const goalPart = next_goal ? `Next step to perform: ${next_goal}` : "";
+    const objectivePart = user_command
+      ? `Ultimate objective: ${user_command}`
+      : "";
+    const extractedContent = resultBack
+      ? `Extracted content: ${resultBack}`
+      : "";
     const promptParts = [
-      evaluation || "",
+      evaluation ? `Evaluation of previous goal: ${evaluation}` : "",
       memoryPart,
       goalPart,
       objectivePart,
-      "Given this context, scan the current document elements and suggest the next steps to achieve the next goal while keeping the main objective in mind.",
+      extractedContent,
+      "Based on the current state and the screenshot (if provided), provide the next specific actions to achieve the next goal while considering the main objective.",
     ]
       .filter(Boolean)
       .join(". ");
@@ -377,35 +392,37 @@ async function processCommand(
       tabIdRef.value,
       promptParts,
       initialCommand,
-      recentActionsMap[tabId]
+      recentActionsMap[tabId],
+      element_type.length ? element_type : ["ALL"]
     );
   } catch (err) {
+    const tabIdRef = { value: tabId };
     console.error("[background.ts] Error in processCommand:", err);
-    if (executionHistories[tabId].length > 0) {
-      executionHistories[tabId][executionHistories[tabId].length - 1].status =
-        "failed";
-      executionHistories[tabId][
-        executionHistories[tabId].length - 1
-      ].message = `Failed - ${String(err)}`;
-      sendExecutionUpdate(tabId);
-    }
-    if (
-      err instanceof Error &&
-      (err.message.includes("429") || err.message.includes("quota"))
-    ) {
-      console.warn("[background.ts] API quota exhausted, pausing execution");
-      executionHistories[tabId].push({
-        step: "API Quota Exhausted",
-        status: "failed",
-        message: "Resource limit reached, retrying in 1 minute.",
+    if (err instanceof Error && err.message.includes("quota")) {
+      chrome.runtime.sendMessage({
+        type: "UPDATE_SIDEPANEL",
+        response: {
+          message:
+            "API Quota Exhausted. Please start a new chat or try again later.",
+        },
       });
-      sendExecutionUpdate(tabId);
+      chrome.tabs.sendMessage(tabIdRef.value, {
+        type: "DISPLAY_MESSAGE",
+        response: {
+          message:
+            "API Quota Exhausted. Please start a new chat or try again later.",
+        },
+      });
+      automationStopped = true;
+    } else if (err instanceof Error && err.message.includes("429")) {
+      console.warn("[background.ts] API quota exhausted, pausing execution");
       await new Promise((resolve) => setTimeout(resolve, 60000));
       await processCommand(
         tabId,
         contextMessage,
         initialCommand,
-        actionHistory
+        actionHistory,
+        element_types.length ? element_types : ["ALL"]
       );
     }
   }
@@ -415,10 +432,8 @@ async function processCommand(
 // **Reset Execution State**
 function resetExecutionState(tabId: number) {
   console.log("[background.ts] Resetting execution state for tab", tabId);
-  executionHistories[tabId] = [];
   recentActionsMap[tabId] = [];
   delete currentTasks[tabId];
-  sendExecutionUpdate(tabId);
 }
 
 /********************************************************
@@ -436,44 +451,99 @@ function mapAiItemToLocalAction(item: AgentActionItem): LocalAction {
 
   let type: LocalActionType = "wait";
   let description = actionName;
+  let data: any = {};
 
   switch (actionName) {
     case "click_element":
       type = "click";
+      data = {
+        url: params.url,
+        text: params.text,
+        index: params.index,
+        selector: params.selector || "",
+      };
       break;
     case "input_text":
       type = "input_text";
+      data = {
+        text: params.text,
+        index: params.index,
+        selector: params.selector || "",
+      };
       break;
     case "open_tab":
     case "go_to_url":
+    case "refresh_page":
     case "navigate":
       type = "navigate";
+      data = {
+        url: params.url,
+      };
       break;
     case "extract_content":
       type = "extract";
+      data = {
+        selector: params.selector || "",
+        index: params.index,
+      };
       break;
     case "submit_form":
       type = "submit_form";
+      data = {
+        selector: params.selector || "",
+        index: params.index,
+      };
       break;
     case "key_press":
+    case "key":
       type = "key_press";
+      data = {
+        key: params.key,
+        selector: params.selector || "",
+      };
       break;
     case "scroll_down":
       type = "scroll";
-      params.direction = "down";
+      data = {
+        direction: "down",
+        offset: params.offset | 200,
+      };
       break;
     case "scroll_up":
       type = "scroll";
-      params.direction = "up";
+      data = {
+        direction: "up",
+        offset: params.offset | 200,
+      };
       break;
     case "scroll":
       type = "scroll";
+      data = {
+        direction: params.direction,
+        offset: params.offset | 200,
+      };
       break;
     case "verify":
       type = "verify";
       break;
+    case "ask":
+      type = "ask";
+      description = "Ask User";
+      data = {
+        question: (item as AskAction).ask.question,
+      };
+      break;
+    case "REFETCH":
+      type = "refetch";
+      description = "Refetch page elements";
+      data = {};
+      break;
     case "done":
       type = "done";
+      data = {
+        text: params.message || "Task completed successfully.",
+        ...params,
+      };
       break;
     default:
       console.warn(
@@ -487,15 +557,7 @@ function mapAiItemToLocalAction(item: AgentActionItem): LocalAction {
     id: Date.now().toString(),
     type,
     description,
-    data: {
-      url: params.url,
-      text: params.text,
-      index: params.index,
-      selector: params.selector || "",
-      key: params.key,
-      direction: params.direction,
-      offset: params.offset,
-    },
+    data,
   };
   console.log("[background.ts] Mapped action:", mappedAction);
   return mappedAction;
@@ -509,14 +571,11 @@ async function executeLocalActions(
   index: number,
   tabIdRef: { value: number },
   contextMessage: string,
-  currentState: CurrentState,
+  currentState: AIResponseFormat,
   pageElements: PageElement[] = [],
   executedActions: string[] = []
-) {
+): Promise<any> {
   const tabId = tabIdRef.value;
-  if (!executionHistories[tabId]) {
-    executionHistories[tabId] = [];
-  }
   if (!recentActionsMap[tabId]) {
     recentActionsMap[tabId] = [];
   }
@@ -525,7 +584,7 @@ async function executeLocalActions(
     console.log(
       "[background.ts] All actions executed for task, returning control to processCommand"
     );
-    return;
+    return "ACTIONS_COMPLETED";
   }
 
   const action = actions[index];
@@ -536,18 +595,41 @@ async function executeLocalActions(
 
   while (retryCount <= maxRetries) {
     try {
-      await performLocalAction(action, tabIdRef, pageElements);
+      if (action.type === "refetch") {
+        // After refetching, re-run processCommand with updated elements
+        const prompt = `Re-fetched elements. Continue toward the main objective: '${currentState.user_command}' with next goal: '${currentState.next_goal}'.`;
+        await processCommand(
+          tabId,
+          prompt,
+          currentState.user_command || "No Initial Command",
+          recentActionsMap[tabId],
+          ["ALL"]
+        );
+        return;
+      }
+      const output = await performLocalAction(action, tabIdRef, pageElements);
       console.log("[background.ts] Action succeeded:", action);
-
       const actionDesc =
         action.type === "click" || action.type === "click_element"
           ? `Clicked on ${action.data.selector || action.data.index}`
           : action.type === "navigate"
           ? `Navigated to ${action.data.url}`
+          : action.type === "extract"
+          ? `Extracted content from ${
+              action.data.selector || action.data.index
+            }`
+          : action.type === "refetch"
+          ? "Re-fetched page elements"
           : action.type;
       executedActions.push(actionDesc);
 
-      await executeLocalActions(
+      if (output && action.type !== "extract") {
+        return output; // e.g., ASK_PAUSED
+      } else if (action.type === "extract") {
+        return output; // Return extracted content
+      }
+
+      const result = await executeLocalActions(
         actions,
         index + 1,
         tabIdRef,
@@ -556,7 +638,10 @@ async function executeLocalActions(
         pageElements,
         executedActions
       );
-      return; // Exit on success
+      if (result === "ACTIONS_COMPLETED") {
+        return "ACTIONS_COMPLETED";
+      }
+      return result;
     } catch (err) {
       console.error("[background.ts] Action failed:", action, "Error:", err);
       retryCount++;
@@ -581,9 +666,10 @@ async function executeLocalActions(
           tabIdRef.value,
           prompt,
           currentState.user_command || "No Initial Command",
-          recentActionsMap[tabId]
+          recentActionsMap[tabId],
+          currentState.next_goal_elements_type
         );
-        return; // Exit after prompting AI
+        return;
       }
     }
   }
@@ -596,7 +682,7 @@ async function performLocalAction(
   a: LocalAction,
   tabIdRef: { value: number },
   pageElements: PageElement[]
-) {
+): Promise<any> {
   console.log(
     "[background.ts] Performing action on tab",
     tabIdRef.value,
@@ -656,8 +742,9 @@ async function performLocalAction(
     case "key_press":
       if (a.data.selector && typeof elementIndex === "number") {
         const foundEl = pageElements.find((pe) => pe.index === elementIndex);
+        // TODO: Validate the selector against the page elements. Removed throw error
         if (!foundEl || foundEl.selector !== a.data.selector) {
-          throw new Error(
+          console.log(
             `[background.ts] Selector validation failed for index ${elementIndex}`
           );
         }
@@ -682,6 +769,42 @@ async function performLocalAction(
           a.data.selector
         );
       }
+
+      if (a.type === "key_press") {
+        if (!a.data.key) {
+          throw new Error(
+            "[background.ts] No key specified for key_press action"
+          );
+        }
+        const validKeys = [
+          "Enter",
+          "Tab",
+          "Backspace",
+          "Shift",
+          "Control",
+          "Alt",
+          "Meta",
+          "ArrowUp",
+          "ArrowDown",
+          "ArrowLeft",
+          "ArrowRight",
+          "Escape",
+        ];
+        const keyToPress = a.data.key.toLowerCase();
+        if (!validKeys.map((k) => k.toLowerCase()).includes(keyToPress)) {
+          console.warn(
+            "[background.ts] Unsupported key for key_press:",
+            a.data.key,
+            ". Proceeding anyway."
+          );
+        }
+        console.log(
+          "[background.ts] Preparing to simulate key press:",
+          a.data.key,
+          "on tab",
+          tabIdRef.value
+        );
+      }
       console.log(
         "[background.ts] Sending action to tab",
         tabIdRef.value,
@@ -690,6 +813,12 @@ async function performLocalAction(
       );
       await sendActionToTab(a, tabIdRef.value);
       console.log("[background.ts] Action acknowledged by tab", tabIdRef.value);
+      break;
+    case "refresh":
+      console.log("[background.ts] Refreshing tab", tabIdRef.value);
+      await chrome.tabs.reload(tabIdRef.value);
+      await waitForTabLoad(tabIdRef.value);
+      console.log("[background.ts] Tab", tabIdRef.value, "refreshed");
       break;
     case "extract":
       if (a.data.selector && typeof elementIndex === "number") {
@@ -735,9 +864,9 @@ async function performLocalAction(
         ":",
         a
       );
-      await sendActionToTab(a, tabIdRef.value);
+      const response = await sendActionToTab(a, tabIdRef.value);
       console.log("[background.ts] Action acknowledged by tab", tabIdRef.value);
-      break;
+      return response?.result || null;
 
     case "scroll":
       console.log(
@@ -754,12 +883,30 @@ async function performLocalAction(
       break;
     case "done":
       console.log("[background.ts] AI indicates all tasks are done");
-      break; // Simply complete the action
+      break;
     case "wait":
       console.log("[background.ts] Waiting for 2 seconds");
       await new Promise((resolve) => setTimeout(resolve, 2000));
       console.log("[background.ts] Wait completed");
       break;
+    case "ask":
+      console.log(
+        "[background.ts] Pausing automation to ask user: ",
+        a.data.question || "Waiting for user input"
+      );
+      automationStopped = true;
+      // Send the question to the side panel and content script
+      chrome.runtime.sendMessage({
+        type: "UPDATE_SIDEPANEL",
+        question: a.data.question || "Please provide further instructions.",
+      });
+      chrome.tabs.sendMessage(tabIdRef.value, {
+        type: "DISPLAY_MESSAGE",
+        response: {
+          message: a.data.question || "Please provide further instructions.",
+        },
+      });
+      return "ASK_PAUSED";
     default:
       throw new Error(`[background.ts] Unknown/unhandled action: ${a.type}`);
   }
@@ -783,6 +930,7 @@ async function verifyOrOpenTab(urlPart: string, tabIdRef: { value: number }) {
       "Activating it"
     );
     await chrome.tabs.update(found.id, { active: true });
+    activeAutomationTabs.add(found.id);
     await waitForTabLoad(found.id);
     console.log("[background.ts] Tab", found.id, "loaded and active");
     tabIdRef.value = found.id;
@@ -794,13 +942,13 @@ async function verifyOrOpenTab(urlPart: string, tabIdRef: { value: number }) {
     const newTab = await createTab(`https://${urlPart}`);
     if (newTab && newTab.id) {
       tabIdRef.value = newTab.id;
+      activeAutomationTabs.add(newTab.id);
       console.log(
         "[background.ts] New tab created, updated tabIdRef to:",
         newTab.id
       );
     }
   }
-  sendExecutionUpdate(tabIdRef.value);
 }
 
 /********************************************************
@@ -809,7 +957,7 @@ async function verifyOrOpenTab(urlPart: string, tabIdRef: { value: number }) {
 async function sendActionToTab(
   action: LocalAction,
   tabId: number
-): Promise<void> {
+): Promise<any> {
   console.log("[background.ts] Sending action to tab", tabId, ":", action);
   await ensureContentScriptInjected(tabId);
   return new Promise((resolve, reject) => {
@@ -832,7 +980,8 @@ async function sendActionToTab(
             ":",
             response
           );
-          resolve();
+          console.log(`[sendActionToTab] Extracted content: ${response}`);
+          resolve(response);
         } else {
           console.error(
             "[background.ts] Action failed, response from tab",
@@ -852,8 +1001,9 @@ async function sendActionToTab(
  ********************************************************/
 chrome.runtime.onMessage.addListener(async (msg, _sender, resp) => {
   if (msg.type === "PROCESS_COMMAND") {
+    automationStopped = false;
     console.log("[background.ts] Received PROCESS_COMMAND:", msg);
-    await chrome.storage.local.set({ conversationHistory: [] });
+    // await chrome.storage.local.set({ conversationHistory: [] });
     const [activeTab] = await chrome.tabs.query({
       active: true,
       currentWindow: true,
@@ -869,17 +1019,24 @@ chrome.runtime.onMessage.addListener(async (msg, _sender, resp) => {
       "[background.ts] Active tab found for PROCESS_COMMAND:",
       activeTab.id
     );
-    executionHistories[activeTab.id] = [
-      { step: "Processing Command", status: "pending" },
-    ];
     recentActionsMap[activeTab.id] = [];
     currentTasks[activeTab.id] = "Processing...";
-    sendExecutionUpdate(activeTab.id);
 
-    await processCommand(activeTab.id, msg.command, msg.command, []);
+    await processCommand(activeTab.id, msg.command, msg.command, [], []);
 
     console.log("[background.ts] PROCESS_COMMAND completed, sending response");
+    await chrome.runtime.sendMessage({
+      type: "FINISH_PROCESS_COMMAND",
+      response: "Finished processing command.",
+    });
     resp({ success: true });
+  } else if (msg.type === "NEW_CHAT") {
+    console.log("Starting new chat");
+    await chrome.storage.local.set({ conversationHistory: [] });
+    resp({ success: true });
+    return true;
+  } else if (msg.type === "STOP_AUTOMATION") {
+    automationStopped = true;
   }
 });
 
@@ -924,6 +1081,7 @@ function waitForTabLoad(tabId: number): Promise<void> {
 async function navigateTab(tabId: number, url: string): Promise<void> {
   console.log("[background.ts] Updating tab", tabId, "to URL:", url);
   await chrome.tabs.update(tabId, { url });
+  activeAutomationTabs.add(tabId);
   await waitForTabLoad(tabId);
   console.log("[background.ts] Tab", tabId, "navigated to", url);
   await ensureContentScriptInjected(tabId);
@@ -938,6 +1096,7 @@ async function createTab(url: string): Promise<chrome.tabs.Tab> {
         changeInfo: chrome.tabs.TabChangeInfo
       ) => {
         if (tabId === tab.id && changeInfo.status === "complete") {
+          activeAutomationTabs.add(tab.id);
           console.log("[background.ts] New tab", tab.id, "created and loaded");
           chrome.tabs.onUpdated.removeListener(listener);
           await ensureContentScriptInjected(tab.id);

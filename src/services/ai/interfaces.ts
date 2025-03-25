@@ -6,7 +6,17 @@
  * @property {"model"} model - Represents the AI model role.
  * @property {"user"} user - Represents the user role.
  */
-export type Role = "model" | "user";
+export type Role = "model" | "user" | "assistant";
+
+export interface ClaudeChatContent {
+  type: "text" | "image";
+  text: string; // Required if type is "text"
+  source?: {
+    type: "base64";
+    media_type: string; // e.g., "image/jpeg", "image/png"
+    data: string; // Base64-encoded image data
+  }; // Required if type is "image"
+}
 
 /**
  * Represents a chat message in the system.
@@ -14,6 +24,11 @@ export type Role = "model" | "user";
 export interface GeminiChatMessage {
   role: Role;
   parts: Array<Parts>;
+}
+
+export interface ClaudeChatMessage {
+  role: Role;
+  content: ClaudeChatContent[];
 }
 
 /**
@@ -70,6 +85,11 @@ export interface PageElement {
    * The ARIA role of the element, if any.
    */
   role?: string;
+
+  /**
+   * The XPath of the element, if any.
+   */
+  xPath?: string;
 
   /**
    * The accessible label of the element, if any.

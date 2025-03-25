@@ -35,6 +35,60 @@ export function querySelectorWithIframes(
   return { element: null, ownerDocument: doc };
 }
 
+/**
+ * Recursively searches the provided document and its iframes.
+ * 1) Attempts to find `selector` using CSS querySelector.
+ * 2) If not found, attempts to find `xPath` using document.evaluate.
+ */
+export function querySelectorThenXPathWithIframes(
+  selector: string,
+  xPath: string,
+  doc: Document = document
+): { element: Element | null; ownerDocument: Document } {
+  // 1) Try normal CSS selector in this document
+  const element = doc.querySelector(selector);
+  if (element) {
+    return { element, ownerDocument: doc };
+  }
+
+  // 2) Not found with CSS. Try XPath in this document.
+  const xpathResult = doc.evaluate(
+    xPath,
+    doc,
+    null,
+    XPathResult.FIRST_ORDERED_NODE_TYPE,
+    null
+  );
+  const xpathElement = xpathResult.singleNodeValue as Element | null;
+  if (xpathElement) {
+    return { element: xpathElement, ownerDocument: doc };
+  }
+
+  // 3) If not found in this document, recurse into iframes (same-origin only)
+  const iframes = doc.querySelectorAll("iframe");
+  for (const iframe of Array.from(iframes)) {
+    try {
+      const iframeDoc = iframe.contentDocument;
+      if (iframeDoc) {
+        const result = querySelectorThenXPathWithIframes(
+          selector,
+          xPath,
+          iframeDoc
+        );
+        if (result.element) {
+          return result;
+        }
+      }
+    } catch (error) {
+      // Cross-origin or access issues
+      console.warn("Could not access iframe content:", error);
+    }
+  }
+
+  // If still not found, return null
+  return { element: null, ownerDocument: doc };
+}
+
 export async function executeLocalActions(
   actions: LocalAction[],
   index: number,

@@ -83,9 +83,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     // Modal Overlay
     <div
       className="
-        ext-fixed ext-inset-0 ext-z-50
-        ext-bg-black/50 ext-backdrop-blur-sm
-        ext-flex ext-items-center ext-justify-center
+        d4m-fixed d4m-inset-0 d4m-z-50
+        d4m-bg-black/50 d4m-backdrop-blur-sm
+        d4m-flex d4m-items-center d4m-justify-center
       "
       onClick={(e) => {
         if (e.target === e.currentTarget) {
@@ -97,36 +97,36 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       <div
         ref={modalRef}
         className="
-          ext-relative ext-bg-gray-800/90
-          ext-rounded-2xl ext-p-6 ext-w-full ext-max-w-md
-          ext-ring-1 ext-ring-inset ext-ring-gray-500/50
-          ext-shadow-xl ext-backdrop-blur-md
-          ext-text-gray-100
+          d4m-relative d4m-bg-gray-800/90
+          d4m-rounded-2xl d4m-p-6 d4m-w-full d4m-max-w-md
+          d4m-ring-1 d4m-ring-inset d4m-ring-gray-500/50
+          d4m-shadow-xl d4m-backdrop-blur-md
+          d4m-text-gray-100
         "
       >
         {/* Header */}
-        <div className="ext-flex ext-items-center ext-justify-between ext-mb-6">
-          <h2 className="ext-text-lg ext-font-semibold ext-flex ext-items-center gap-2 ext-text-cyan-200">
-            <Key className="ext-w-5 ext-h-5" />
+        <div className="d4m-flex d4m-items-center d4m-justify-between d4m-mb-6">
+          <h2 className="d4m-text-lg d4m-font-semibold d4m-flex d4m-items-center gap-2 d4m-text-cyan-200">
+            <Key className="d4m-w-5 d4m-h-5" />
             API Settings
           </h2>
           <button
             onClick={onClose}
-            className="ext-text-gray-400 ext-hover:text-gray-200 ext-transition-colors"
+            className="d4m-text-gray-400 d4m-hover:text-gray-200 d4m-transition-colors"
           >
-            <X className="ext-w-5 ext-h-5" />
+            <X className="d4m-w-5 d4m-h-5" />
           </button>
         </div>
 
         {/* Body */}
-        <div className="ext-space-y-4 ext-text-sm">
+        <div className="d4m-space-y-4 d4m-text-sm">
           {/* AI Provider */}
           <div>
-            <label className="ext-block ext-font-medium ext-text-cyan-100 ext-mb-2">
+            <label className="d4m-block d4m-font-medium d4m-text-cyan-100 d4m-mb-2">
               AI Provider
             </label>
-            <div className="ext-flex ext-gap-4 ext-text-gray-200">
-              <label className="ext-flex ext-items-center ext-gap-1">
+            <div className="d4m-flex d4m-gap-4 d4m-text-gray-200">
+              <label className="d4m-flex d4m-items-center d4m-gap-1">
                 <input
                   type="radio"
                   name="aiProvider"
@@ -135,11 +135,11 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   onChange={(e) =>
                     setAiProvider(e.target.value as Settings["aiProvider"])
                   }
-                  className="ext-mr-1 ext-accent-cyan-600"
+                  className="d4m-mr-1 d4m-accent-cyan-600"
                 />
                 Gemini
               </label>
-              <label className="ext-flex ext-items-center ext-gap-1">
+              <label className="d4m-flex d4m-items-center d4m-gap-1">
                 <input
                   type="radio"
                   name="aiProvider"
@@ -148,7 +148,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   onChange={(e) =>
                     setAiProvider(e.target.value as Settings["aiProvider"])
                   }
-                  className="ext-mr-1 ext-accent-cyan-600"
+                  className="d4m-mr-1 d4m-accent-cyan-600"
                 />
                 OpenAI
               </label>
@@ -157,7 +157,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
           {/* Gemini or OpenAI Key */}
           <div>
-            <label className="ext-block ext-font-medium ext-text-cyan-100 ext-mb-1">
+            <label className="d4m-block d4m-font-medium d4m-text-cyan-100 d4m-mb-1">
               {aiProvider === "gemini" ? "Gemini API Key" : "OpenAI API Key"}
             </label>
             <input
@@ -169,11 +169,11 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   : setOpenaiKey(e.target.value)
               }
               className="
-                ext-w-full ext-px-3 ext-py-2
-                ext-bg-gray-900 ext-border ext-border-gray-700
-                ext-rounded-lg ext-text-sm ext-text-gray-200
-                ext-focus:outline-none ext-focus:ring-2 ext-focus:ring-cyan-500
-                ext-placeholder-gray-500
+                d4m-w-full d4m-px-3 d4m-py-2
+                d4m-bg-gray-900 d4m-border d4m-border-gray-700
+                d4m-rounded-lg d4m-text-sm d4m-text-gray-200
+                d4m-focus:outline-none d4m-focus:ring-2 d4m-focus:ring-cyan-500
+                d4m-placeholder-gray-500
               "
               placeholder={`Enter your ${
                 aiProvider === "gemini" ? "Gemini" : "OpenAI"
@@ -184,7 +184,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           {/* Vision Key if Gemini */}
           {aiProvider === "gemini" && (
             <div>
-              <label className="ext-block ext-font-medium ext-text-cyan-100 ext-mb-1">
+              <label className="d4m-block d4m-font-medium d4m-text-cyan-100 d4m-mb-1">
                 Vision API Key
               </label>
               <input
@@ -192,11 +192,11 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 value={visionKey}
                 onChange={(e) => setVisionKey(e.target.value)}
                 className="
-                  ext-w-full ext-px-3 ext-py-2
-                  ext-bg-gray-900 ext-border ext-border-gray-700
-                  ext-rounded-lg ext-text-sm ext-text-gray-200
-                  ext-focus:outline-none ext-focus:ring-2 ext-focus:ring-cyan-500
-                  ext-placeholder-gray-500
+                  d4m-w-full d4m-px-3 d4m-py-2
+                  d4m-bg-gray-900 d4m-border d4m-border-gray-700
+                  d4m-rounded-lg d4m-text-sm d4m-text-gray-200
+                  d4m-focus:outline-none d4m-focus:ring-2 d4m-focus:ring-cyan-500
+                  d4m-placeholder-gray-500
                 "
                 placeholder="Enter your Vision API key"
               />
@@ -208,9 +208,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             <button
               onClick={saveKeys}
               className="
-                ext-w-full ext-bg-cyan-600 ext-text-white ext-py-2 ext-px-4 ext-rounded-lg
-                ext-hover:bg-cyan-700 ext-transition-colors
-                ext-disabled:bg-gray-600
+                d4m-w-full d4m-bg-cyan-600 d4m-text-white d4m-py-2 d4m-px-4 d4m-rounded-lg
+                d4m-hover:bg-cyan-700 d4m-transition-colors
+                d4m-disabled:bg-gray-600
               "
             >
               Save Keys
@@ -219,15 +219,15 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         </div>
 
         {/* Links */}
-        <div className="ext-mt-4 ext-text-xs ext-text-gray-400">
+        <div className="d4m-mt-4 d4m-text-xs d4m-text-gray-400">
           <p>Get your API keys from:</p>
-          <ul className="ext-list-disc ext-list-inside ext-space-y-1 ext-mt-1">
+          <ul className="d4m-list-disc d4m-list-inside d4m-space-y-1 d4m-mt-1">
             <li>
               <a
                 href="https://makersuite.google.com/app/apikey"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="ext-text-cyan-400 ext-hover:text-cyan-300 ext-underline"
+                className="d4m-text-cyan-400 d4m-hover:text-cyan-300 d4m-underline"
               >
                 Google AI Studio (Gemini)
               </a>
@@ -237,7 +237,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 href="https://console.cloud.google.com/apis/credentials"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="ext-text-cyan-400 ext-hover:text-cyan-300 ext-underline"
+                className="d4m-text-cyan-400 d4m-hover:text-cyan-300 d4m-underline"
               >
                 Google Cloud Console (Vision)
               </a>

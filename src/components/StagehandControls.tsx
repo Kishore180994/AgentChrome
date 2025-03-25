@@ -96,25 +96,25 @@ export function StagehandControls() {
   };
 
   return (
-    <div className="ext-space-y-4 ext-text-sm ext-text-gray-200">
+    <div className="d4m-space-y-4 d4m-text-sm d4m-text-gray-200">
       {/* Recording Controls */}
-      <div className="ext-flex ext-items-center ext-space-x-4">
+      <div className="d4m-flex d4m-items-center d4m-space-x-4">
         <button
           onClick={isRecording ? stopRecording : startRecording}
-          className={`ext-flex ext-items-center ext-space-x-2 ext-px-4 ext-py-2 ext-rounded-lg ext-transition-colors ext-ring-1 ${
+          className={`d4m-flex d4m-items-center d4m-space-x-2 d4m-px-4 d4m-py-2 d4m-rounded-lg d4m-transition-colors d4m-ring-1 ${
             isRecording
-              ? "ext-bg-red-700 ext-text-red-100 ext-ring-red-500/50 ext-hover:bg-red-600"
-              : "ext-bg-green-700 ext-text-green-100 ext-ring-green-500/50 ext-hover:bg-green-600"
+              ? "d4m-bg-red-700 d4m-text-red-100 d4m-ring-red-500/50 d4m-hover:bg-red-600"
+              : "d4m-bg-green-700 d4m-text-green-100 d4m-ring-green-500/50 d4m-hover:bg-green-600"
           }`}
         >
           {isRecording ? (
             <>
-              <Square className="ext-w-4 ext-h-4" />
+              <Square className="d4m-w-4 d4m-h-4" />
               <span>Stop Recording</span>
             </>
           ) : (
             <>
-              <Play className="ext-w-4 ext-h-4" />
+              <Play className="d4m-w-4 d4m-h-4" />
               <span>Start Recording</span>
             </>
           )}
@@ -125,16 +125,16 @@ export function StagehandControls() {
           onClick={clearActions}
           disabled={actions.length === 0}
           className="
-            ext-flex ext-items-center ext-space-x-2
-            ext-px-4 ext-py-2 ext-rounded-lg 
-            ext-ring-1 ext-ring-gray-500/50
-            ext-bg-gray-700 ext-text-gray-200
-            ext-hover:bg-gray-600
-            ext-disabled:opacity-50 ext-disabled:cursor-not-allowed
-            ext-transition-colors
+            d4m-flex d4m-items-center d4m-space-x-2
+            d4m-px-4 d4m-py-2 d4m-rounded-lg
+            d4m-ring-1 d4m-ring-gray-500/50
+            d4m-bg-gray-700 d4m-text-gray-200
+            d4m-hover:bg-gray-600
+            d4m-disabled:opacity-50 d4m-disabled:cursor-not-allowed
+            d4m-transition-colors
           "
         >
-          <Trash2 className="ext-w-4 ext-h-4" />
+          <Trash2 className="d4m-w-4 d4m-h-4" />
           <span>Clear</span>
         </button>
       </div>
@@ -143,9 +143,9 @@ export function StagehandControls() {
       {error && (
         <div
           className="
-            ext-p-4 ext-rounded-lg
-            ext-bg-red-800/40 ext-text-red-200
-            ext-ring-1 ext-ring-red-500/50
+            d4m-p-4 d4m-rounded-lg
+            d4m-bg-red-800/40 d4m-text-red-200
+            d4m-ring-1 d4m-ring-red-500/50
           "
         >
           {error}
@@ -155,12 +155,14 @@ export function StagehandControls() {
       {/* Recorded Actions */}
       {actions.length > 0 && (
         <div>
-          <h3 className="font-medium mb-2 text-cyan-200">Recorded Actions:</h3>
+          <h3 className="d4m-font-medium d4m-mb-2 d4m-text-cyan-200">
+            Recorded Actions:
+          </h3>
           <pre
             className="
-              ext-bg-gray-900 ext-p-4 ext-rounded-lg
-              ext-overflow-auto ext-max-h-[200px] ext-text-xs
-              ext-ring-1 ext-ring-gray-500/50
+              d4m-bg-gray-900 d4m-p-4 d4m-rounded-lg
+              d4m-overflow-auto d4m-max-h-[200px] d4m-text-xs
+              d4m-ring-1 d4m-ring-gray-500/50
             "
           >
             {JSON.stringify(actions, null, 2)}
