@@ -52,7 +52,6 @@ export class ActionExecutor {
       throw error; // Re-throw the error for upstream handling
     }
   }
-
   /**
    * Handles click actions on elements, including those inside iframes.
    */
@@ -206,20 +205,71 @@ export class ActionExecutor {
    * Handles key press actions on elements, including those inside iframes.
    */
   private async handleKeyPress(selector?: string, key?: string): Promise<void> {
-    const { element, ownerDocument } = selector
-      ? querySelectorWithIframes(selector)
-      : { element: null, ownerDocument: null };
-    if (!element) {
-      throw new Error(`Element not found for selector: ${selector}`);
+    let targetElement: HTMLElement | null = null;
+    let ownerDocument: Document | null = null;
+
+    // Try to find the element if a selector is provided
+    if (selector) {
+      const result = querySelectorWithIframes(selector);
+      targetElement = result.element as HTMLElement | null;
+      ownerDocument = result.ownerDocument;
     }
-    // Ensure the element is treated as an HTMLElement in its own context
-    if (!(element instanceof ownerDocument!.defaultView!.HTMLElement)) {
-      throw new Error(`Element is not an HTMLElement: ${selector}`);
+
+    // If selector was provided but no element was found, or no selector was provided
+    if (!targetElement) {
+      ownerDocument = document;
+      targetElement =
+        ownerDocument.activeElement instanceof HTMLElement
+          ? (ownerDocument.activeElement as HTMLElement)
+          : null;
+
+      if (!targetElement) {
+        targetElement = ownerDocument.body;
+        console.warn(
+          "[handleKeyPress] No focused element found, using document.body as fallback"
+        );
+      } else {
+        console.log("[handleKeyPress] Using active element:", targetElement);
+      }
     }
+
+    // Ensure the target is an HTMLElement
+    if (!(targetElement instanceof ownerDocument!.defaultView!.HTMLElement)) {
+      throw new Error(
+        `Target element is not an HTMLElement: ${selector || "active element"}`
+      );
+    }
+
+    // Focus the element
+    targetElement.focus();
+
+    // Modify value to ensure input change is detected
+    if (
+      targetElement instanceof HTMLInputElement ||
+      targetElement instanceof HTMLTextAreaElement
+    ) {
+      targetElement.value += " ";
+    }
+
+    // Dispatch an InputEvent to simulate user input
+    targetElement.dispatchEvent(new InputEvent("input", { bubbles: true }));
+
+    // Dispatch the keydown event
+    const keyToPress = key || "Enter";
     const keyEvent = new KeyboardEvent("keydown", {
-      key: key || "Enter",
+      key: keyToPress,
+      code: keyToPress,
+      keyCode: 13,
+      which: 13,
       bubbles: true,
+      cancelable: true,
     });
-    element.dispatchEvent(keyEvent);
+
+    targetElement.dispatchEvent(keyEvent);
+
+    console.log(
+      `[handleKeyPress] Dispatched ${keyToPress} key on`,
+      targetElement
+    );
   }
 }

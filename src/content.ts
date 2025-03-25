@@ -1,11 +1,8 @@
 import { ActionExecutor } from "./classes/ActionExecutor";
 import { DOMManager } from "./classes/DOMManager";
-import { SidebarManager } from "./classes/SideBarManager";
 
 const domManager = new DOMManager();
 const actionExecutor = new ActionExecutor(domManager);
-const sidebarManager = new SidebarManager();
-let showHorizontalBarDebounce: NodeJS.Timeout | null = null;
 
 declare global {
   interface Window {
@@ -19,200 +16,226 @@ if (!window[AGENT_KEY]) {
   window[AGENT_KEY] = true;
 
   let tabId: number | null = null;
-  chrome.runtime.sendMessage({ type: "GET_TAB_ID" }, (response) => {
-    if (response?.tabId) tabId = response.tabId;
-  });
+  let port: chrome.runtime.Port | null = null;
 
-  // const port = chrome.runtime.connect({ name: "content-script" });
-  const port = chrome.runtime.connect({
-    name: `content-script-${tabId}`,
-  });
-
-  port.onMessage.addListener(async (message) => {
-    switch (message.type) {
-      case "PERFORM_ACTION":
-        await actionExecutor.execute(message.action);
-        return true;
-      case "TOGGLE_SIDEBAR":
-        sidebarManager.toggleSidebar();
-        return true;
-      case "GET_PAGE_ELEMENTS":
-        const elements = domManager.extractPageElements();
-        port.postMessage({
-          type: "PAGE_ELEMENTS",
-          elements,
-        });
-        return true;
-
-      case "EXECUTION_UPDATE":
-        const { taskHistory } = message;
-        console.log("[content.ts] Received EXECUTION_UPDATE:", taskHistory);
-        sidebarManager.updateHorizontalBar(taskHistory);
-        window.postMessage(
-          {
-            type: "COMMAND_RESPONSE",
-            response: taskHistory,
-            responseType: "EXECUTION_UPDATE",
-          },
-          "*"
+  // Function to initialize or reinitialize the port connection
+  const initializePort = () => {
+    try {
+      if (!chrome.runtime?.id) {
+        console.warn(
+          "[content.ts] Extension context invalidated, cannot initialize port."
         );
-        return true;
+        window[AGENT_KEY] = false; // Reset initialization flag
+        return;
+      }
+      port = chrome.runtime.connect({
+        name: `content-script-${tabId || -1}`,
+      });
 
-      case "HIDE_HORIZONTAL_BAR":
-        console.log("[content.ts] Hiding horizontal bar");
-        sidebarManager.hideHorizontalBar();
-        return true;
-      case "SHOW_HORIZONTAL_BAR":
-        console.log("[content.ts] Showing horizontal bar for tab", tabId);
-        if (showHorizontalBarDebounce) {
-          clearTimeout(showHorizontalBarDebounce);
+      port.onDisconnect.addListener(() => {
+        console.log(
+          "[content.ts] Port disconnected, attempting to reconnect..."
+        );
+        port = null;
+        window[AGENT_KEY] = false; // Reset initialization flag to reinitialize
+      });
+
+      port.onMessage.addListener(async (message) => {
+        try {
+          switch (message.type) {
+            case "PERFORM_ACTION":
+              await actionExecutor.execute(message.action);
+              return true;
+            case "GET_PAGE_ELEMENTS":
+              const elements = domManager.extractPageElements(
+                message.tabId,
+                message.elementType
+              );
+              port?.postMessage({
+                type: "PAGE_ELEMENTS",
+                elements,
+              });
+              return true;
+            case "EXECUTION_UPDATE":
+              const { taskHistory } = message;
+              console.log(
+                "[content.ts] Received EXECUTION_UPDATE:",
+                taskHistory
+              );
+
+              port?.postMessage({
+                type: "EXECUTION_UPDATE", // Use the same message type in ChatWidget
+                taskHistory: taskHistory,
+              });
+              return true;
+            default:
+              break;
+          }
+        } catch (err) {
+          console.error("[content.ts] Error handling port message:", err);
         }
-        showHorizontalBarDebounce = setTimeout(() => {
-          sidebarManager.showHorizontalBar();
-          showHorizontalBarDebounce = null;
-        }, 1000); // Debounce delay of 1 second
-        return true;
-      default:
-        break;
+      });
+
+      // Send KEEP_ALIVE messages to maintain connection
+      setInterval(() => {
+        try {
+          if (!chrome.runtime?.id) {
+            console.warn(
+              "[content.ts] Extension context invalidated, stopping KEEP_ALIVE."
+            );
+            window[AGENT_KEY] = false;
+            return;
+          }
+          if (port) {
+            port.postMessage({
+              type: "KEEP_ALIVE",
+              tabId: tabId || -1,
+            });
+          }
+        } catch (err) {
+          console.warn("[content.ts] KEEP_ALIVE failed:", err);
+          window[AGENT_KEY] = false;
+        }
+      }, 5000);
+    } catch (err) {
+      console.warn("[content.ts] Failed to initialize port:", err);
+      window[AGENT_KEY] = false;
     }
-  });
+  };
 
-  setInterval(() => {
-    // port.postMessage({ type: "KEEP_ALIVE", tabId: -1 });
-    port.postMessage({
-      type: "KEEP_ALIVE",
-      tabId: tabId || -1,
-    });
-  }, 5000);
+  // Initial tab ID retrieval
+  try {
+    if (chrome.runtime?.id) {
+      chrome.runtime.sendMessage({ type: "GET_TAB_ID" }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.warn(
+            "[content.ts] GET_TAB_ID failed:",
+            chrome.runtime.lastError
+          );
+          window[AGENT_KEY] = false;
+          return;
+        }
+        if (response?.tabId) {
+          tabId = response.tabId;
+          initializePort(); // Initialize port after getting tabId
+        }
+      });
+    } else {
+      console.warn("[content.ts] Extension context invalidated on startup.");
+      window[AGENT_KEY] = false;
+    }
+  } catch (err) {
+    console.warn("[content.ts] Failed to send GET_TAB_ID:", err);
+    window[AGENT_KEY] = false;
+  }
 
-  // chrome.runtime.sendMessage({ type: "REGISTER_CONTENT_SCRIPT" });
-  chrome.runtime.sendMessage({
-    type: "REGISTER_CONTENT_SCRIPT",
-    tabId: tabId || -1,
-  });
+  // Register content script
+  try {
+    if (chrome.runtime?.id) {
+      chrome.runtime.sendMessage({
+        type: "REGISTER_CONTENT_SCRIPT",
+        tabId: tabId || -1,
+      });
+    }
+  } catch (err) {
+    console.warn("[content.ts] Failed to register content script:", err);
+    window[AGENT_KEY] = false;
+  }
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === "GET_TAB_ID" && sender.tab?.id) {
-      tabId = sender.tab.id;
-      sendResponse({ tabId });
-      return true;
-    }
-    // ... (existing cases, updated with tabId)
-    const currentTabId = sender.tab?.id || tabId;
-    switch (message.type) {
-      case "PERFORM_ACTION":
-        actionExecutor
-          .execute(message.action)
-          .then((result) => {
-            sendResponse({ success: true, result, tabId: currentTabId });
-          })
-          .catch((error: any) => {
-            sendResponse({
-              success: false,
-              error: error.message,
-              tabId: currentTabId,
-            });
-          });
-        return true; // Async response
-      case "TOGGLE_SIDEBAR":
-        sidebarManager.toggleSidebar();
-        sendResponse({ success: true, tabId: currentTabId });
-        return true;
-      case "GET_PAGE_ELEMENTS":
-        const elements = domManager.extractPageElements();
-        sendResponse({ success: true, elements, tabId: currentTabId });
-        return true;
-      case "PING":
-        sendResponse({ success: true, tabId: currentTabId });
-        return true;
-      case "EXECUTION_UPDATE":
-        const { taskHistory } = message;
-        console.log("[content.ts] Received EXECUTION_UPDATE:", taskHistory);
-        sidebarManager.updateHorizontalBar(taskHistory);
-        window.postMessage(
-          { type: "COMMAND_RESPONSE", response: message },
-          "*"
+    try {
+      if (!chrome.runtime?.id) {
+        console.warn(
+          "[content.ts] Extension context invalidated, cannot process message:",
+          message
         );
-        sendResponse({ success: true, tabId: currentTabId });
-        return true;
-      case "HIDE_HORIZONTAL_BAR":
-        console.log("[content.ts] Hiding horizontal bar");
-        sidebarManager.hideHorizontalBar();
-        sendResponse({ success: true, tabId: currentTabId });
-        return true;
-      case "SHOW_HORIZONTAL_BAR":
-        console.log("[content.ts] Showing horizontal bar for tab", tabId);
-        if (showHorizontalBarDebounce) {
-          clearTimeout(showHorizontalBarDebounce);
-        }
-        showHorizontalBarDebounce = setTimeout(() => {
-          sidebarManager.showHorizontalBar();
-          sendResponse({ success: true, tabId });
-          showHorizontalBarDebounce = null;
-        }, 1000); // Debounce delay of 1 second
-        return true;
-      case "DISPLAY_MESSAGE":
-        console.log("DISPLAY_MESSAGE", message);
-        if (message) {
-          console.log("[content.ts] Received final response:", message);
-          window.postMessage(
-            { type: "COMMAND_RESPONSE", response: message },
-            "*"
-          );
-        } else {
-          console.warn(
-            "[content.ts] Received DISPLAY_MESSAGE with undefined response"
-          );
-          window.postMessage(
-            { type: "COMMAND_RESPONSE", response: "No response received" },
-            "*"
-          );
-        }
-        sendResponse({ success: true });
-        return true;
-      default:
         sendResponse({
           success: false,
-          error: "Unknown message type",
-          tabId: currentTabId,
+          error: "Extension context invalidated",
         });
+        window[AGENT_KEY] = false;
         return true;
-    }
-  });
+      }
 
-  window.addEventListener("message", (event: MessageEvent) => {
-    if (event.origin !== window.location.origin || event.source !== window) {
-      return;
-    }
+      if (message.type === "GET_TAB_ID" && sender.tab?.id) {
+        tabId = sender.tab.id;
+        sendResponse({ tabId });
+        return true;
+      }
 
-    const data = event.data;
-    if (data?.type === "USER_COMMAND" && data.command) {
-      // Close sidebar and show horizontal bar when a command is sent
-      sidebarManager.closeSidebar();
-      sidebarManager.showHorizontalBar();
-      chrome.runtime
-        .sendMessage({
-          type: "PROCESS_COMMAND",
-          command: data.command,
-          tabId: tabId || -1,
-        })
-        .then((response) => {
-          console.log("[content.ts] response: ", response);
-        })
-        .catch((err) => {
-          console.log(
-            "[content.ts] Received error after PROCESS_COMMAND:",
-            err
+      const currentTabId = sender.tab?.id || tabId;
+      switch (message.type) {
+        case "PERFORM_ACTION":
+          actionExecutor
+            .execute(message.action)
+            .then((result) => {
+              sendResponse({ success: true, result, tabId: currentTabId });
+            })
+            .catch((error: any) => {
+              sendResponse({
+                success: false,
+                error: error.message,
+                tabId: currentTabId,
+              });
+            });
+          return true; // Async response
+        case "GET_PAGE_ELEMENTS":
+          const elements = domManager.extractPageElements(
+            message.tabId,
+            message.elementType
           );
-        });
+          sendResponse({ success: true, elements, tabId: currentTabId });
+          return true;
+        case "PING":
+          sendResponse({ success: true, tabId: currentTabId });
+          return true;
+        case "EXECUTION_UPDATE":
+          const { taskHistory } = message;
+          chrome.runtime.sendMessage({
+            type: "UPDATE_SIDEPANEL",
+            taskHistory,
+          });
+          sendResponse({ success: true, tabId: currentTabId });
+          return true;
+        case "DISPLAY_MESSAGE":
+          console.log("DISPLAY_MESSAGE", message);
+          if (message) {
+            console.log("[content.ts] Received final response:", message);
+            chrome.runtime.sendMessage({
+              type: "COMMAND_RESPONSE",
+              response: message.response,
+            });
+          } else {
+            console.warn(
+              "[content.ts] Received DISPLAY_MESSAGE with undefined response"
+            );
+            chrome.runtime.sendMessage({
+              type: "COMMAND_RESPONSE",
+              response: "No response received",
+            });
+          }
+          sendResponse({ success: true });
+          return true;
+        default:
+          sendResponse({
+            success: false,
+            error: "Unknown message type",
+            tabId: currentTabId,
+          });
+          return true;
+      }
+    } catch (err) {
+      console.error("[content.ts] Runtime message error:", err);
+      sendResponse({ success: false, error: (err as Error).message });
+      window[AGENT_KEY] = false;
+      return true;
     }
   });
 
   window.addEventListener("pageshow", (event) => {
     if (event.persisted) {
-      chrome.runtime.connect({
-        name: `content-script-${tabId || -1}`,
-      });
+      console.log("[content.ts] Page restored from cache, reinitializing...");
+      window[AGENT_KEY] = false; // Reset initialization flag to reinitialize
     }
   });
 }

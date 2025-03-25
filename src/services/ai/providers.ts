@@ -1,99 +1,26 @@
-// aiProviders.ts
-
-import OpenAI from "openai";
-import { AgentResponseFormat } from "../../types/responseFormat";
-
-/*******************************************************
- * For Gemini (GoogleGenerativeAI)
- *******************************************************/
-import { GoogleGenerativeAI } from "@google/generative-ai"; // or import {...} from "@google/generative-ai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { agentPrompt } from "../../utils/prompts";
 import { GeminiChatMessage } from "./interfaces";
+import { AgentResponseFormat } from "../../types/responseFormat";
 
-///////////////////////////////////////////////////////////////////////////////////
-// Single global references for OpenAI and Gemini
-///////////////////////////////////////////////////////////////////////////////////
-let openaiClient: OpenAI | null = null;
-let geminiClient: any = null; // typed as 'GoogleGenerativeAI' but using 'any' if uncertain
-let geminiModel: any = null; // typed as ReturnType<GoogleGenerativeAI['getGenerativeModel']>
-
-/********************************************************
- * callOpenAI:
- * - Reuses or creates a single OpenAI instance
- * - Invokes the chat completion
- * - Returns the raw result as AgentResponseFormat or null
- ********************************************************/
-export async function callOpenAI(
-  messages: GeminiChatMessage[],
-  openaiKeyOverride?: string
-): Promise<AgentResponseFormat | null> {
-  console.debug("[callOpenAI] Called with messages:", messages.length);
-
-  // 1) Ensure we have an OpenAI client
-  if (!openaiClient) {
-    console.debug("[callOpenAI] Creating a new OpenAI instance...");
-    const openaiKey =
-      openaiKeyOverride ||
-      "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";
-    if (!openaiKey) {
-      throw new Error("OpenAI API key is not set or empty.");
-    }
-
-    openaiClient = new OpenAI({
-      apiKey: openaiKey,
-      dangerouslyAllowBrowser: true,
-    });
-  } else {
-    console.debug("[callOpenAI] Reusing existing OpenAI instance.");
-  }
-
-  const response = await openaiClient.chat.completions.create({
-    model: "gpt-4o-mini", // or "gpt-4"
-    messages: messages.map((m) => ({
-      role: m.role === "model" ? "assistant" : "user", // Map "model" to "assistant"
-      content: m.parts?.[0].text ?? "",
-    })),
-    max_tokens: 1000,
-    temperature: 0.2,
-  });
-
-  // 3) Parse the response into AgentResponseFormat if possible
-  const contentString = response.choices[0]?.message?.content;
-  if (!contentString) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(contentString.trim()) as AgentResponseFormat;
-    return parsed;
-  } catch (err) {
-    console.error(
-      "[callOpenAI] Could not parse response as AgentResponseFormat",
-      err
-    );
-    return null;
-  }
-}
-
+// Single global references for Gemini
+let geminiClient: GoogleGenerativeAI | null = null;
+let geminiModel: any = null; // Replace 'any' with proper type if known
+export type AIProvider = "openai" | "gemini";
 /**
  * Processes an array of chat messages, keeping full content for the last message
  * and truncating earlier messages at the '&&' delimiter.
- *
- * @param {ChatMessage[]} textData - An array of chat messages.
- * @returns {ChatMessage[]} - A processed array of chat messages.
  */
 function processTextData(textData: GeminiChatMessage[]): GeminiChatMessage[] {
   if (!textData || !Array.isArray(textData) || textData.length === 0) {
-    return []; // Return empty array if input is invalid or empty.
+    return [];
   }
 
   const processedData: GeminiChatMessage[] = [];
   for (let i = 0; i < textData.length; i++) {
     if (i === textData.length - 1) {
-      // Last message: keep the full content.
       processedData.push(textData[i]);
     } else {
-      // Earlier messages: truncate at the '&&' delimiter.
       const currentMessage = textData[i];
       if (
         currentMessage.parts &&
@@ -104,33 +31,30 @@ function processTextData(textData: GeminiChatMessage[]): GeminiChatMessage[] {
         const delimiterIndex = textContent.indexOf("&&");
 
         if (delimiterIndex !== -1) {
-          // Create a new ChatMessage with the truncated text.
           const truncatedText = textContent.substring(0, delimiterIndex - 2);
           processedData.push({
-            ...currentMessage, // Copy other properties of the original message
-            parts: [{ text: truncatedText }], // Replace the parts array with the truncated text
+            ...currentMessage,
+            parts: [{ text: truncatedText }],
           });
         } else {
-          processedData.push(currentMessage); // If delimiter not found, keep the original message.
+          processedData.push(currentMessage);
         }
       } else {
-        processedData.push(currentMessage); // Handle cases where message parts are missing or not strings.
+        processedData.push(currentMessage);
       }
     }
   }
   return processedData;
 }
 
-/********************************************************
- * callGemini:
- * - Reuses or creates a single Gemini client/model
- * - Transforms ChatMessages -> Gemini chat session
- * - Returns an AgentResponseFormat or null
- ********************************************************/
+/**
+ * Calls the Gemini API with chat history and optional screenshot data URL.
+ * Supports vision by sending the screenshot as an image part.
+ */
 export async function callGemini(
   messages: GeminiChatMessage[],
   geminiKey: string,
-  screenShotLink?: string
+  screenShotDataUrl?: string // Changed from screenShotLink to clarify it’s a data URL
 ): Promise<AgentResponseFormat | null> {
   console.debug("[callGemini] Called with messages:", messages.length);
 
@@ -143,37 +67,36 @@ export async function callGemini(
 
     geminiClient = new GoogleGenerativeAI(geminiKey);
 
-    // e.g. "gemini-2.0-flash" or "models/chat-bison-001" depending on availability
+    // Use a vision-capable model
     geminiModel = geminiClient.getGenerativeModel({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.0-flash", // Updated to a model with vision support
       systemInstruction: agentPrompt,
     });
   } else {
     console.debug("[callGemini] Reusing existing Gemini client & model.");
   }
 
-  // 2) Build a generation config (you can tweak these)
+  // 2) Build generation config
   const generationConfig = {
     temperature: 1,
     topP: 0.95,
     topK: 40,
     maxOutputTokens: 8192,
+    responseModalities: [],
     responseMimeType: "application/json",
   };
 
-  // 3) Convert ChatMessage[] to a format suitable for 'startChat'
-  //    Typically "history" might be an array of {author, content}
-  //    We'll store all but the last user message in "history"
-  //    Then send the last user message as the final .sendMessage() call
+  // 3) Prepare chat history (all but the last message)
   const chatHistory: GeminiChatMessage[] = processTextData(messages);
   console.log("[callGemini] chatHistory:", chatHistory);
+
   // 4) Start a chat session
   const chatSession = geminiModel.startChat({
     generationConfig,
     history: chatHistory,
   });
 
-  // The last user message to send explicitly
+  // 5) Extract the last user message
   const lastMsg = messages[messages.length - 1];
   console.log("[callGemini] lastMsg:", lastMsg);
   let lastUserText =
@@ -181,21 +104,31 @@ export async function callGemini(
       ? lastMsg.parts[0].text
       : JSON.stringify(lastMsg.parts[0].text);
 
-  // Append screenshot link or base64 to the message if provided
-  if (screenShotLink) {
-    lastUserText += ` Here is a screenshot for context: ${screenShotLink}`;
+  // 6) Process screenshot if provided
+  let imagePart;
+  if (screenShotDataUrl) {
+    // Expecting a data URL like "data:image/png;base64,..."
+    const [mimeTypePart, base64Data] = screenShotDataUrl.split(",");
+    const mimeType = mimeTypePart.split(":")[1].split(";")[0]; // e.g., "image/png"
+    imagePart = {
+      inlineData: {
+        data: base64Data,
+        mimeType,
+      },
+    };
   }
 
-  // 6) Send the last user message with multimodal support (image URL)
-  const result = await chatSession.sendMessage(lastUserText);
-  // e.g. gemini returns the result in result.response.text()
+  // 7) Send message with text and optional image
+  const messageToSend = imagePart ? [lastUserText, imagePart] : lastUserText;
+  const result = await chatSession.sendMessage(messageToSend);
+
+  // 8) Parse the response
   const raw = result.response?.text() || "";
   if (!raw) {
     console.warn("[callGemini] No text from gemini.");
     return null;
   }
 
-  // 6) Attempt to parse as AgentResponseFormat
   try {
     const parsed = JSON.parse(raw.trim()) as AgentResponseFormat;
     return parsed;
@@ -208,23 +141,15 @@ export async function callGemini(
   }
 }
 
-/********************************************************
- * callAI => chooses which provider to use
- ********************************************************/
-export type AIProvider = "openai" | "gemini";
-
 export async function callAI(
   provider: AIProvider,
   messages: GeminiChatMessage[],
-  screenShotLink?: string
+  screenShotDataUrl?: string // Updated parameter name
 ): Promise<AgentResponseFormat | null> {
   switch (provider) {
-    case "openai":
-      return await callOpenAI(messages);
     case "gemini":
-      // Example "geminiKey" or fetch from storage
-      const geminiKey = "AIzaSyDcDTlmwYLVRflcPIR9oklm5IlTUNzhu0Q";
-      return await callGemini(messages, geminiKey, screenShotLink);
+      const geminiKey = "AIzaSyCl0Fvr4ydPw6HF2rvdeTTuAgcn7TCvAFs";
+      return await callGemini(messages, geminiKey, screenShotDataUrl);
     default:
       throw new Error(`[callAI] Unknown provider: ${provider}`);
   }

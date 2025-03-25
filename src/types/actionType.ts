@@ -27,6 +27,7 @@ export interface LocalAction {
     url?: string;
     offset?: number;
     direction?: "up" | "down";
+    question?: string;
     // ... add more as needed
   };
   description?: string;
@@ -47,7 +48,9 @@ export type LocalActionType =
   | "scroll_down"
   | "scroll_up"
   | "done"
-  | "wait"; // fallback
+  | "ask"
+  | "wait"
+  | "refetch"; // fallback
 
 /** For "input_text": fill text into an element at "index" */
 export interface InputTextAction {
@@ -115,7 +118,8 @@ export interface SubmitFormAction {
 /** For "key_press": press a key. e.g. ENTER, ESC, etc. */
 export interface KeyPressAction {
   key_press: {
-    key: string; // e.g. "Enter", "Escape", "ArrowDown"
+    key: string;
+    selector?: string; // e.g. "Enter", "Escape", "ArrowDown"
   };
 }
 
@@ -129,6 +133,12 @@ export interface VerifyAction {
 /** For "done": indicates the ultimate task is complete */
 export interface DoneAction {
   done: {}; // no parameters
+}
+
+export interface AskAction {
+  ask: {
+    question: string;
+  };
 }
 
 /**
@@ -153,4 +163,5 @@ export type AgentActionItem =
   | SubmitFormAction
   | KeyPressAction
   | VerifyAction
-  | DoneAction;
+  | DoneAction
+  | AskAction;

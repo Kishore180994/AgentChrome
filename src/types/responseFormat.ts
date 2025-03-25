@@ -18,11 +18,32 @@ import { AgentActionItem } from "./actionType";
  *   ]
  * }
  */
+export interface StepState {
+  step_number: string;
+  description: string;
+  status:
+    | "PASS"
+    | "FAIL"
+    | "PENDING"
+    | "IN_PROGRESS"
+    | "pass"
+    | "passed"
+    | "fail"
+    | "failed"
+    | "pending"
+    | "in_progress"
+    | "in progress";
+}
+export interface MemoryState {
+  steps: Array<StepState>;
+}
 
 /**
  * The `current_state` portion
  */
-export interface CurrentState {
+export interface AIResponseFormat {
+  action?: AgentActionItem[];
+
   user_command?: string;
   /**
    * Quick detailed summary of new info from the current page
@@ -47,12 +68,16 @@ export interface CurrentState {
    * something and how many remain. e.g. '0 out of 10 websites analyzed.'
    * Continue with abc and xyz."
    */
-  memory: string;
+  memory: MemoryState;
+
+  current_goal: string;
 
   /**
    * "What needs to be done with the next actions"
    */
   next_goal: string;
+
+  next_goal_elements_type: string[];
 }
 
 /**
@@ -62,7 +87,7 @@ export interface AgentResponseFormat {
   /**
    * The "current_state" object with the mandatory fields
    */
-  current_state: CurrentState;
+  current_state: AIResponseFormat;
 
   /**
    * The "action" list. Each item in the list:
