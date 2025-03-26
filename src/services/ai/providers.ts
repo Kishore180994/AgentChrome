@@ -38,20 +38,34 @@ function processTextData(
           const truncatedText = textContent.substring(0, delimiterIndex - 2);
           if ("parts" in currentMessage) {
             processedData.push({
-              ...currentMessage,
+              role: currentMessage.role,
               parts: [{ text: truncatedText }],
             } as GeminiChatMessage);
           } else {
             processedData.push({
-              ...currentMessage,
+              role: currentMessage.role,
               content: [{ type: "text", text: truncatedText }],
             } as ClaudeChatMessage);
           }
         } else {
-          processedData.push(currentMessage);
+          processedData.push({
+            role: currentMessage.role,
+            ...(("parts" in currentMessage && {
+              parts: (currentMessage as GeminiChatMessage).parts,
+            }) || {
+              content: (currentMessage as ClaudeChatMessage).content,
+            }),
+          });
         }
       } else {
-        processedData.push(currentMessage);
+        processedData.push({
+          role: currentMessage.role,
+          ...(("parts" in currentMessage && {
+            parts: (currentMessage as GeminiChatMessage).parts,
+          }) || {
+            content: (currentMessage as ClaudeChatMessage).content,
+          }),
+        });
       }
     }
   }
@@ -131,6 +145,9 @@ export async function callGemini(
   }
 }
 
+/**
+ * Calls the Claude API with chat history and optional screenshot data URL.
+ */
 export async function callClaude(
   messages: ClaudeChatMessage[],
   claudeKey: string,
@@ -151,16 +168,15 @@ export async function callClaude(
     console.debug("[callClaude] Reusing existing Claude client.");
   }
 
-  const chatHistory = messages;
+  const chatHistory = processTextData(messages) as ClaudeChatMessage[];
   console.log("[callClaude] chatHistory:", chatHistory);
   const lastMsg = messages[messages.length - 1];
   console.log("[callClaude] lastMsg:", lastMsg);
 
-  // Ensure last message has valid text content
   const lastTextContent = lastMsg.content.find((c) => c.type === "text")?.text;
   if (!lastTextContent) {
     console.error("[callClaude] Last message has no valid text content");
-    return null; // Or throw an error, depending on your needs
+    return null;
   }
 
   const contentToSend: Anthropic.ContentBlockParam[] = [
@@ -183,59 +199,19 @@ export async function callClaude(
     });
   }
 
-  // Map chat history, ensuring all text blocks are valid
   const messagesToSend: Anthropic.MessageParam[] = chatHistory
     .slice(0, -1)
-    .map((msg) => {
-      const contentBlocks = msg.content.map((content) => {
-        if (content.type === "text") {
-          if (!content.text || typeof content.text !== "string") {
-            console.warn(
-              "[callClaude] Invalid text content in history:",
-              content
-            );
-            return {
-              type: "text",
-              text: "[Invalid or missing text]",
-            } as Anthropic.TextBlockParam;
-          }
-          return {
-            type: "text",
-            text: content.text,
-          } as Anthropic.TextBlockParam;
-        } else if (content.type === "image" && content.source) {
-          return {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: content.source.media_type,
-              data: content.source.data,
-            },
-          } as Anthropic.ImageBlockParam;
-        }
-        console.warn(
-          "[callClaude] Unsupported content type in history:",
-          content
-        );
-        return {
-          type: "text",
-          text: "[Unsupported content]",
-        } as Anthropic.TextBlockParam;
-      });
-
-      return {
-        role: msg.role === "model" ? "assistant" : msg.role,
-        content: contentBlocks,
-      };
-    })
+    .map((msg) => ({
+      role: msg.role === "model" ? "assistant" : msg.role,
+      content: msg.content.map((c) => ({
+        type: c.type,
+        text: c.type === "text" ? c.text : undefined,
+        source: c.type === "image" ? c.source : undefined,
+      })) as Anthropic.ContentBlockParam[],
+    }))
     .concat({
       role: lastMsg.role === "model" ? "assistant" : lastMsg.role,
-      content: contentToSend.filter(
-        (
-          block
-        ): block is Anthropic.TextBlockParam | Anthropic.ImageBlockParam =>
-          block.type === "text" || block.type === "image"
-      ),
+      content: contentToSend,
     });
 
   try {
@@ -266,37 +242,53 @@ export async function callClaude(
 }
 
 /**
- * Calls the specified AI provider with chat messages and an optional screenshot data URL.
+ * Filters out execution-type messages and converts to the appropriate format for the AI provider.
  */
 export async function callAI(
   provider: AIProvider,
-  messages: GeminiChatMessage[] | ClaudeChatMessage[], // Union type to handle both
+  messages: (GeminiChatMessage | ClaudeChatMessage)[],
   screenShotDataUrl?: string
 ): Promise<AgentResponseFormat | null> {
+  // Filter out execution messages
+  const filteredMessages = messages.filter(
+    (msg) => msg.role !== ("execution" as unknown as typeof msg.role)
+  );
+
   switch (provider) {
-    case "gemini":
+    case "gemini": {
       const geminiKey = "AIzaSyCl0Fvr4ydPw6HF2rvdeTTuAgcn7TCvAFs";
-      if (!isGeminiMessages(messages))
-        throw new Error("Invalid message format for Gemini");
-      return await callGemini(messages, geminiKey, screenShotDataUrl);
-    case "claude":
+      // Convert to Gemini format, keeping only relevant fields
+      const geminiMessages: GeminiChatMessage[] = filteredMessages.map(
+        (msg) => ({
+          role: msg.role === "model" ? "model" : "user",
+          parts:
+            "parts" in msg ? msg.parts : [{ text: msg.content[0]?.text || "" }],
+        })
+      );
+      return await callGemini(geminiMessages, geminiKey, screenShotDataUrl);
+    }
+    case "claude": {
       const claudeKey =
         "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";
-      if (!isClaudeMessages(messages))
-        throw new Error("Invalid message format for Claude");
-      return await callClaude(messages, claudeKey, screenShotDataUrl);
+      // Convert to Claude format, keeping only relevant fields
+      const claudeMessages: ClaudeChatMessage[] = filteredMessages.map(
+        (msg) => ({
+          role: msg.role === "model" ? "model" : "user",
+          content:
+            "content" in msg
+              ? msg.content
+              : [
+                  {
+                    type: "text",
+                    text: msg.parts[0]?.text || "",
+                    cache_control: null,
+                  },
+                ],
+        })
+      );
+      return await callClaude(claudeMessages, claudeKey, screenShotDataUrl);
+    }
     default:
       throw new Error(`[callAI] Unknown provider: ${provider}`);
   }
-}
-
-// Type guards for message validation
-function isGeminiMessages(messages: any[]): messages is GeminiChatMessage[] {
-  return messages.every((msg) => "parts" in msg && Array.isArray(msg.parts));
-}
-
-function isClaudeMessages(messages: any[]): messages is ClaudeChatMessage[] {
-  return messages.every(
-    (msg) => "content" in msg && Array.isArray(msg.content)
-  );
 }

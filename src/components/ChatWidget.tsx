@@ -13,14 +13,12 @@ import {
 import MarkdownWrapper from "./MarkDownWrapper";
 import { StepState } from "../types/responseFormat";
 
-// Define the Message interface
 interface Message {
   id: string;
   role: "user" | "model" | "execution";
   content: string | StepState[];
 }
 
-// Define the ProcessedMessage interface
 interface ProcessedMessage {
   type: "single" | "modelGroup" | "executionGroup";
   message?: Message;
@@ -42,6 +40,9 @@ export function ChatWidget() {
     new Set()
   );
   const [isTextareaFocused, setIsTextareaFocused] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<"gemini" | "claude">(
+    "gemini"
+  );
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -56,7 +57,28 @@ export function ChatWidget() {
     "Scroll to the bottom of the page",
   ];
 
-  // Scroll to bottom when messages update
+  // Load messages from chrome.storage.local when component mounts
+  useEffect(() => {
+    const loadMessagesFromStorage = async () => {
+      try {
+        const { conversationHistory } = await chrome.storage.local.get(
+          "conversationHistory"
+        );
+        if (conversationHistory && Array.isArray(conversationHistory)) {
+          setMessages(conversationHistory);
+        }
+      } catch (err) {
+        console.error(
+          "[ChatWidget] Failed to load messages from storage:",
+          err
+        );
+        setError("Failed to load conversation history.");
+      }
+    };
+    loadMessagesFromStorage();
+  }, []);
+
+  // Scroll to bottom when messages or UI state changes
   useEffect(() => {
     const scrollToBottom = () => {
       if (messagesContainerRef.current) {
@@ -69,7 +91,7 @@ export function ChatWidget() {
     return () => clearTimeout(timeoutId);
   }, [processedMessages, isLoading, error]);
 
-  // Process messages into groups
+  // Process messages for display
   const processMessages = (msgs: Message[]) => {
     const processed: ProcessedMessage[] = [];
     let currentModelGroup: Message[] = [];
@@ -79,7 +101,7 @@ export function ChatWidget() {
         if (currentModelGroup.length === 0) {
           currentModelGroup.push({
             ...message,
-            id: new Date().toLocaleTimeString(),
+            id: message.id || new Date().toLocaleTimeString(), // Ensure ID exists
           });
         } else {
           currentModelGroup.push(message);
@@ -124,7 +146,7 @@ export function ChatWidget() {
     setProcessedMessages(processed);
   };
 
-  // Handle background messages
+  // Handle incoming messages and sync with storage
   useEffect(() => {
     const handleBackgroundMessage = (
       message: any,
@@ -138,25 +160,22 @@ export function ChatWidget() {
         if (memory) {
           const steps = memory.steps as StepState[];
           setMessages((prev) => {
-            if (prev.length > 0 && prev[prev.length - 1].role === "execution") {
-              // Update the last execution message
-              const updatedMessages = [...prev];
-              updatedMessages[updatedMessages.length - 1] = {
-                ...updatedMessages[updatedMessages.length - 1],
-                content: steps,
-              };
-              return updatedMessages;
-            } else {
-              // Add a new execution message (shouldn't happen after handleSubmit)
-              return [
-                ...prev,
-                {
-                  id: Date.now().toString(),
-                  role: "execution",
-                  content: steps,
-                },
-              ];
-            }
+            const updatedMessages =
+              prev.length > 0 && prev[prev.length - 1].role === "execution"
+                ? [
+                    ...prev.slice(0, -1),
+                    { ...prev[prev.length - 1], content: steps },
+                  ]
+                : [
+                    ...prev,
+                    {
+                      id: Date.now().toString(),
+                      role: "execution" as const,
+                      content: steps,
+                    },
+                  ];
+            chrome.storage.local.set({ conversationHistory: updatedMessages });
+            return updatedMessages;
           });
         }
         sendResponse({ success: true });
@@ -167,11 +186,14 @@ export function ChatWidget() {
         } else if (message.response.message) {
           content = message.response.message;
           if (message.response.output) {
-            content += `\n\n**Result:** ${
+            // Include output directly in Markdown without "Result:" prefix
+            const formattedOutput =
               typeof message.response.output === "string"
                 ? message.response.output
-                : JSON.stringify(message.response.output, null, 2)
-            }`;
+                : "```json\n" +
+                  JSON.stringify(message.response.output, null, 2) +
+                  "\n```";
+            content += `\n\n${formattedOutput}`;
           }
         } else {
           const { data } = message.response;
@@ -179,42 +201,54 @@ export function ChatWidget() {
           const formattedOutput =
             typeof output === "string"
               ? output
-              : JSON.stringify(output, null, 2);
-          content = `${text || "Task result"}\n\n\`\`\`json\n${
+              : "```json\n" + JSON.stringify(output, null, 2) + "\n```";
+          content = `${text || "Task completed"}\n\n${
             formattedOutput || "No output"
-          }\n\`\`\``;
+          }`;
         }
         console.log(
           "[ChatWidget] Processed COMMAND_RESPONSE content:",
           content
         );
-        setMessages((prev) => [
-          ...prev,
-          { id: Date.now().toString(), role: "model", content },
-        ]);
+        setMessages((prev) => {
+          const updatedMessages = [
+            ...prev,
+            { id: Date.now().toString(), role: "model" as const, content },
+          ];
+          chrome.storage.local.set({ conversationHistory: updatedMessages });
+          return updatedMessages;
+        });
         setIsLoading(false);
         sendResponse({ success: true });
       } else if (message.type === "FINISH_PROCESS_COMMAND") {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now().toString(),
-            role: "model",
-            content: "Command processing finished.",
-          },
-        ]);
+        setMessages((prev) => {
+          const updatedMessages = [
+            ...prev,
+            {
+              id: Date.now().toString(),
+              role: "model" as const,
+              content: "Command processing finished.",
+            },
+          ];
+          chrome.storage.local.set({ conversationHistory: updatedMessages });
+          return updatedMessages;
+        });
         setIsLoading(false);
         sendResponse({ success: true });
       } else if (message.type === "UPDATE_SIDEPANEL") {
         if (message.question) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: Date.now().toString(),
-              role: "model",
-              content: message.question,
-            },
-          ]);
+          setMessages((prev) => {
+            const updatedMessages = [
+              ...prev,
+              {
+                id: Date.now().toString(),
+                role: "model" as const,
+                content: message.question,
+              },
+            ];
+            chrome.storage.local.set({ conversationHistory: updatedMessages });
+            return updatedMessages;
+          });
           sendResponse({ success: true });
         }
       }
@@ -227,12 +261,10 @@ export function ChatWidget() {
     };
   }, []);
 
-  // Update processed messages when messages change
   useEffect(() => {
     processMessages(messages);
   }, [messages]);
 
-  // Handle user command submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
@@ -243,16 +275,27 @@ export function ChatWidget() {
     setIsLoading(true);
     setIsTextareaFocused(false);
 
-    // Add user message and initial execution message
-    setMessages((prev) => [
-      ...prev,
-      { id: Date.now().toString(), role: "user", content: userMessage },
-      { id: (Date.now() + 1).toString(), role: "execution", content: [] },
-    ]);
+    setMessages((prev) => {
+      const updatedMessages = [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          role: "user" as const,
+          content: userMessage,
+        },
+        {
+          id: (Date.now() + 1).toString(),
+          role: "execution" as const,
+          content: [],
+        },
+      ];
+      chrome.storage.local.set({ conversationHistory: updatedMessages });
+      return updatedMessages;
+    });
 
     try {
       chrome.runtime.sendMessage(
-        { type: "PROCESS_COMMAND", command: userMessage },
+        { type: "PROCESS_COMMAND", command: userMessage, model: selectedModel },
         (response) => {
           if (chrome.runtime.lastError) {
             console.error("Error from background:", chrome.runtime.lastError);
@@ -279,14 +322,18 @@ export function ChatWidget() {
         } else {
           console.log("Automation stopped:", response);
           setIsLoading(false);
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: Date.now().toString(),
-              role: "model",
-              content: "Automation stopped by user.",
-            },
-          ]);
+          setMessages((prev) => {
+            const updatedMessages = [
+              ...prev,
+              {
+                id: Date.now().toString(),
+                role: "model" as const,
+                content: "Automation stopped by user.",
+              },
+            ];
+            chrome.storage.local.set({ conversationHistory: updatedMessages });
+            return updatedMessages;
+          });
         }
       });
     } catch (err) {
@@ -303,6 +350,7 @@ export function ChatWidget() {
         setProcessedMessages([]);
         setError(null);
         setIsLoading(false);
+        chrome.storage.local.set({ conversationHistory: [] }); // Clear storage
       });
     } catch (err) {
       console.error("Failed to send NEW_CHAT message:", err);
@@ -345,6 +393,16 @@ export function ChatWidget() {
           D4M Agent
         </div>
         <div className="d4m-flex d4m-items-center d4m-space-x-2">
+          <select
+            value={selectedModel}
+            onChange={(e) =>
+              setSelectedModel(e.target.value as "gemini" | "claude")
+            }
+            className="d4m-px-2 d4m-py-1 d4m-bg-gray-800 d4m-text-cyan-400 d4m-text-xs d4m-rounded d4m-border d4m-border-cyan-500/50 d4m-focus:outline-none d4m-hover:bg-gray-700"
+          >
+            <option value="gemini">Gemini</option>
+            <option value="claude">Claude</option>
+          </select>
           <button
             onClick={handleNewChat}
             className="d4m-px-2 d4m-py-1 d4m-bg-gray-800 d4m-text-cyan-400 d4m-text-xs d4m-rounded d4m-border d4m-border-cyan-500/50 d4m-hover:bg-gray-700 d4m-transition-colors"
@@ -522,7 +580,6 @@ export function ChatWidget() {
           </div>
         )}
 
-        {/* Floating Suggestions */}
         <div
           className={`d4m-absolute d4m-top-1/2 d4m-left-1/2 d4m-transform d4m--translate-x-1/2 d4m-flex d4m-flex-wrap d4m-gap-2 d4m-px-4 d4m-py-3 d4m-bg-gray-800/90 d4m-rounded-lg d4m-shadow-[0_0_10px_rgba(0,255,255,0.3)] d4m-z-10 d4m-w-[calc(100%-16px)] d4m-backdrop-blur-sm d4m-transition-all d4m-duration-300 ${
             isTextareaFocused
@@ -543,7 +600,6 @@ export function ChatWidget() {
         </div>
       </div>
 
-      {/* Input Form */}
       <form
         onSubmit={handleSubmit}
         className="d4m-px-2 d4m-py-2 d4m-bg-gray-900 d4m-border-t d4m-border-cyan-700/40 d4m-shadow-[0_0_10px_rgba(0,255,255,0.3)] d4m-w-full d4m-box-border d4m-pb-4"
