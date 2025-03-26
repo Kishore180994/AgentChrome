@@ -2,31 +2,28 @@ import { LocalAction } from "../types/actionType";
 import { PageElement } from "../services/ai/interfaces";
 
 /**
- * Recursively searches for an element using a selector, including elements inside nested iframes.
+ * Recursively searches for an element using a selector, including nested iframes.
  * @param selector - The CSS selector to find the element.
- * @param doc - The document or iframe document to search within (default is the main document).
- * @returns The first matching element, or null if no match is found.
+ * @param doc - The document to search within (default is the main document).
+ * @returns An object with the found element and its owner document, or null element if not found.
  */
 export function querySelectorWithIframes(
   selector: string,
   doc: Document = document
 ): { element: Element | null; ownerDocument: Document } {
   const element = doc.querySelector(selector);
-  if (element) {
-    return { element, ownerDocument: doc };
-  }
+  if (element) return { element, ownerDocument: doc };
 
-  const iframes = doc.querySelectorAll("iframe");
+  const iframes = Array.from(doc.getElementsByTagName("iframe"));
   for (const iframe of iframes) {
     try {
       const iframeDoc = iframe.contentDocument;
-      if (iframeDoc) {
-        const result = querySelectorWithIframes(selector, iframeDoc);
-        if (result.element) return result;
-      }
+      if (!iframeDoc) continue; // Skip inaccessible iframes
+      const result = querySelectorWithIframes(selector, iframeDoc);
+      if (result.element) return result;
     } catch (error) {
       console.warn(
-        `[querySelectorWithIframes] Could not access iframe content:`,
+        "[querySelectorWithIframes] Could not access iframe:",
         error
       );
     }
@@ -36,57 +33,15 @@ export function querySelectorWithIframes(
 }
 
 /**
- * Recursively searches the provided document and its iframes.
- * 1) Attempts to find `selector` using CSS querySelector.
- * 2) If not found, attempts to find `xPath` using document.evaluate.
+ * Simplified to only use selector since xPath is not part of PageElement anymore.
+ * Recursively searches the provided document and its iframes using a CSS selector.
  */
-export function querySelectorThenXPathWithIframes(
+export function querySelectorInFrames(
   selector: string,
-  xPath: string,
   doc: Document = document
 ): { element: Element | null; ownerDocument: Document } {
-  // 1) Try normal CSS selector in this document
-  const element = doc.querySelector(selector);
-  if (element) {
-    return { element, ownerDocument: doc };
-  }
-
-  // 2) Not found with CSS. Try XPath in this document.
-  const xpathResult = doc.evaluate(
-    xPath,
-    doc,
-    null,
-    XPathResult.FIRST_ORDERED_NODE_TYPE,
-    null
-  );
-  const xpathElement = xpathResult.singleNodeValue as Element | null;
-  if (xpathElement) {
-    return { element: xpathElement, ownerDocument: doc };
-  }
-
-  // 3) If not found in this document, recurse into iframes (same-origin only)
-  const iframes = doc.querySelectorAll("iframe");
-  for (const iframe of Array.from(iframes)) {
-    try {
-      const iframeDoc = iframe.contentDocument;
-      if (iframeDoc) {
-        const result = querySelectorThenXPathWithIframes(
-          selector,
-          xPath,
-          iframeDoc
-        );
-        if (result.element) {
-          return result;
-        }
-      }
-    } catch (error) {
-      // Cross-origin or access issues
-      console.warn("Could not access iframe content:", error);
-    }
-  }
-
-  // If still not found, return null
-  return { element: null, ownerDocument: doc };
+  const result = querySelectorWithIframes(selector, doc);
+  return result;
 }
 
 export async function executeLocalActions(
@@ -96,18 +51,17 @@ export async function executeLocalActions(
   contextMsg: string,
   evaluation?: string,
   pageElements: PageElement[] = []
-) {
+): Promise<any> {
   if (index >= actions.length) {
-    // All actions have been executed.
-    return;
+    return "ACTIONS_COMPLETED";
   }
 
   const action = actions[index];
-
   try {
-    await performLocalAction(action, tabIdRef, pageElements);
-    // Proceed to the next action.
-    await executeLocalActions(
+    const result = await performLocalAction(action, tabIdRef, pageElements);
+    if (action.type === "extract") return result; // Return extracted content
+    if (action.type === "done") return "PROCESS_COMPLETED";
+    return await executeLocalActions(
       actions,
       index + 1,
       tabIdRef,
@@ -116,8 +70,8 @@ export async function executeLocalActions(
       pageElements
     );
   } catch (err) {
-    console.error("[executeLocalActions] Error executing action:", err);
-    throw err;
+    console.error("[executeLocalActions] Error executing action:", action, err);
+    throw err; // Let the caller handle retries or fallback
   }
 }
 
@@ -125,52 +79,135 @@ async function performLocalAction(
   action: LocalAction,
   tabIdRef: { value: number },
   pageElements: PageElement[]
-) {
+): Promise<any> {
+  const logPrefix = `[performLocalAction] Tab ${tabIdRef.value}`;
+  const elementIndex = action.data.index;
+
+  const getElementByIndex = (index: number | undefined): PageElement => {
+    if (typeof index !== "number") {
+      throw new Error(`${logPrefix} No valid index provided`);
+    }
+    const el = pageElements.find((pe) => pe.index === index);
+    if (!el)
+      throw new Error(`${logPrefix} Element not found for index ${index}`);
+    return el;
+  };
+
+  const sendActionWithIframe = async (action: LocalAction): Promise<any> => {
+    const el =
+      elementIndex !== undefined ? getElementByIndex(elementIndex) : null;
+    if (el && el.frame.length > 0) {
+      const response = await chrome.scripting.executeScript({
+        target: { tabId: tabIdRef.value },
+        func: (framePath: number[], actionData: LocalAction) => {
+          let context: Window = window;
+          for (const idx of framePath) {
+            const iframes = context.document.getElementsByTagName("iframe");
+            if (idx >= iframes.length)
+              throw new Error("Iframe index out of range");
+            const nextContext = iframes[idx].contentWindow;
+            if (!nextContext)
+              throw new Error("Iframe contentWindow inaccessible");
+            context = nextContext;
+          }
+          const el = context.document.querySelector(
+            actionData.data.selector || ""
+          );
+          if (!el) throw new Error("Element not found in iframe");
+          switch (actionData.type) {
+            case "click":
+            case "click_element":
+              (el as HTMLElement).click();
+              break;
+            case "input_text":
+              (el as HTMLInputElement).value = actionData.data.text || "";
+              el.dispatchEvent(new Event("input", { bubbles: true }));
+              el.dispatchEvent(new Event("change", { bubbles: true }));
+              break;
+            case "submit_form":
+              (el as HTMLFormElement).submit();
+              break;
+            case "key_press":
+              el.dispatchEvent(
+                new KeyboardEvent("keydown", { key: actionData.data.key })
+              );
+              break;
+            case "extract":
+              return el.textContent || "";
+            default:
+              throw new Error(
+                `Unsupported action in iframe: ${actionData.type}`
+              );
+          }
+        },
+        args: [el.frame, action],
+      });
+      return response?.[0]?.result;
+    }
+    return sendActionToTab(action, tabIdRef.value);
+  };
+
   switch (action.type) {
     case "click":
+    case "click_element":
     case "input_text":
     case "submit_form":
-    case "key_press":
-    case "extract": {
-      const elementIndex = action.data.index;
-      if (typeof elementIndex === "number") {
-        const foundEl = pageElements.find((pe) => pe.index === elementIndex);
-        if (!foundEl) {
-          throw new Error(`Element not found for index ${elementIndex}`);
-        }
-        action.data.selector = foundEl.selector;
+    case "key_press": {
+      const el =
+        elementIndex !== undefined ? getElementByIndex(elementIndex) : null;
+      if (el) {
+        action.data.selector = `${el.tagName}[data-index="${el.index}"]`;
+      } else if (!action.data.selector) {
+        throw new Error(
+          `${logPrefix} No selector or valid index for ${action.type}`
+        );
       }
-      await sendActionToActiveTab(action);
+      if (action.type === "key_press" && !action.data.key) {
+        throw new Error(`${logPrefix} No key specified for key_press`);
+      }
+      console.log(`${logPrefix} Executing ${action.type}`, action.data);
+      await sendActionWithIframe(action);
       break;
     }
+    case "extract": {
+      const el =
+        elementIndex !== undefined ? getElementByIndex(elementIndex) : null;
+      if (el) {
+        action.data.selector = `${el.tagName}[data-index="${el.index}"]`;
+      } else if (!action.data.selector) {
+        throw new Error(`${logPrefix} No selector or valid index for extract`);
+      }
+      console.log(
+        `${logPrefix} Extracting with selector: ${action.data.selector}`
+      );
+      return await sendActionWithIframe(action);
+    }
     case "scroll":
-      await sendActionToActiveTab(action);
+      console.log(`${logPrefix} Scrolling`, action.data);
+      await sendActionToTab(action, tabIdRef.value);
       break;
     case "done":
-      throw new Error("PROCESS_COMPLETED");
+      console.log(`${logPrefix} Process completed`);
+      throw new Error("PROCESS_COMPLETED"); // Use throw to signal completion
     default:
-      throw new Error(`Unknown action: ${action.type}`);
+      throw new Error(`${logPrefix} Unknown action: ${action.type}`);
   }
 }
 
-function sendActionToActiveTab(action: LocalAction): Promise<void> {
+function sendActionToTab(action: LocalAction, tabId: number): Promise<any> {
   return new Promise((resolve, reject) => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]?.id) {
-        chrome.tabs.sendMessage(
-          tabs[0].id,
-          { type: "PERFORM_ACTION", action },
-          (response) => {
-            if (chrome.runtime.lastError) {
-              reject(chrome.runtime.lastError);
-            } else {
-              resolve(response);
-            }
-          }
-        );
-      } else {
-        reject("No active tab found");
+    chrome.tabs.sendMessage(
+      tabId,
+      { type: "PERFORM_ACTION", action },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else if (response?.success) {
+          resolve(response.result);
+        } else {
+          reject(new Error(response?.error || "Action failed"));
+        }
       }
-    });
+    );
   });
 }

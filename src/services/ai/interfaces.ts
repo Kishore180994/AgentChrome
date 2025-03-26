@@ -11,6 +11,7 @@ export type Role = "model" | "user" | "assistant";
 export interface ClaudeChatContent {
   type: "text" | "image";
   text: string; // Required if type is "text"
+  cache_control: any;
   source?: {
     type: "base64";
     media_type: string; // e.g., "image/jpeg", "image/png"
@@ -24,6 +25,11 @@ export interface ClaudeChatContent {
 export interface GeminiChatMessage {
   role: Role;
   parts: Array<Parts>;
+}
+
+export interface ConversationHistory {
+  role: Role;
+  content: string;
 }
 
 export interface ClaudeChatMessage {
@@ -51,55 +57,11 @@ export interface Parts {
  * Represents an element on a web page.
  */
 export interface PageElement {
-  /**
-   * The index of the element in the DOM.
-   */
   index: number;
-
-  /**
-   * The tag name of the element (e.g., 'div', 'span').
-   */
   tagName: string;
-
-  /**
-   * The CSS selector for the element.
-   */
-  selector: string;
-
-  /**
-   * The text content of the element.
-   */
   text: string;
-
-  /**
-   * The full text content of the element, including its descendants.
-   */
-  fullText: string;
-
-  /**
-   * A record of the element's attributes and their values.
-   */
-  attributes: Record<string, string | null>;
-
-  /**
-   * The ARIA role of the element, if any.
-   */
-  role?: string;
-
-  /**
-   * The XPath of the element, if any.
-   */
-  xPath?: string;
-
-  /**
-   * The accessible label of the element, if any.
-   */
-  accessibleLabel?: string;
-
-  /**
-   * The bounding box of the element, containing its position and dimensions.
-   */
-  boundingBox: BoundingBox;
+  attributes: Record<string, string>;
+  frame: number[];
 }
 
 export interface BoundingBox {

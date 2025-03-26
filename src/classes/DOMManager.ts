@@ -1,5 +1,4 @@
 import { PageElement } from "../services/ai/interfaces"; // Adjust path as needed
-import { LocalAction } from "../types/actionType"; // Adjust path as needed
 
 export class DOMManager {
   private elementCache: Map<number, PageElement[]> = new Map();
@@ -9,33 +8,6 @@ export class DOMManager {
   /** Clears all debug highlights from the document. */
   clearDebugHighlights(doc: Document = document): void {
     doc.querySelectorAll(".debug-highlight").forEach((el) => el.remove());
-  }
-
-  /**
-   * Generates a concise, unique CSS selector for an element.
-   * Prioritizes `id`, then `class`, then falls back to `nth-child`.
-   */
-  getCssSelector(el: Element): string {
-    if (el.id) return `#${CSS.escape(el.id)}`;
-    const className = el.className.trim()
-      ? `.${CSS.escape(el.className.split(" ")[0])}`
-      : "";
-    const tag = el.tagName.toLowerCase();
-    if (className) return `${tag}${className}`;
-    return this.getNthChildSelector(el);
-  }
-
-  /** Generates a minimal nth-child selector path. */
-  private getNthChildSelector(el: Element): string {
-    const path: string[] = [];
-    let current: Element | null = el;
-    while (current && current.nodeType === Node.ELEMENT_NODE) {
-      const index =
-        Array.from(current.parentElement?.children || []).indexOf(current) + 1;
-      path.unshift(`${current.tagName.toLowerCase()}:nth-child(${index})`);
-      current = current.parentElement;
-    }
-    return path.join(" > ");
   }
 
   /**
@@ -58,257 +30,84 @@ export class DOMManager {
   }
 
   /**
-   * Maps elements_type to corresponding DOM tags with full HTML5 coverage.
+   * Extracts elements from the page that are currently in the viewport for AI web automation.
    */
-  private mapElementsTypeToTags(elementsType: string[]): string[] {
-    const tagMap: { [key: string]: string[] } = {
-      BUTTON: ["button"],
-      INPUT_FIELDS: ["input", "textarea"],
-      IMAGE: ["img"],
-      TEXT: [
-        "p",
-        "span",
-        "div",
-        "h1",
-        "h2",
-        "h3",
-        "h4",
-        "h5",
-        "h6",
-        "strong",
-        "em",
-        "b",
-        "i",
-        "u",
-        "small",
-        "sub",
-        "sup",
-        "mark",
-        "q",
-        "cite",
-        "blockquote",
-      ],
-      LINK: ["a"],
-      DROPDOWN: ["select"],
-      RADIO_BUTTON: ["input[type='radio']"],
-      CHECKBOX: ["input[type='checkbox']"],
-      TABLE: ["table", "thead", "tbody", "tfoot", "tr", "td", "th"],
-      FORM: ["form"],
-      NAVIGATION: ["nav", "ul", "ol", "li", "menu"],
-      ARTICLE: ["article"],
-      SECTION: ["section"],
-      ASIDE: ["aside"],
-      HEADER: ["header"],
-      FOOTER: ["footer"],
-      MAIN: ["main"],
-      DETAILS: ["details", "summary"],
-      CODE: ["code"],
-      PRE: ["pre"],
-      VIDEO: ["video"],
-      AUDIO: ["audio"],
-      CANVAS: ["canvas"],
-      IFRAME: ["iframe"],
-      OBJECT: ["object"],
-      EMBED: ["embed"],
-      LABEL: ["label"],
-      FIELDSET: ["fieldset", "legend"],
-      OUTPUT: ["output"],
-      PROGRESS: ["progress"],
-      METER: ["meter"],
-      HR: ["hr"],
-      BR: ["br"],
-      ABBR: ["abbr"],
-      ADDRESS: ["address"],
-      TIME: ["time"],
-      FIGURE: ["figure", "figcaption"],
-      DATALIST: ["datalist"],
-      OTHER: [],
-    };
-
-    if (
-      !elementsType ||
-      elementsType.length === 0 ||
-      elementsType.includes("OTHER")
-    ) {
-      return [
-        ...tagMap.BUTTON,
-        ...tagMap.INPUT_FIELDS,
-        ...tagMap.LABEL,
-        ...tagMap.DROPDOWN,
-        ...tagMap.RADIO_BUTTON,
-        ...tagMap.CHECKBOX,
-        ...tagMap.OUTPUT,
-        ...tagMap.PROGRESS,
-        ...tagMap.METER,
-      ];
-    }
-
-    return elementsType
-      .flatMap((type) => tagMap[type.toUpperCase()] || [])
-      .filter(Boolean);
-  }
-
-  /**
-   * Checks if an element matches the specific type requirements.
-   */
-  private matchesElementType(el: Element, elementsType: string[]): boolean {
-    const tag = el.tagName.toLowerCase();
-    const typeAttr = el.getAttribute("type")?.toLowerCase();
-
-    if (!elementsType.length || elementsType.includes("OTHER")) return true;
-
-    for (const et of elementsType.map((t) => t.toUpperCase())) {
-      switch (et) {
-        case "INPUT_FIELDS":
-          return tag === "input" || tag === "textarea";
-        case "RADIO_BUTTON":
-          return tag === "input" && typeAttr === "radio";
-        case "CHECKBOX":
-          return tag === "input" && typeAttr === "checkbox";
-        case "INPUT_TEXT":
-          return tag === "input" && typeAttr === "text";
-        case "INPUT_EMAIL":
-          return tag === "input" && typeAttr === "email";
-        case "INPUT_NUMBER":
-          return tag === "input" && typeAttr === "number";
-        case "INPUT_PASSWORD":
-          return tag === "input" && typeAttr === "password";
-        case "INPUT_DATE":
-          return tag === "input" && typeAttr === "date";
-        case "INPUT_TIME":
-          return tag === "input" && typeAttr === "time";
-        case "INPUT_FILE":
-          return tag === "input" && typeAttr === "file";
-        case "INPUT_SEARCH":
-          return tag === "input" && typeAttr === "search";
-        default:
-          const tags = this.mapElementsTypeToTags([et]);
-          return tags.includes(tag) || tags.some((t) => el.matches(t));
-      }
-    }
-    return false;
-  }
-
-  /**
-   * Extracts elements from the page based on elements_type.
-   */
-  extractPageElements(
-    tabId: number,
-    elementsType: string[] = [],
-    maxDepth: number = 3,
-    debug: boolean = true
-  ): PageElement[] {
-    if (debug) {
-      this.clearDebugHighlights();
-    }
-    elementsType = [];
-
-    const importantTags = [
-      "button",
-      "input",
-      "a",
-      "textarea",
-      "select",
-      "option",
-      "h1",
-      "h2",
-      "h3",
-      "h4",
-      "h5",
-      "h6",
-      "p",
-      "label",
-      "form",
-      "fieldset",
-      "div",
-      "span",
-    ];
-
-    const filter =
-      elementsType.length === 0 || elementsType[0]?.toUpperCase() === "ALL"
-        ? importantTags
-        : this.mapElementsTypeToTags(elementsType);
-
+  extractPageElements(tabId: number): PageElement[] {
     const elements: PageElement[] = [];
-    let idx = 1;
+    let idx = 0;
 
     const processDocument = (
       doc: Document,
       iframeOffset: { x: number; y: number } = { x: 0, y: 0 },
+      framePath: number[] = [],
       depth: number = 0
     ) => {
-      if (depth > maxDepth) return;
+      if (depth > 10) return; // Prevent infinite recursion
 
-      const query = filter.join(", ");
-      doc.querySelectorAll(query).forEach((el) => {
-        if (!this.matchesElementType(el, elementsType)) return;
+      // Process all elements
+      doc.querySelectorAll("*").forEach((el) => {
+        if (this.isElementImportant(el)) {
+          const rect = el.getBoundingClientRect();
+          const isInViewport =
+            rect.left + iframeOffset.x >= 0 &&
+            rect.top + iframeOffset.y >= 0 &&
+            rect.left + iframeOffset.x + rect.width <= window.innerWidth &&
+            rect.top + iframeOffset.y + rect.height <= window.innerHeight;
 
-        if (
-          (elementsType.length === 0 ||
-            elementsType[0]?.toUpperCase() === "ALL") &&
-          !this.isElementImportant(el)
-        ) {
-          return;
+          if (!isInViewport || rect.width === 0 || rect.height === 0) return;
+
+          const attributes = this.getRelevantAttributes(el);
+
+          elements.push({
+            index: idx++,
+            tagName: el.tagName.toLowerCase(),
+            text: this.getMeaningfulText(el).slice(0, 50), // Reduced to 50 chars for token efficiency
+            attributes,
+            frame: [...framePath],
+          });
         }
-
-        const attributes = this.getElementAttributes(el);
-        const classNames = attributes.class
-          ? attributes.class.split(/\s+/)
-          : [];
-
-        // Construct CSS Selector from Classnames
-        const classSelector = classNames.length
-          ? "." + classNames.map((cls) => CSS.escape(cls)).join(".")
-          : "";
-        const tagSelector = el.tagName.toLowerCase();
-
-        const cssSelector = classSelector
-          ? `${tagSelector}${classSelector}`
-          : tagSelector;
-
-        const xPath = this.getElementXPath(el);
-        const textSnippet = this.getMeaningfulText(el).slice(0, 100);
-        const rect = el.getBoundingClientRect();
-
-        if (rect.width === 0 || rect.height === 0) return;
-
-        const boundingBox = {
-          x: rect.left + window.scrollX + iframeOffset.x,
-          y: rect.top + window.scrollY + iframeOffset.y,
-          width: rect.width,
-          height: rect.height,
-        };
-
-        elements.push({
-          index: idx++,
-          tagName: tagSelector,
-          selector: cssSelector,
-          xPath,
-          text: textSnippet,
-          attributes,
-          boundingBox,
-          fullText: el.textContent?.trim() || "",
-        });
-
-        if (debug) this.drawDebugHighlight(el, idx, cssSelector, iframeOffset);
       });
 
-      if (depth < maxDepth) {
-        doc.querySelectorAll("iframe").forEach((iframe) => {
-          try {
-            const iframeDoc = iframe.contentDocument;
-            if (!iframeDoc) return;
-            const iframeRect = iframe.getBoundingClientRect();
-            const iframeOffsetAdjusted = {
-              x: iframeRect.left + window.scrollX + iframeOffset.x,
-              y: iframeRect.top + window.scrollY + iframeOffset.y,
-            };
-            processDocument(iframeDoc, iframeOffsetAdjusted, depth + 1);
-          } catch (e) {
-            console.warn("Failed to process iframe:", e);
-          }
-        });
-      }
+      // Process iframes
+      doc.querySelectorAll("iframe").forEach((iframe) => {
+        const iframeRect = iframe.getBoundingClientRect();
+        const isIframeInViewport =
+          iframeRect.left + iframeOffset.x >= 0 &&
+          iframeRect.top + iframeOffset.y >= 0 &&
+          iframeRect.left + iframeOffset.x + iframeRect.width <=
+            window.innerWidth &&
+          iframeRect.top + iframeOffset.y + iframeRect.height <=
+            window.innerHeight;
+
+        if (iframeRect.width === 0 || iframeRect.height === 0) return;
+
+        const iframeIndex = idx++;
+        const iframeAttributes = this.getRelevantAttributes(iframe);
+
+        if (isIframeInViewport) {
+          elements.push({
+            index: iframeIndex,
+            tagName: "iframe",
+            text: "",
+            attributes: iframeAttributes,
+            frame: [...framePath],
+          });
+        }
+
+        try {
+          const iframeDoc = iframe.contentDocument;
+          if (!iframeDoc) return;
+
+          const newFramePath = [...framePath, iframeIndex];
+          const newIframeOffset = {
+            x: iframeRect.left + window.scrollX + iframeOffset.x,
+            y: iframeRect.top + window.scrollY + iframeOffset.y,
+          };
+          processDocument(iframeDoc, newIframeOffset, newFramePath, depth + 1);
+        } catch (e) {
+          console.warn("Failed to process iframe:", e);
+        }
+      });
     };
 
     processDocument(document);
@@ -316,124 +115,86 @@ export class DOMManager {
     return elements;
   }
 
+  /**
+   * Determines if an element is important for AI web automation.
+   */
   private isElementImportant(el: Element): boolean {
     const tagName = el.tagName.toLowerCase();
     const textContent = el.textContent?.trim() || "";
     const isVisible =
       window.getComputedStyle(el).display !== "none" &&
       window.getComputedStyle(el).visibility !== "hidden";
-    const isContentEditable =
-      el.getAttribute("contenteditable") === "true" ||
-      (el.parentElement && el.parentElement.isContentEditable);
-    const classList = el.className.toLowerCase();
-    const hasEditableClass = classList.includes("editable");
+    const role = el.getAttribute("role")?.toLowerCase();
 
+    if (!isVisible) return false;
+
+    // Interactive elements
     if (["button", "input", "a", "textarea", "select"].includes(tagName)) {
-      return isVisible;
+      return true;
     }
-    if (["h1", "h2", "h3", "h4", "h5", "h6", "p", "label"].includes(tagName)) {
-      return isVisible && textContent.length > 0;
+
+    // Contextual elements with text
+    if (["h1", "h2", "h3", "h4", "h5", "h6", "label"].includes(tagName)) {
+      return textContent.length > 0;
     }
+
+    // Forms and fieldsets with content
     if (tagName === "form" || tagName === "fieldset") {
-      return isVisible && (el.children.length > 0 || textContent.length > 0);
+      return el.children.length > 0 || textContent.length > 0;
     }
+
+    // Divs and spans with interactive roles or editability
     if (tagName === "div" || tagName === "span") {
-      return isVisible && (isContentEditable || hasEditableClass);
+      const isEditable =
+        el.getAttribute("contenteditable") === "true" ||
+        (el.parentElement && el.parentElement.isContentEditable);
+      const hasInteractiveRole = [
+        "button",
+        "link",
+        "checkbox",
+        "radio",
+        "switch",
+      ].includes(role ?? "");
+      return isEditable || hasInteractiveRole;
     }
 
     return false;
   }
 
-  async executeAction(action: LocalAction): Promise<void> {
-    const { selector, xPath } = action.data;
-    let element = this.queryBySelectorOrXPath(selector || "", xPath || "");
-    if (!element) {
-      element = await this.waitForElement(selector || "", xPath || "", 5000);
-    }
-    if (!element) {
-      throw new Error(
-        `Element not found for selector: "${selector}" or xPath: "${xPath}"`
-      );
-    }
-    this.performLocalDOMAction(element, action);
-  }
+  /**
+   * Extracts only relevant attributes for AI automation.
+   */
+  private getRelevantAttributes(el: Element): Record<string, string> {
+    const relevantAttrs = [
+      "id",
+      "class",
+      "href",
+      "type",
+      "value",
+      "role",
+      "aria-label",
+      "data-test-id",
+    ];
+    const attributes: Record<string, string> = {};
+    const tagName = el.tagName.toLowerCase();
 
-  private queryBySelectorOrXPath(
-    selector: string,
-    xPath: string
-  ): HTMLElement | null {
-    if (selector) return document.querySelector(selector) as HTMLElement | null;
-    if (xPath) return this.queryByXPath(xPath);
-    return null;
-  }
-
-  private async waitForElement(
-    selector: string,
-    xPath: string,
-    timeout: number
-  ): Promise<HTMLElement | null> {
-    return new Promise((resolve) => {
-      let element = this.queryBySelectorOrXPath(selector, xPath);
-      if (element) return resolve(element);
-
-      const observer = new MutationObserver(() => {
-        element = this.queryBySelectorOrXPath(selector, xPath);
-        if (element) {
-          observer.disconnect();
-          resolve(element);
-        }
-      });
-      observer.observe(document.body, { childList: true, subtree: true });
-      setTimeout(() => {
-        observer.disconnect();
-        resolve(null);
-      }, timeout);
+    relevantAttrs.forEach((attr) => {
+      const value = el.getAttribute(attr);
+      if (value !== null) {
+        attributes[attr] = value;
+      }
     });
-  }
 
-  private performLocalDOMAction(
-    target: HTMLElement,
-    action: LocalAction
-  ): void {
-    switch (action.type) {
-      case "click":
-      case "click_element":
-        target.click();
-        break;
-      case "input_text":
-        const text = action.data.text || "";
-        if (target.tagName.toUpperCase() === "CANVAS") {
-          try {
-            this.simulatePaste(target, text);
-          } catch (e) {
-            console.warn(
-              "Paste failed on canvas; it may not support text input:",
-              e
-            );
-          }
-        } else {
-          (target as HTMLInputElement).value = text;
-          target.dispatchEvent(new Event("input", { bubbles: true }));
-          target.dispatchEvent(new Event("change", { bubbles: true }));
-        }
-        break;
-      default:
-        throw new Error(`Unsupported action type: ${action.type}`);
+    // Add current value for inputs, textareas, and selects
+    if (tagName === "input" || tagName === "textarea") {
+      attributes["value"] = (
+        el as HTMLInputElement | HTMLTextAreaElement
+      ).value;
+    } else if (tagName === "select") {
+      attributes["value"] = (el as HTMLSelectElement).value;
     }
-  }
 
-  private async simulatePaste(
-    target: HTMLElement,
-    text: string
-  ): Promise<void> {
-    const clipboardData = new DataTransfer();
-    clipboardData.setData("text/plain", text);
-    const pasteEvent = new ClipboardEvent("paste", {
-      clipboardData,
-      bubbles: true,
-      cancelable: true,
-    });
-    target.dispatchEvent(pasteEvent);
+    return attributes;
   }
 
   private getMeaningfulText(el: Element): string {
@@ -441,25 +202,6 @@ export class DOMManager {
       return (el as HTMLInputElement).value;
     }
     return el.textContent?.trim().replace(/\s+/g, " ") || "";
-  }
-
-  private getElementAttributes(el: Element): Record<string, string> {
-    const attrs: Record<string, string> = {};
-    Array.from(el.attributes).forEach((attr) => {
-      attrs[attr.name] = attr.value;
-    });
-    return attrs;
-  }
-
-  private queryByXPath(xPath: string): HTMLElement | null {
-    const result = document.evaluate(
-      xPath,
-      document,
-      null,
-      XPathResult.FIRST_ORDERED_NODE_TYPE,
-      null
-    );
-    return result.singleNodeValue as HTMLElement | null;
   }
 
   private getRandomColor(): string {
