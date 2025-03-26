@@ -116,7 +116,8 @@ async function processCommand(
   tabId: number,
   contextMessage: string,
   initialCommand: string,
-  actionHistory: string[] = []
+  actionHistory: string[] = [],
+  model: string = "gemini" // Add model parameter with default
 ) {
   if (automationStopped) {
     console.log("[background.ts] Automation stopped. Not processing.");
@@ -157,7 +158,9 @@ async function processCommand(
     const raw = await chatWithAI(
       fullContextMessage,
       "session-id",
-      currentState
+      currentState,
+      undefined, // screenshot if needed
+      model as "gemini" | "claude" // Pass model
     );
     const { current_state } = raw;
     let { action } = raw || (current_state.action ? current_state : {});
@@ -200,11 +203,12 @@ async function processCommand(
       contextMessage,
       current_state,
       pageState,
-      executedActions
+      executedActions,
+      model
     );
 
     if (result === "DONE" || result === "ASK_PAUSED") {
-      console.log(`Execution stopped with ${result}`);
+      console.log(`[background.ts] Execution stopped with ${result}`);
       resetExecutionState(tabId);
       activeAutomationTabs.clear();
       return; // Exit recursion
@@ -254,15 +258,25 @@ async function processCommand(
       .filter(Boolean)
       .join(". ");
 
-    await processCommand(
-      tabIdRef.value,
-      promptParts,
-      initialCommand,
-      recentActionsMap[tabId]
-    );
+    if (!automationStopped) {
+      await processCommand(
+        tabIdRef.value,
+        promptParts,
+        initialCommand,
+        recentActionsMap[tabId],
+        model
+      );
+    }
   } catch (err) {
     console.error("[background.ts] Error in processCommand:", err);
-    handleError(err, tabId, contextMessage, initialCommand, actionHistory);
+    handleError(
+      err,
+      tabId,
+      contextMessage,
+      initialCommand,
+      actionHistory,
+      model
+    );
   }
 }
 
@@ -271,7 +285,8 @@ function handleError(
   tabId: number,
   contextMessage: string,
   initialCommand: string,
-  actionHistory: string[]
+  actionHistory: string[],
+  model: string // Add model to retry with same provider
 ) {
   const tabIdRef = { value: tabId };
   if (err.message?.includes("quota") || err.message?.includes("429")) {
@@ -289,7 +304,13 @@ function handleError(
     if (err.message.includes("429")) {
       setTimeout(
         () =>
-          processCommand(tabId, contextMessage, initialCommand, actionHistory),
+          processCommand(
+            tabId,
+            contextMessage,
+            initialCommand,
+            actionHistory,
+            model
+          ),
         60000
       );
     } else {
@@ -384,7 +405,8 @@ async function executeLocalActions(
   contextMessage: string,
   currentState: AIResponseFormat,
   pageElements: PageElement[],
-  executedActions: string[] = []
+  executedActions: string[] = [],
+  model: string
 ): Promise<any> {
   const logPrefix = `[background.ts] Tab ${tabIdRef.value}`;
   if (index >= actions.length) {
@@ -402,7 +424,12 @@ async function executeLocalActions(
         `${logPrefix} Executing action ${index + 1}/${actions.length}:`,
         action
       );
-      const output = await performLocalAction(action, tabIdRef, pageElements);
+      const output = await performLocalAction(
+        action,
+        tabIdRef,
+        pageElements,
+        model
+      );
       const actionDesc = getActionDescription(action);
       executedActions.push(actionDesc);
 
@@ -419,7 +446,8 @@ async function executeLocalActions(
         contextMessage,
         currentState,
         pageElements,
-        executedActions
+        executedActions,
+        model
       );
     } catch (err) {
       console.error(`${logPrefix} Action failed:`, action, "Error:", err);
@@ -433,7 +461,8 @@ async function executeLocalActions(
           tabIdRef.value,
           prompt,
           currentState.user_command || "",
-          recentActionsMap[tabIdRef.value]
+          recentActionsMap[tabIdRef.value],
+          model
         );
         return;
       }
@@ -464,7 +493,8 @@ function getActionDescription(action: LocalAction): string {
 async function performLocalAction(
   a: LocalAction,
   tabIdRef: { value: number },
-  pageElements: PageElement[]
+  pageElements: PageElement[],
+  model: string
 ): Promise<any> {
   const logPrefix = `[background.ts] Tab ${tabIdRef.value}`;
   const elementIndex = a.data.index;
@@ -554,12 +584,17 @@ async function performLocalAction(
     return sendActionToTab(action, tabIdRef.value);
   };
 
-  // Log initial selector state
   console.log(`${logPrefix} Initial action data:`, a.data);
 
-  // Prefer provided selector, fall back to constructed one if index is given
   const el = getElementByIndex(elementIndex);
-  if (!a.data.selector && !el) {
+  if (
+    a.type !== "scroll" &&
+    a.type !== "refetch" &&
+    a.type !== "done" &&
+    a.type !== "go_to_url" &&
+    !a.data.selector &&
+    !el
+  ) {
     throw new Error(`${logPrefix} No selector or valid index for ${a.type}`);
   }
   if (!a.data.selector && el) {
@@ -655,6 +690,20 @@ async function performLocalAction(
       await new Promise((resolve) => setTimeout(resolve, 2000));
       break;
 
+    case "refetch":
+      console.log(`${logPrefix} Refetching page elements`);
+      const refetchPrompt = `Page elements refetched. Current goal: ${
+        currentTasks[tabIdRef.value] || "unknown"
+      }. Provide next actions based on the updated page state.`;
+      await processCommand(
+        tabIdRef.value,
+        refetchPrompt,
+        currentTasks[tabIdRef.value] || "",
+        recentActionsMap[tabIdRef.value],
+        model
+      );
+      break;
+
     case "ask":
       const question = a.data.question || "Please provide instructions.";
       console.log(`${logPrefix} Asking: ${question}`);
@@ -738,7 +787,13 @@ chrome.runtime.onMessage.addListener(async (msg, _sender, resp) => {
     }
     recentActionsMap[activeTab.id] = [];
     currentTasks[activeTab.id] = "Processing...";
-    await processCommand(activeTab.id, msg.command, msg.command, []);
+    await processCommand(
+      activeTab.id,
+      msg.command,
+      msg.command,
+      [],
+      msg.model || "gemini" // Pass model from ChatWidget
+    );
     await chrome.runtime.sendMessage({
       type: "FINISH_PROCESS_COMMAND",
       response: "Done",
@@ -749,6 +804,7 @@ chrome.runtime.onMessage.addListener(async (msg, _sender, resp) => {
     resp({ success: true });
   } else if (msg.type === "STOP_AUTOMATION") {
     automationStopped = true;
+    resp({ success: true }); // Ensure response is sent
   }
 });
 
