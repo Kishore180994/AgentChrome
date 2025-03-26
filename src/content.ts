@@ -47,10 +47,7 @@ if (!window[AGENT_KEY]) {
               await actionExecutor.execute(message.action);
               return true;
             case "GET_PAGE_ELEMENTS":
-              const elements = domManager.extractPageElements(
-                message.tabId,
-                message.elementType
-              );
+              const elements = domManager.extractPageElements(message.tabId);
               port?.postMessage({
                 type: "PAGE_ELEMENTS",
                 elements,
@@ -180,10 +177,7 @@ if (!window[AGENT_KEY]) {
             });
           return true; // Async response
         case "GET_PAGE_ELEMENTS":
-          const elements = domManager.extractPageElements(
-            message.tabId,
-            message.elementType
-          );
+          const elements = domManager.extractPageElements(message.tabId);
           sendResponse({ success: true, elements, tabId: currentTabId });
           return true;
         case "PING":

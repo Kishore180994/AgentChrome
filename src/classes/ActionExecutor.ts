@@ -1,6 +1,31 @@
+// ActionExecutor.ts
 import { LocalAction } from "../types/actionType";
-import { querySelectorWithIframes } from "../utils/executionManager";
 import { DOMManager } from "./DOMManager";
+
+function querySelectorWithIframes(
+  selector: string,
+  doc: Document = document
+): { element: Element | null; ownerDocument: Document } {
+  const element = doc.querySelector(selector);
+  if (element) return { element, ownerDocument: doc };
+
+  const iframes = Array.from(doc.getElementsByTagName("iframe"));
+  for (const iframe of iframes) {
+    try {
+      const iframeDoc = iframe.contentDocument;
+      if (!iframeDoc) continue;
+      const result = querySelectorWithIframes(selector, iframeDoc);
+      if (result.element) return result;
+    } catch (error) {
+      console.warn(
+        "[querySelectorWithIframes] Could not access iframe:",
+        error
+      );
+    }
+  }
+
+  return { element: null, ownerDocument: doc };
+}
 
 export class ActionExecutor {
   private domManager: DOMManager;
@@ -14,262 +39,176 @@ export class ActionExecutor {
     try {
       switch (type) {
         case "click":
-          await this.handleClick(data.selector);
+        case "click_element":
+          await this.handleClick(data.selector || "", data.index);
           break;
         case "input_text":
-          if (typeof data.selector === "string") {
-            await this.handleInputText(data.selector, data.text || "");
-          } else {
-            throw new Error(`Selector is not a string: ${data.selector}`);
-          }
+          await this.handleInputText(
+            data.selector || "",
+            data.text || "",
+            data.index
+          );
           break;
         case "scroll":
           await this.handleScroll(data.offset, data.direction);
           break;
-        case "hover":
-          await this.handleHover(data.selector);
-          break;
         case "submit_form":
-          await this.handleSubmitForm(data.selector);
+          await this.handleSubmitForm(data.selector || "", data.index);
           break;
         case "extract":
-          const extractedData = await this.handleExtract(data.selector);
-          console.log(
-            `[ActionExecutor.ts] Extracted content: ${extractedData}`
-          );
-          return extractedData;
+          return await this.handleExtract(data.selector || "", data.index);
         case "key_press":
-          await this.handleKeyPress(data.selector, data.key);
+          await this.handleKeyPress(data.selector || "", data.key, data.index);
           break;
         default:
           throw new Error(`Unknown action type: ${type}`);
       }
-    } catch (error: any) {
-      console.error(
-        `[ActionExecutor] Failed to execute action "${type}":`,
-        error.message
-      );
-      throw error; // Re-throw the error for upstream handling
+    } catch (error) {
+      console.error(`[ActionExecutor] Failed to execute "${type}":`, error);
+      throw error;
     }
   }
-  /**
-   * Handles click actions on elements, including those inside iframes.
-   */
-  private async handleClick(selector?: string): Promise<void> {
-    const result = selector
-      ? querySelectorWithIframes(selector)
-      : { element: null, ownerDocument: null };
-    const { element, ownerDocument } = result || {
-      element: null,
-      ownerDocument: null,
-    };
-    if (!element) {
-      throw new Error(`Element not found for selector: ${selector}`);
-    }
-    // Ensure the element is treated as an HTMLElement in its own context
-    if (!(element instanceof ownerDocument!.defaultView!.HTMLElement)) {
-      throw new Error(`Element is not an HTMLElement: ${selector}`);
-    }
+
+  private async handleClick(selector: string, index?: number): Promise<void> {
+    const element = await this.getElement(selector, index);
     element.click();
   }
 
-  /**
-   * Handles input text actions on elements, including those inside iframes.
-   */
-  private async handleInputText(selector: string, text: string): Promise<void> {
-    const { element, ownerDocument } = querySelectorWithIframes(selector);
-    if (!element) {
-      throw new Error(`Element not found for selector: ${selector}`);
-    }
+  private async handleInputText(
+    selector: string,
+    text: string,
+    index?: number
+  ): Promise<void> {
+    const element = await this.getElement(selector, index);
+    const doc = element.ownerDocument;
 
-    // Handle standard input or textarea
     if (
-      element instanceof ownerDocument!.defaultView!.HTMLInputElement ||
-      element instanceof ownerDocument!.defaultView!.HTMLTextAreaElement
+      element instanceof doc.defaultView!.HTMLInputElement ||
+      element instanceof doc.defaultView!.HTMLTextAreaElement
     ) {
       element.value = text;
       element.dispatchEvent(new Event("input", { bubbles: true }));
-      return;
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+    } else if (element.isContentEditable) {
+      element.focus();
+      doc.execCommand("insertText", false, text);
+    } else {
+      element.textContent = text;
     }
-
-    // Handle Gmail and other `contentEditable` elements
-    if (
-      (element as HTMLElement).isContentEditable ||
-      element instanceof HTMLCanvasElement
-    ) {
-      ((element as HTMLElement) || (element as HTMLCanvasElement)).focus();
-      document.execCommand("insertText", false, text);
-      return;
-    }
-
-    // Fallback: Set innerText for unexpected cases
-    ((element as HTMLElement) || (element as HTMLCanvasElement)).innerText =
-      text;
   }
 
-  /**
-   * Handles scroll actions.
-   */
   private async handleScroll(
     offset?: number,
     direction?: string
   ): Promise<void> {
-    const scrollOptions: ScrollToOptions = {
-      behavior: "smooth",
-    };
-
-    switch (direction) {
+    const scrollOptions: ScrollToOptions = { behavior: "smooth" };
+    const scrollAmount = offset || 200;
+    switch (direction?.toLowerCase()) {
       case "up":
-        scrollOptions.top = -(offset || 200);
+        scrollOptions.top = -scrollAmount;
         break;
       case "down":
-        scrollOptions.top = offset || 200;
+        scrollOptions.top = scrollAmount;
         break;
       case "left":
-        scrollOptions.left = -(offset || 200);
+        scrollOptions.left = -scrollAmount;
         break;
       case "right":
-        scrollOptions.left = offset || 200;
+        scrollOptions.left = scrollAmount;
         break;
       default:
         throw new Error(`Unknown scroll direction: ${direction}`);
     }
-
     window.scrollBy(scrollOptions);
   }
 
-  /**
-   * Handles hover actions on elements, including those inside iframes.
-   */
-  private async handleHover(selector?: string): Promise<void> {
-    const { element, ownerDocument } = selector
-      ? querySelectorWithIframes(selector)
-      : { element: null, ownerDocument: null };
-    if (!element) {
-      throw new Error(`Element not found for selector: ${selector}`);
-    }
-    // Ensure the element is treated as an HTMLElement in its own context
-    if (!(element instanceof ownerDocument!.defaultView!.HTMLElement)) {
-      throw new Error(`Element is not an HTMLElement: ${selector}`);
-    }
-    element.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
-  }
+  private async handleSubmitForm(
+    selector: string,
+    index?: number
+  ): Promise<void> {
+    const element = await this.getElement(selector, index);
+    const doc = element.ownerDocument;
 
-  /**
-   * Handles form submission actions on elements, including those inside iframes.
-   */
-  private async handleSubmitForm(selector?: string): Promise<void> {
-    const { element, ownerDocument } = selector
-      ? querySelectorWithIframes(selector)
-      : { element: null, ownerDocument: null };
-    if (!element) {
-      throw new Error(`Element not found for selector: ${selector}`);
-    }
-    // Ensure the element is treated as an HTMLElement in its own context
-    if (!(element instanceof ownerDocument!.defaultView!.HTMLElement)) {
-      throw new Error(`Element is not an HTMLElement: ${selector}`);
-    }
-    if (element instanceof ownerDocument!.defaultView!.HTMLFormElement) {
+    if (element instanceof doc.defaultView!.HTMLFormElement) {
       element.submit();
     } else {
-      const formEl = element.closest("form");
-      if (formEl) {
-        formEl.submit();
+      const form = element.closest("form");
+      if (form) {
+        form.submit();
       } else {
-        throw new Error("submit_form: no form found");
+        throw new Error("No form found for submit_form");
       }
     }
   }
 
-  /**
-   * Handles extract actions on elements, including those inside iframes.
-   */
-  private async handleExtract(selector?: string): Promise<string> {
-    const { element, ownerDocument } = selector
-      ? querySelectorWithIframes(selector)
-      : { element: null, ownerDocument: null };
-    if (!element) {
-      throw new Error(`Element not found for selector: ${selector}`);
-    }
-    // Ensure the element is treated as an HTMLElement in its own context
-    if (!(element instanceof ownerDocument!.defaultView!.HTMLElement)) {
-      throw new Error(`Element is not an HTMLElement: ${selector}`);
-    }
-    // Extract content from the element
+  private async handleExtract(
+    selector: string,
+    index?: number
+  ): Promise<string> {
+    const element = await this.getElement(selector, index);
     const content = element.textContent || "";
     console.log(`[ActionExecutor] Extracted content: ${content}`);
     return content;
   }
 
-  /**
-   * Handles key press actions on elements, including those inside iframes.
-   */
-  private async handleKeyPress(selector?: string, key?: string): Promise<void> {
-    let targetElement: HTMLElement | null = null;
-    let ownerDocument: Document | null = null;
+  private async handleKeyPress(
+    selector: string,
+    key?: string,
+    index?: number
+  ): Promise<void> {
+    const element = await this.getElement(selector, index);
+    const doc = element.ownerDocument;
 
-    // Try to find the element if a selector is provided
-    if (selector) {
-      const result = querySelectorWithIframes(selector);
-      targetElement = result.element as HTMLElement | null;
-      ownerDocument = result.ownerDocument;
-    }
-
-    // If selector was provided but no element was found, or no selector was provided
-    if (!targetElement) {
-      ownerDocument = document;
-      targetElement =
-        ownerDocument.activeElement instanceof HTMLElement
-          ? (ownerDocument.activeElement as HTMLElement)
-          : null;
-
-      if (!targetElement) {
-        targetElement = ownerDocument.body;
-        console.warn(
-          "[handleKeyPress] No focused element found, using document.body as fallback"
-        );
-      } else {
-        console.log("[handleKeyPress] Using active element:", targetElement);
-      }
-    }
-
-    // Ensure the target is an HTMLElement
-    if (!(targetElement instanceof ownerDocument!.defaultView!.HTMLElement)) {
-      throw new Error(
-        `Target element is not an HTMLElement: ${selector || "active element"}`
-      );
-    }
-
-    // Focus the element
-    targetElement.focus();
-
-    // Modify value to ensure input change is detected
+    element.focus();
     if (
-      targetElement instanceof HTMLInputElement ||
-      targetElement instanceof HTMLTextAreaElement
+      element instanceof doc.defaultView!.HTMLInputElement ||
+      element instanceof doc.defaultView!.HTMLTextAreaElement
     ) {
-      targetElement.value += " ";
+      element.value += " ";
+      element.dispatchEvent(new InputEvent("input", { bubbles: true }));
     }
 
-    // Dispatch an InputEvent to simulate user input
-    targetElement.dispatchEvent(new InputEvent("input", { bubbles: true }));
-
-    // Dispatch the keydown event
     const keyToPress = key || "Enter";
     const keyEvent = new KeyboardEvent("keydown", {
       key: keyToPress,
-      code: keyToPress,
-      keyCode: 13,
-      which: 13,
+      code: keyToPress === "Enter" ? "Enter" : keyToPress,
+      keyCode: keyToPress === "Enter" ? 13 : 0,
+      which: keyToPress === "Enter" ? 13 : 0,
       bubbles: true,
       cancelable: true,
     });
+    element.dispatchEvent(keyEvent);
+  }
 
-    targetElement.dispatchEvent(keyEvent);
+  private async getElement(
+    selector: string,
+    index?: number
+  ): Promise<HTMLElement> {
+    if (!selector && typeof index !== "number") {
+      throw new Error("No selector or index provided");
+    }
 
-    console.log(
-      `[handleKeyPress] Dispatched ${keyToPress} key on`,
-      targetElement
-    );
+    let finalSelector = selector;
+    if (!selector && typeof index === "number") {
+      // Only use index if no selector is provided
+      const elements = this.domManager.extractPageElements(0);
+      const pageElement = elements.find((pe) => pe.index === index);
+      if (!pageElement) {
+        throw new Error(`Element not found for index: ${index}`);
+      }
+      finalSelector = `${pageElement.tagName}[data-index="${pageElement.index}"]`;
+    }
+
+    console.log(`[ActionExecutor] Using selector: ${finalSelector}`); // Debug log
+    const { element, ownerDocument } = querySelectorWithIframes(finalSelector);
+    if (!element) {
+      throw new Error(`Element not found for selector: ${finalSelector}`);
+    }
+
+    if (!(element instanceof ownerDocument.defaultView!.HTMLElement)) {
+      throw new Error(`Element is not an HTMLElement: ${finalSelector}`);
+    }
+
+    return element;
   }
 }

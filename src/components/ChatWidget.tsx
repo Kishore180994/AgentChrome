@@ -162,17 +162,32 @@ export function ChatWidget() {
         sendResponse({ success: true });
       } else if (message.type === "COMMAND_RESPONSE") {
         let content: string;
-        if (message.response.message) {
+        if (typeof message.response === "string") {
+          content = message.response;
+        } else if (message.response.message) {
           content = message.response.message;
+          if (message.response.output) {
+            content += `\n\n**Result:** ${
+              typeof message.response.output === "string"
+                ? message.response.output
+                : JSON.stringify(message.response.output, null, 2)
+            }`;
+          }
         } else {
           const { data } = message.response;
-          const { text, output } = data;
+          const { text, output } = data || {};
           const formattedOutput =
             typeof output === "string"
               ? output
               : JSON.stringify(output, null, 2);
-          content = `${text}\n\n\`\`\`json\n${formattedOutput}\n\`\`\``;
+          content = `${text || "Task result"}\n\n\`\`\`json\n${
+            formattedOutput || "No output"
+          }\n\`\`\``;
         }
+        console.log(
+          "[ChatWidget] Processed COMMAND_RESPONSE content:",
+          content
+        );
         setMessages((prev) => [
           ...prev,
           { id: Date.now().toString(), role: "model", content },
