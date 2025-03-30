@@ -9,9 +9,13 @@ import {
   Check,
   X,
   HelpCircle,
+  Settings,
 } from "lucide-react";
 import MarkdownWrapper from "./MarkDownWrapper";
 import { StepState } from "../types/responseFormat";
+import { storage } from "../utils/storage";
+import { SettingsModal } from "./SettingsModal";
+import { AccentColor, themeStyles } from "../utils/themes";
 
 interface Message {
   id: string;
@@ -39,10 +43,24 @@ export function ChatWidget() {
   const [expandedExecutions, setExpandedExecutions] = useState<Set<number>>(
     new Set()
   );
+  const [userTypedInput, setUserTypedInput] = useState(""); // stores the actual typed command temporarily
+  const selectedCommandRef = useRef<HTMLDivElement | null>(null); // for scrollIntoView
   const [isTextareaFocused, setIsTextareaFocused] = useState(false);
   const [selectedModel, setSelectedModel] = useState<"gemini" | "claude">(
     "gemini"
   );
+  const [theme, setTheme] = useState<
+    "neumorphism" | "glassmorphism" | "claymorphism"
+  >("neumorphism");
+  const [accentColor, setAccentColor] = useState<AccentColor>("rose");
+  const [mode, setMode] = useState<"light" | "dark">("dark");
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [currentAnimation, setCurrentAnimation] = useState<
+    "starfallCascade" | "glowingHorizon"
+  >("glowingHorizon");
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+  const [showCommandPopup, setShowCommandPopup] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -55,57 +73,74 @@ export function ChatWidget() {
     "Click the first link on the page",
     "Fill form with my details",
     "Scroll to the bottom of the page",
+    "show me the code that is displayed on the screen",
   ];
 
-  // Load messages from chrome.storage.local when component mounts
+  const loadSettings = async () => {
+    try {
+      const { conversationHistory, theme, accentColor, mode, commandHistory } =
+        await storage.get([
+          "conversationHistory",
+          "theme",
+          "accentColor",
+          "mode",
+          "commandHistory",
+        ]);
+      if (conversationHistory && Array.isArray(conversationHistory))
+        setMessages(conversationHistory);
+      if (commandHistory && Array.isArray(commandHistory))
+        setCommandHistory(commandHistory);
+      setTheme(theme || "neumorphism");
+      setAccentColor(accentColor || "rose");
+      setMode(mode || "dark");
+    } catch (err) {
+      console.error("[ChatWidget] Failed to load data from storage:", err);
+      setError("Failed to load conversation history or settings.");
+    }
+  };
+
   useEffect(() => {
-    const loadMessagesFromStorage = async () => {
-      try {
-        const { conversationHistory } = await chrome.storage.local.get(
-          "conversationHistory"
-        );
-        if (conversationHistory && Array.isArray(conversationHistory)) {
-          setMessages(conversationHistory);
-        }
-      } catch (err) {
-        console.error(
-          "[ChatWidget] Failed to load messages from storage:",
-          err
-        );
-        setError("Failed to load conversation history.");
-      }
-    };
-    loadMessagesFromStorage();
+    loadSettings();
   }, []);
 
-  // Scroll to bottom when messages or UI state changes
+  const handleSettingsUpdate = (
+    newSettings: Partial<{ theme: string; accentColor: string; mode: string }>
+  ) => {
+    setTheme(
+      (newSettings.theme as "neumorphism" | "glassmorphism" | "claymorphism") ||
+        theme
+    );
+    setAccentColor(
+      (newSettings.accentColor as
+        | "rose"
+        | "cyan"
+        | "green"
+        | "fuchsia"
+        | "sky") || accentColor
+    );
+    setMode((newSettings.mode as "light" | "dark") || mode);
+  };
+
   useEffect(() => {
     const scrollToBottom = () => {
-      if (messagesContainerRef.current) {
+      if (messagesContainerRef.current)
         messagesContainerRef.current.scrollTop =
           messagesContainerRef.current.scrollHeight;
-      }
     };
     scrollToBottom();
-    const timeoutId = setTimeout(scrollToBottom, 0);
-    return () => clearTimeout(timeoutId);
   }, [processedMessages, isLoading, error]);
 
-  // Process messages for display
   const processMessages = (msgs: Message[]) => {
     const processed: ProcessedMessage[] = [];
     let currentModelGroup: Message[] = [];
-
     msgs.forEach((message) => {
       if (message.role === "model") {
-        if (currentModelGroup.length === 0) {
+        if (currentModelGroup.length === 0)
           currentModelGroup.push({
             ...message,
-            id: message.id || new Date().toLocaleTimeString(), // Ensure ID exists
+            id: message.id || Date.now().toString(),
           });
-        } else {
-          currentModelGroup.push(message);
-        }
+        else currentModelGroup.push(message);
       } else if (
         message.role === "execution" &&
         Array.isArray(message.content)
@@ -118,10 +153,18 @@ export function ChatWidget() {
           });
           currentModelGroup = [];
         }
-        processed.push({
-          type: "executionGroup",
-          taskHistories: message.content as StepState[],
-        });
+        const taskHistories = message.content as StepState[];
+        if (
+          taskHistories.length > 0 &&
+          taskHistories.some(
+            (task) => task.step_number || task.description || task.status
+          )
+        ) {
+          processed.push({
+            type: "executionGroup",
+            taskHistories,
+          });
+        }
       } else {
         if (currentModelGroup.length > 0) {
           processed.push({
@@ -134,19 +177,15 @@ export function ChatWidget() {
         processed.push({ type: "single", message });
       }
     });
-
-    if (currentModelGroup.length > 0) {
+    if (currentModelGroup.length > 0)
       processed.push({
         type: "modelGroup",
         messages: currentModelGroup,
         timestamp: currentModelGroup[0].id,
       });
-    }
-
-    setProcessedMessages(processed);
+    setProcessedMessages(processed.reverse());
   };
 
-  // Handle incoming messages and sync with storage
   useEffect(() => {
     const handleBackgroundMessage = (
       message: any,
@@ -154,7 +193,6 @@ export function ChatWidget() {
       sendResponse: (response: any) => void
     ) => {
       console.log("[ChatWidget] Received message:", message);
-
       if (message.type === "MEMORY_UPDATE") {
         const memory = message.response;
         if (memory) {
@@ -186,30 +224,15 @@ export function ChatWidget() {
         } else if (message.response.message) {
           content = message.response.message;
           if (message.response.output) {
-            // Include output directly in Markdown without "Result:" prefix
-            const formattedOutput =
-              typeof message.response.output === "string"
-                ? message.response.output
-                : "```json\n" +
-                  JSON.stringify(message.response.output, null, 2) +
-                  "\n```";
-            content += `\n\n${formattedOutput}`;
+            // Pass the output as-is without manual Markdown formatting
+            content += "\n\n" + message.response.output;
           }
         } else {
           const { data } = message.response;
           const { text, output } = data || {};
-          const formattedOutput =
-            typeof output === "string"
-              ? output
-              : "```json\n" + JSON.stringify(output, null, 2) + "\n```";
-          content = `${text || "Task completed"}\n\n${
-            formattedOutput || "No output"
-          }`;
+          // Concatenate text and output without adding manual Markdown
+          content = (text || "Task completed") + (output || "");
         }
-        console.log(
-          "[ChatWidget] Processed COMMAND_RESPONSE content:",
-          content
-        );
         setMessages((prev) => {
           const updatedMessages = [
             ...prev,
@@ -254,27 +277,41 @@ export function ChatWidget() {
       }
       return true;
     };
-
     chrome.runtime.onMessage.addListener(handleBackgroundMessage);
-    return () => {
+    return () =>
       chrome.runtime.onMessage.removeListener(handleBackgroundMessage);
-    };
   }, []);
 
   useEffect(() => {
     processMessages(messages);
   }, [messages]);
 
+  useEffect(() => {
+    if (selectedCommandRef.current) {
+      selectedCommandRef.current.scrollIntoView({ block: "nearest" });
+    }
+  }, [historyIndex]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
-
     const userMessage = input.trim();
     setInput("");
     setError(null);
     setIsLoading(true);
     setIsTextareaFocused(false);
-
+    setCurrentAnimation(
+      Math.random() > 0.5 ? "starfallCascade" : "glowingHorizon"
+    );
+    setCommandHistory((prev) => {
+      const updatedHistory = [
+        userMessage,
+        ...prev.filter((cmd) => cmd !== userMessage),
+      ].slice(0, 50);
+      chrome.storage.local.set({ commandHistory: updatedHistory });
+      return updatedHistory;
+    });
+    setHistoryIndex(null);
     setMessages((prev) => {
       const updatedMessages = [
         ...prev,
@@ -292,16 +329,13 @@ export function ChatWidget() {
       chrome.storage.local.set({ conversationHistory: updatedMessages });
       return updatedMessages;
     });
-
     try {
       chrome.runtime.sendMessage(
         { type: "PROCESS_COMMAND", command: userMessage, model: selectedModel },
         (response) => {
-          if (chrome.runtime.lastError) {
+          if (chrome.runtime.lastError)
             console.error("Error from background:", chrome.runtime.lastError);
-          } else {
-            console.log("Response from background:", response);
-          }
+          else console.log("Response from background:", response);
         }
       );
     } catch (err) {
@@ -314,12 +348,12 @@ export function ChatWidget() {
   const handleStop = () => {
     try {
       chrome.runtime.sendMessage({ type: "STOP_AUTOMATION" }, (response) => {
-        if (chrome.runtime.lastError) {
+        if (chrome.runtime.lastError)
           console.warn(
             "Non-critical error stopping automation:",
             chrome.runtime.lastError
           );
-        } else {
+        else {
           console.log("Automation stopped:", response);
           setIsLoading(false);
           setMessages((prev) => {
@@ -350,7 +384,7 @@ export function ChatWidget() {
         setProcessedMessages([]);
         setError(null);
         setIsLoading(false);
-        chrome.storage.local.set({ conversationHistory: [] }); // Clear storage
+        chrome.storage.local.set({ conversationHistory: [] });
       });
     } catch (err) {
       console.error("Failed to send NEW_CHAT message:", err);
@@ -362,7 +396,43 @@ export function ChatWidget() {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (commandHistory.length === 0) return;
+
+      if (historyIndex === null) {
+        setUserTypedInput(input); // save current input
+        setHistoryIndex(0);
+        setInput(commandHistory[0]);
+        setShowCommandPopup(true);
+      } else if (historyIndex < commandHistory.length - 1) {
+        const nextIndex = historyIndex + 1;
+        setHistoryIndex(nextIndex);
+        setInput(commandHistory[nextIndex]);
+      }
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (historyIndex === null) return;
+
+      const prevIndex = historyIndex - 1;
+
+      if (prevIndex < 0) {
+        setHistoryIndex(null);
+        setInput(userTypedInput);
+        setShowCommandPopup(false);
+      } else {
+        setHistoryIndex(prevIndex);
+        setInput(commandHistory[prevIndex]);
+      }
     }
+  };
+
+  const handlePopupSelect = (command: string) => {
+    setInput(command);
+    setUserTypedInput(command);
+    setShowCommandPopup(false);
+    setHistoryIndex(null);
+    textareaRef.current?.focus();
   };
 
   const toggleExecutionGroup = (index: number) => {
@@ -382,265 +452,454 @@ export function ChatWidget() {
 
   const toggleWatching = () => setIsWatching((prev) => !prev);
 
-  const handleFocus = () => setIsTextareaFocused(true);
-  const handleBlur = () => setTimeout(() => setIsTextareaFocused(false), 200);
+  const handleFocus = () => {
+    setIsTextareaFocused(true);
+    setShowCommandPopup(false);
+  };
+
+  const handleBlur = () => {
+    setTimeout(() => {
+      setIsTextareaFocused(false);
+      setShowCommandPopup(false);
+    }, 200);
+  };
+
+  const currentTheme = themeStyles[theme][mode];
+  const textColor =
+    mode === "light" ? "d4m-text-gray-800" : "d4m-text-gray-200";
+  const borderColor =
+    mode === "light" ? "d4m-border-gray-300" : "d4m-border-gray-700";
+
+  // Animation Components
+  const StarfallCascadeAnimation = () => (
+    <div className="d4m-relative d4m-w-full d4m-h-[48px] d4m-overflow-hidden d4m-flex d4m-items-center d4m-justify-center">
+      <div className="d4m-w-full d4m-h-full d4m-relative">
+        <div
+          className={`d4m-absolute d4m-left-[25%] d4m-w-4 d4m-h-4 d4m-bg-${accentColor}-400 d4m-animate-starfall-cascade-1 d4m-shadow-[0_0_10px_rgba(251,191,36,0.7)]`}
+          style={{
+            clipPath:
+              "polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)",
+          }}
+        ></div>
+        <div
+          className={`d4m-absolute d4m-left-[50%] d4m-w-4 d4m-h-4 d4m-bg-${accentColor}-400 d4m-animate-starfall-cascade-2 d4m-shadow-[0_0_10px_rgba(251,191,36,0.7)]`}
+          style={{
+            clipPath:
+              "polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)",
+          }}
+        ></div>
+        <div
+          className={`d4m-absolute d4m-right-[25%] d4m-w-4 d4m-h-4 d4m-bg-${accentColor}-400 d4m-animate-starfall-cascade-3 d4m-shadow-[0_0_10px_rgba(251,191,36,0.7)]`}
+          style={{
+            clipPath:
+              "polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)",
+          }}
+        ></div>
+      </div>
+      <span
+        className={`d4m-absolute d4m-top-1/2 d4m-left-1/2 d4m-transform d4m--translate-x-1/2 d4m--translate-y-1/2 ${textColor} d4m-text-sm d4m-font-medium`}
+      >
+        Processing...
+      </span>
+    </div>
+  );
+
+  const GlowingHorizonAnimation = () => (
+    <div className="d4m-relative d4m-w-full d4m-h-[48px] d4m-overflow-hidden d4m-flex d4m-items-center d4m-justify-center">
+      <div
+        className={`d4m-w-full d4m-h-2 d4m-bg-gradient-to-r d4m-from-transparent d4m-via-${accentColor}-400 d4m-to-transparent d4m-bg-[length:200%_100%] d4m-animate-glowing-horizon d4m-shadow-[0_0_15px_rgba(251,191,36,0.7)]`}
+      ></div>
+      <span
+        className={`d4m-absolute d4m-top-1/2 d4m-left-1/2 d4m-transform d4m--translate-x-1/2 d4m--translate-y-1/2 ${textColor} d4m-text-sm d4m-font-medium`}
+      >
+        Processing...
+      </span>
+    </div>
+  );
 
   return (
-    <div className="d4m-w-full d4m-h-full d4m-flex d4m-flex-col d4m-bg-gray-900 d4m-text-gray-100">
-      {/* Header */}
-      <div className="d4m-flex d4m-justify-between d4m-items-center d4m-px-2 d4m-py-2 d4m-border-b d4m-border-cyan-700/40">
-        <div className="d4m-text-base d4m-font-bold d4m-text-cyan-400 d4m-text-shadow-[0_0_8px_rgba(0,255,255,0.7)]">
-          D4M Agent
-        </div>
-        <div className="d4m-flex d4m-items-center d4m-space-x-2">
-          <select
-            value={selectedModel}
-            onChange={(e) =>
-              setSelectedModel(e.target.value as "gemini" | "claude")
-            }
-            className="d4m-px-2 d4m-py-1 d4m-bg-gray-800 d4m-text-cyan-400 d4m-text-xs d4m-rounded d4m-border d4m-border-cyan-500/50 d4m-focus:outline-none d4m-hover:bg-gray-700"
-          >
-            <option value="gemini">Gemini</option>
-            <option value="claude">Claude</option>
-          </select>
-          <button
-            onClick={handleNewChat}
-            className="d4m-px-2 d4m-py-1 d4m-bg-gray-800 d4m-text-cyan-400 d4m-text-xs d4m-rounded d4m-border d4m-border-cyan-500/50 d4m-hover:bg-gray-700 d4m-transition-colors"
-          >
-            New Chat
-          </button>
-          <button
-            onClick={toggleWatching}
-            className="d4m-p-1 d4m-rounded-full d4m-bg-gray-800 d4m-text-gray-400 d4m-ring-1 d4m-ring-cyan-500/50 d4m-hover:bg-gray-700"
-          >
-            {isWatching ? (
-              <Eye className="d4m-w-4 d4m-h-4" />
-            ) : (
-              <EyeOff className="d4m-w-4 d4m-h-4" />
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* Messages Container */}
+    <>
       <div
-        ref={messagesContainerRef}
-        className="d4m-h-[calc(100%-140px)] d4m-overflow-y-auto d4m-space-y-2 d4m-px-2 d4m-py-2 d4m-scrollbar-thin d4m-scrollbar-thumb-cyan-500/50 d4m-relative"
+        className={`d4m-w-full d4m-h-full d4m-flex d4m-flex-col ${currentTheme.container} d4m-relative`}
       >
-        {processedMessages.map((item, index) => {
-          if (item.type === "single") {
-            const message = item.message!;
-            return (
-              <div key={index} className="d4m-flex d4m-flex-col d4m-mb-2">
-                <div className="d4m-flex d4m-items-center d4m-space-x-1 d4m-mb-1">
-                  {message.role === "user" ? (
-                    <div className="d4m-w-5 d4m-h-5 d4m-rounded-full d4m-bg-gray-700 d4m-flex d4m-items-center d4m-justify-center">
-                      <span className="d4m-text-white d4m-text-[10px]">U</span>
-                    </div>
-                  ) : (
-                    <div className="d4m-w-5 d4m-h-5 d4m-rounded-full d4m-bg-gray-700 d4m-flex d4m-items-center d4m-justify-center">
-                      <span className="d4m-text-white d4m-text-[10px]">AI</span>
-                    </div>
-                  )}
-                  <span className="d4m-text-xs d4m-font-medium d4m-text-white">
-                    {message.role === "user" ? "You" : "D4M Agent"}
-                  </span>
+        {/* Overlay for blur effect */}
+        {isTextareaFocused && (
+          <div
+            className={`d4m-absolute d4m-inset-0 d4m-backdrop-blur-[0.6px] d4m-bg-opacity-80 d4m-z-10 ${
+              mode === "light" ? "d4m-bg-gray-200" : "d4m-bg-gray-900"
+            }`}
+          ></div>
+        )}
+
+        {/* Header */}
+        <div
+          className={`d4m-flex d4m-justify-between d4m-items-center d4m-px-3 d4m-py-2 ${currentTheme.header}`}
+        >
+          <div
+            className={`d4m-text-sm d4m-font-bold d4m-text-${accentColor}-500`}
+          >
+            D4M Agent
+          </div>
+          <div className="d4m-flex d4m-items-center d4m-space-x-2">
+            <button
+              onClick={handleNewChat}
+              className={`d4m-px-2 d4m-py-1 d4m-text-${accentColor}-400 d4m-text-sm d4m-rounded-lg ${currentTheme.button} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
+            >
+              New Chat
+            </button>
+            <div className="d4m-flex d4m-gap-2">
+              <button
+                onClick={toggleWatching}
+                className={`d4m-p-1 d4m-rounded-full d4m-bg-${accentColor}-400 d4m-text-white ${currentTheme.button} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
+              >
+                {isWatching ? (
+                  <Eye className="d4m-w-4 d4m-h-4" />
+                ) : (
+                  <EyeOff className="d4m-w-4 d4m-h-4" />
+                )}
+              </button>
+              <button
+                onClick={() => setIsSettingsOpen(true)}
+                className={`d4m-p-1 d4m-rounded-full d4m-bg-${accentColor}-400 d4m-text-white ${currentTheme.button} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
+              >
+                <Settings className="d4m-w-4 d4m-h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Messages Container */}
+        <div
+          ref={messagesContainerRef}
+          className={`d4m-flex-1 d4m-overflow-y-auto d4m-space-y-4 d4m-px-3 d4m-py-2 d4m-bg-transparent d4m-scrollbar-thin d4m-relative ${
+            theme === "glassmorphism"
+              ? "d4m-scrollbar-thumb-gray-500/50"
+              : mode === "light"
+              ? "d4m-scrollbar-thumb-gray-400"
+              : "d4m-scrollbar-thumb-gray-600"
+          } d4m-flex d4m-flex-col-reverse`}
+        >
+          {processedMessages.map((item, index) => {
+            if (item.type === "single") {
+              const message = item.message!;
+              return (
+                <div key={index} className="d4m-flex d4m-flex-col d4m-mb-4">
+                  <div
+                    className={`d4m-text-sm d4m-p-2 ${
+                      message.role === "user"
+                        ? `${currentTheme.messageBubble} ${textColor}`
+                        : "d4m-bg-transparent d4m-border-none"
+                    } ${textColor}`}
+                  >
+                    {message.role === "model" ? (
+                      <MarkdownWrapper content={message.content as string} />
+                    ) : (
+                      <span>{message.content as string}</span>
+                    )}
+                  </div>
                 </div>
-                <div className="d4m-text-white d4m-text-xs d4m-ml-6">
-                  {message.role === "model" ? (
-                    <MarkdownWrapper content={message.content as string} />
-                  ) : (
-                    <span>{message.content as string}</span>
-                  )}
-                </div>
-              </div>
-            );
-          } else if (item.type === "modelGroup") {
-            return (
-              <div key={index} className="d4m-flex d4m-flex-col d4m-mb-2">
-                {item.messages!.map((message, idx) => (
-                  <div key={idx} className="d4m-flex d4m-flex-col d4m-mb-1">
-                    <div className="d4m-flex d4m-items-center d4m-space-x-1 d4m-mb-1">
-                      <div className="d4m-w-5 d4m-h-5 d4m-rounded-full d4m-bg-gray-700 d4m-flex d4m-items-center d4m-justify-center">
-                        <span className="d4m-text-white d4m-text-[10px]">
-                          AI
-                        </span>
+              );
+            } else if (item.type === "modelGroup") {
+              const formatTimestamp = (timestamp?: string) => {
+                if (!timestamp) return "";
+                const date = new Date(parseInt(timestamp, 10));
+                return isNaN(date.getTime())
+                  ? ""
+                  : date.toLocaleString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                      hour12: true,
+                    });
+              };
+              return (
+                <div key={index} className="d4m-flex d4m-flex-col d4m-mb-4">
+                  {item.messages!.map((message, idx) => (
+                    <div
+                      key={idx}
+                      className="d4m-flex d4m-flex-col d4m-mb-1 d4m-relative group"
+                    >
+                      <div
+                        className={`d4m-text-sm d4m-p-2 d4m-bg-transparent d4m-border-none ${textColor}`}
+                      >
+                        <MarkdownWrapper content={message.content as string} />
                       </div>
-                      <span className="d4m-text-xs d4m-font-medium d4m-text-white">
-                        D4M Agent
-                      </span>
                       {idx === 0 && item.timestamp && (
-                        <span className="d4m-text-[10px] d4m-text-gray-400">
-                          ({item.timestamp})
+                        <span
+                          className={`d4m-absolute d4m-top-0 d4m-left-0 d4m-text-xs ${
+                            mode === "light"
+                              ? "d4m-text-gray-600"
+                              : "d4m-text-gray-500"
+                          } d4m-opacity-0 group-hover:d4m-opacity-100 d4m-transition-opacity d4m-duration-200`}
+                        >
+                          {formatTimestamp(item.timestamp)}
                         </span>
                       )}
                     </div>
-                    <div className="d4m-ml-6">
-                      <MarkdownWrapper content={message.content as string} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            );
-          } else if (item.type === "executionGroup") {
-            const isExpanded = expandedExecutions.has(index);
-            return (
-              <div
-                key={index}
-                className="d4m-bg-gray-800 d4m-p-2 d4m-rounded d4m-mb-2 d4m-border d4m-border-cyan-500/30"
-              >
+                  ))}
+                </div>
+              );
+            } else if (item.type === "executionGroup") {
+              const isExpanded = expandedExecutions.has(index);
+              return (
                 <div
-                  className="d4m-flex d4m-justify-between d4m-items-center d4m-cursor-pointer"
-                  onClick={() => toggleExecutionGroup(index)}
+                  key={index}
+                  className={`d4m-p-2 d4m-mb-8 ${currentTheme.executionGroup}`}
                 >
-                  <h6 className="d4m-text-xs d4m-font-bold d4m-text-cyan-400">
-                    Task Steps ({item.taskHistories!.length})
-                  </h6>
-                  {isExpanded ? (
-                    <ChevronUp className="d4m-w-4 d4m-h-4 d4m-text-cyan-400" />
-                  ) : (
-                    <ChevronDown className="d4m-w-4 d4m-h-4 d4m-text-cyan-400" />
+                  <div
+                    className="d4m-flex d4m-justify-between d4m-items-center d4m-cursor-pointer"
+                    onClick={() => toggleExecutionGroup(index)}
+                  >
+                    <h6
+                      className={`d4m-text-sm d4m-font-bold d4m-text-${accentColor}-400`}
+                    >
+                      Task Steps ({item.taskHistories!.length})
+                    </h6>
+                    {isExpanded ? (
+                      <ChevronUp
+                        className={`d4m-w-4 d4m-h-4 d4m-text-${accentColor}-400`}
+                      />
+                    ) : (
+                      <ChevronDown
+                        className={`d4m-w-4 d4m-h-4 d4m-text-${accentColor}-400`}
+                      />
+                    )}
+                  </div>
+                  {isExpanded && (
+                    <div className="d4m-mt-2">
+                      <table
+                        className={`d4m-w-full d4m-text-sm ${
+                          mode === "light"
+                            ? "d4m-text-gray-700"
+                            : "d4m-text-gray-300"
+                        }`}
+                      >
+                        <thead>
+                          <tr
+                            className={`d4m-border-b ${
+                              theme === "glassmorphism"
+                                ? "d4m-border-gray-500/50"
+                                : borderColor
+                            }`}
+                          >
+                            <th
+                              className={`d4m-py-1 d4m-px-2 d4m-text-left d4m-font-medium d4m-text-${accentColor}-400`}
+                            >
+                              Step
+                            </th>
+                            <th
+                              className={`d4m-py-1 d4m-px-2 d4m-text-left d4m-font-medium d4m-text-${accentColor}-400`}
+                            >
+                              Description
+                            </th>
+                            <th
+                              className={`d4m-py-1 d4m-px-2 d4m-text-center d4m-font-medium d4m-text-${accentColor}-400`}
+                            >
+                              Status
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {item.taskHistories!.map((task, idx) => (
+                            <tr
+                              key={idx}
+                              className={`d4m-border-b ${
+                                theme === "glassmorphism"
+                                  ? "d4m-border-gray-500/50"
+                                  : borderColor
+                              } d4m-last:border-b-0`}
+                            >
+                              <td className="d4m-py-1 d4m-px-2">{idx + 1}</td>
+                              <td className="d4m-py-1 d4m-px-2">
+                                {task.step_number || "N/A"}
+                                {task.description && (
+                                  <span
+                                    className={`d4m-block d4m-text-xs ${
+                                      mode === "light"
+                                        ? "d4m-text-gray-600"
+                                        : "d4m-text-gray-500"
+                                    }`}
+                                  >
+                                    {task.description}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="d4m-py-1 d4m-px-2 d4m-text-center">
+                                {["PENDING", "pending"].includes(
+                                  task.status
+                                ) ? (
+                                  <span className="d4m-inline-flex d4m-items-center d4m-justify-center">
+                                    <span
+                                      className={`d4m-w-3 d4m-h-3 d4m-border-2 d4m-border-t-${accentColor}-400 ${
+                                        theme === "glassmorphism"
+                                          ? "d4m-border-gray-500/50"
+                                          : borderColor
+                                      } d4m-rounded-full d4m-animate-spin`}
+                                    ></span>
+                                  </span>
+                                ) : [
+                                    "IN_PROGRESS",
+                                    "in_progress",
+                                    "in progress",
+                                  ].includes(task.status) ? (
+                                  <span className="d4m-inline-flex d4m-items-center d4m-justify-center">
+                                    <span
+                                      className={`d4m-w-3 d4m-h-3 d4m-border-2 d4m-border-t-yellow-400 ${
+                                        theme === "glassmorphism"
+                                          ? "d4m-border-gray-500/50"
+                                          : borderColor
+                                      } d4m-rounded-full d4m-animate-spin`}
+                                    ></span>
+                                  </span>
+                                ) : ["PASS", "pass", "passed"].includes(
+                                    task.status
+                                  ) ? (
+                                  <Check className="d4m-w-4 d4m-h-4 d4m-text-green-400 d4m-mx-auto" />
+                                ) : ["FAIL", "fail", "failed"].includes(
+                                    task.status
+                                  ) ? (
+                                  <X className="d4m-w-4 d4m-h-4 d4m-text-red-400 d4m-mx-auto" />
+                                ) : (
+                                  <HelpCircle
+                                    className={`d4m-w-4 d4m-h-4 ${
+                                      mode === "light"
+                                        ? "d4m-text-gray-500"
+                                        : "d4m-text-gray-400"
+                                    } d4m-mx-auto`}
+                                  />
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </div>
-                {isExpanded && (
-                  <div className="d4m-mt-2">
-                    <table className="d4m-w-full d4m-text-xs d4m-text-gray-300">
-                      <thead>
-                        <tr className="d4m-border-b d4m-border-cyan-500/20">
-                          <th className="d4m-py-1 d4m-px-2 d4m-text-left d4m-font-medium d4m-text-cyan-400">
-                            Step
-                          </th>
-                          <th className="d4m-py-1 d4m-px-2 d4m-text-left d4m-font-medium d4m-text-cyan-400">
-                            Description
-                          </th>
-                          <th className="d4m-py-1 d4m-px-2 d4m-text-center d4m-font-medium d4m-text-cyan-400">
-                            Status
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {item.taskHistories!.map((task, idx) => (
-                          <tr
-                            key={idx}
-                            className="d4m-border-b d4m-border-gray-700/50 last:d4m-border-b-0"
-                          >
-                            <td className="d4m-py-1 d4m-px-2">{idx + 1}</td>
-                            <td className="d4m-py-1 d4m-px-2">
-                              {task.step_number}
-                              {task.description && (
-                                <span className="d4m-block d4m-text-[10px] d4m-text-gray-500">
-                                  {task.description}
-                                </span>
-                              )}
-                            </td>
-                            <td className="d4m-py-1 d4m-px-2 d4m-text-center">
-                              {["PENDING", "pending"].includes(task.status) ? (
-                                <span className="d4m-inline-flex d4m-items-center d4m-justify-center">
-                                  <span className="d4m-w-3 d4m-h-3 d4m-border-2 d4m-border-t-cyan-400 d4m-border-gray-700 d4m-rounded-full d4m-animate-spin"></span>
-                                </span>
-                              ) : [
-                                  "IN_PROGRESS",
-                                  "in_progress",
-                                  "in progress",
-                                ].includes(task.status) ? (
-                                <span className="d4m-inline-flex d4m-items-center d4m-justify-center">
-                                  <span className="d4m-w-3 d4m-h-3 d4m-border-2 d4m-border-t-yellow-400 d4m-border-gray-700 d4m-rounded-full d4m-animate-spin"></span>
-                                </span>
-                              ) : ["PASS", "pass", "passed"].includes(
-                                  task.status
-                                ) ? (
-                                <Check className="d4m-w-4 d4m-h-4 d4m-text-green-400 d4m-mx-auto" />
-                              ) : ["FAIL", "fail", "failed"].includes(
-                                  task.status
-                                ) ? (
-                                <X className="d4m-w-4 d4m-h-4 d4m-text-red-400 d4m-mx-auto" />
-                              ) : (
-                                <HelpCircle className="d4m-w-4 d4m-h-4 d4m-text-gray-400 d4m-mx-auto" />
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            );
-          }
-          return null;
-        })}
-        {isLoading && (
-          <div className="d4m-bg-gray-800 d4m-text-cyan-300 d4m-p-2 d4m-rounded d4m-text-xs d4m-italic">
-            Analyzing...
-          </div>
-        )}
-        {error && (
-          <div className="d4m-bg-red-800 d4m-text-red-100 d4m-p-2 d4m-rounded d4m-text-xs">
-            {error}
-          </div>
-        )}
+              );
+            }
+            return null;
+          })}
 
-        <div
-          className={`d4m-absolute d4m-top-1/2 d4m-left-1/2 d4m-transform d4m--translate-x-1/2 d4m-flex d4m-flex-wrap d4m-gap-2 d4m-px-4 d4m-py-3 d4m-bg-gray-800/90 d4m-rounded-lg d4m-shadow-[0_0_10px_rgba(0,255,255,0.3)] d4m-z-10 d4m-w-[calc(100%-16px)] d4m-backdrop-blur-sm d4m-transition-all d4m-duration-300 ${
-            isTextareaFocused
-              ? "d4m-opacity-100 d4m-translate-y-[-50%]"
-              : "d4m-opacity-0 d4m-translate-y-[50%] d4m-pointer-events-none"
-          }`}
-        >
-          {suggestions.map((suggestion) => (
-            <button
-              key={suggestion}
-              type="button"
-              onClick={() => handleChipClick(suggestion)}
-              className="d4m-px-3 d4m-py-1 d4m-bg-gray-700 d4m-text-cyan-400 d4m-text-[12px] d4m-rounded-full d4m-hover:bg-gray-600 d4m-transition-colors d4m-shadow-[0_0_3px_rgba(0,255,255,0.2)]"
+          {/* Suggestions Box - Centered in Messages Area */}
+          {isTextareaFocused && (
+            <div
+              className={`d4m-absolute d4m-inset-0 d4m-flex d4m-items-center d4m-justify-center d4m-p-2 d4m-z-20 ${currentTheme.suggestion} d4m-bg-opacity-0 d4m-rounded-lg d4m-overflow-y-auto`}
             >
-              {suggestion}
-            </button>
-          ))}
+              <div className="d4m-flex d4m-flex-wrap d4m-gap-1 d4m-justify-center d4m-items-center">
+                {suggestions.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    onClick={() => handleChipClick(suggestion)}
+                    className={`d4m-px-2 d4m-py-1 d4m-text-${accentColor}-400 d4m-text-xs ${currentTheme.suggestion} d4m-transition-transform d4m-duration-200 d4m-active:scale-95 d4m-rounded-md`}
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      </div>
 
-      <form
-        onSubmit={handleSubmit}
-        className="d4m-px-2 d4m-py-2 d4m-bg-gray-900 d4m-border-t d4m-border-cyan-700/40 d4m-shadow-[0_0_10px_rgba(0,255,255,0.3)] d4m-w-full d4m-box-border d4m-pb-4"
-      >
-        <div className="d4m-flex d4m-items-center d4m-space-x-2 d4m-w-full d4m-max-w-[calc(100%-8px)]">
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onFocus={handleFocus}
-            onBlur={handleBlur}
-            placeholder="Enter command..."
-            className="d4m-flex-1 d4m-px-3 d4m-py-2 d4m-bg-gray-800/80 d4m-border d4m-border-cyan-500/50 d4m-rounded-lg d4m-text-sm d4m-text-white d4m-focus:outline-none d4m-focus:ring-2 d4m-focus:ring-cyan-400 d4m-placeholder-gray-500 d4m-resize-none d4m-box-border d4m-transition-all d4m-shadow-[inset_0_0_5px_rgba(0,255,255,0.2)] d4m-hover:shadow-[inset_0_0_8px_rgba(0,255,255,0.3)] d4m-backdrop-blur-sm"
-            disabled={isLoading}
-            rows={1}
-            style={{ height: "auto", overflowY: "hidden" }}
-            onInput={(e) => {
-              const target = e.target as HTMLTextAreaElement;
-              target.style.height = "auto";
-              target.style.height = `${target.scrollHeight}px`;
-            }}
-          />
-          <button
-            type={isLoading ? "button" : "submit"}
-            onClick={isLoading ? handleStop : undefined}
-            disabled={!isLoading && !input.trim()}
-            className={`d4m-p-2 d4m-rounded-lg d4m-transition-all d4m-duration-200 d4m-flex-shrink-0 d4m-shadow-[0_0_8px_rgba(255,0,0,0.5)] d4m-hover:shadow-[0_0_12px_rgba(255,0,0,0.7)] ${
-              isLoading
-                ? "d4m-bg-red-600 d4m-text-white d4m-hover:bg-red-700"
-                : "d4m-bg-cyan-600 d4m-text-white d4m-hover:bg-cyan-700 d4m-shadow-[0_0_8px_rgba(0,255,255,0.5)] d4m-hover:shadow-[0_0_12px_rgba(0,255,255,0.7)] d4m-disabled:bg-gray-600 d4m-disabled:cursor-not-allowed"
-            }`}
+        {/* Loading Animation and Stop Button */}
+        {isLoading ? (
+          <div
+            className={`d4m-w-full d4m-px-3 d4m-py-4 d4m-flex d4m-items-center d4m-justify-between ${currentTheme.loading}`}
           >
-            {isLoading ? (
-              <Square className="d4m-w-5 d4m-h-5" />
-            ) : (
-              <Send className="d4m-w-5 d4m-h-5" />
+            {currentAnimation === "starfallCascade" && (
+              <StarfallCascadeAnimation />
             )}
-          </button>
-        </div>
-      </form>
-    </div>
+            {currentAnimation === "glowingHorizon" && (
+              <GlowingHorizonAnimation />
+            )}
+            <button
+              onClick={handleStop}
+              className={`d4m-p-2 d4m-text-white d4m-rounded-full ${currentTheme.stopButton.replace(
+                "red",
+                accentColor
+              )} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
+            >
+              <Square className="d4m-w-5 d4m-h-5" />
+            </button>
+          </div>
+        ) : (
+          <div className="d4m-relative d4m-px-3 d4m-py-4 d4m-w-full d4m-box-border d4m-z-20">
+            <form onSubmit={handleSubmit} className={`${currentTheme.form}`}>
+              <div className="d4m-flex d4m-items-center d4m-space-x-3 d4m-w-full d4m-max-w-[calc(100%-8px)]">
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  onFocus={handleFocus}
+                  onBlur={handleBlur}
+                  placeholder="Enter command..."
+                  className={`d4m-flex-1 d4m-px-3 d4m-py-2 ${textColor} d4m-text-sm d4m-rounded-xl d4m-border-none ${
+                    currentTheme.textarea
+                  } d4m-focus:outline-none d4m-focus:ring-2 d4m-focus:ring-${accentColor}-500 ${
+                    mode === "light"
+                      ? "d4m-placeholder-gray-400"
+                      : "d4m-placeholder-gray-500"
+                  } d4m-resize-none d4m-box-border d4m-transition-all`}
+                  disabled={isLoading}
+                  rows={1}
+                  style={{ height: "auto", overflowY: "hidden" }}
+                  onInput={(e) => {
+                    const target = e.target as HTMLTextAreaElement;
+                    target.style.height = "auto";
+                    target.style.height = `${target.scrollHeight}px`;
+                  }}
+                />
+                <button
+                  type="submit"
+                  disabled={!input.trim()}
+                  className={`d4m-p-2 d4m-text-white d4m-rounded-full ${currentTheme.sendButton.replace(
+                    "amber",
+                    accentColor
+                  )} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
+                >
+                  <Send className="d4m-w-5 d4m-h-5" />
+                </button>
+              </div>
+            </form>
+            {showCommandPopup && (
+              <div
+                className={`d4m-absolute d4m-bottom-[70px] d4m-left-3 d4m-right-3 d4m-bg-${
+                  mode === "light" ? "gray-100" : "gray-800"
+                } d4m-rounded-lg d4m-shadow-lg d4m-z-30 d4m-max-h-[150px] d4m-overflow-y-auto`}
+              >
+                {[...commandHistory].reverse().map((cmd, revIdx) => {
+                  const idx = commandHistory.length - 1 - revIdx;
+                  const isSelected = historyIndex === idx;
+                  return (
+                    <div
+                      key={idx}
+                      ref={isSelected ? selectedCommandRef : null}
+                      onClick={() => handlePopupSelect(cmd)}
+                      className={`d4m-px-3 d4m-py-2 d4m-text-sm ${textColor} d4m-cursor-pointer hover:d4m-bg-${accentColor}-500/20 ${
+                        isSelected ? `d4m-bg-${accentColor}-500/30` : ""
+                      }`}
+                    >
+                      {cmd}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onSettingsUpdate={handleSettingsUpdate}
+        theme={theme}
+        accentColor={accentColor}
+        mode={mode}
+      />
+    </>
   );
 }

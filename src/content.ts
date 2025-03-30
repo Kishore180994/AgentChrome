@@ -1,9 +1,11 @@
+// content.ts
+import { DOMManager, UncompressedPageElement } from "./classes/DOMManager"; // Adjust path
 import { ActionExecutor } from "./classes/ActionExecutor";
-import { DOMManager } from "./classes/DOMManager";
+import html2canvas from "html2canvas";
 
 const domManager = new DOMManager();
-const actionExecutor = new ActionExecutor(domManager);
-
+const actionExecutor = new ActionExecutor();
+let uncompressedElements: UncompressedPageElement[] = []; // Store locally
 declare global {
   interface Window {
     __AGENT_CHROME_INITIALIZED__?: boolean;
@@ -18,14 +20,13 @@ if (!window[AGENT_KEY]) {
   let tabId: number | null = null;
   let port: chrome.runtime.Port | null = null;
 
-  // Function to initialize or reinitialize the port connection
   const initializePort = () => {
     try {
       if (!chrome.runtime?.id) {
         console.warn(
           "[content.ts] Extension context invalidated, cannot initialize port."
         );
-        window[AGENT_KEY] = false; // Reset initialization flag
+        window[AGENT_KEY] = false;
         return;
       }
       port = chrome.runtime.connect({
@@ -37,43 +38,43 @@ if (!window[AGENT_KEY]) {
           "[content.ts] Port disconnected, attempting to reconnect..."
         );
         port = null;
-        window[AGENT_KEY] = false; // Reset initialization flag to reinitialize
+        window[AGENT_KEY] = false;
       });
 
-      port.onMessage.addListener(async (message) => {
-        try {
-          switch (message.type) {
-            case "PERFORM_ACTION":
-              await actionExecutor.execute(message.action);
-              return true;
-            case "GET_PAGE_ELEMENTS":
-              const elements = domManager.extractPageElements(message.tabId);
-              port?.postMessage({
-                type: "PAGE_ELEMENTS",
-                elements,
-              });
-              return true;
-            case "EXECUTION_UPDATE":
-              const { taskHistory } = message;
-              console.log(
-                "[content.ts] Received EXECUTION_UPDATE:",
-                taskHistory
-              );
+      // port.onMessage.addListener(async (message) => {
+      //   try {
+      //     switch (message.type) {
+      //       case "PERFORM_ACTION":
+      //         await actionExecutor.execute(message.action);
+      //         return true;
+      //       case "GET_PAGE_ELEMENTS":
+      //         const { compressed, uncompressed } =
+      //           domManager.extractPageElements();
+      //         port?.postMessage({
+      //           type: "PAGE_ELEMENTS",
+      //           compressed,
+      //           uncompressed,
+      //         });
+      //         return true;
+      //       case "EXECUTION_UPDATE":
+      //         const { taskHistory } = message;
+      //         console.log(
+      //           "[content.ts] Received EXECUTION_UPDATE:",
+      //           taskHistory
+      //         );
+      //         port?.postMessage({
+      //           type: "EXECUTION_UPDATE",
+      //           taskHistory,
+      //         });
+      //         return true;
+      //       default:
+      //         break;
+      //     }
+      //   } catch (err) {
+      //     console.error("[content.ts] Error handling port message:", err);
+      //   }
+      // });
 
-              port?.postMessage({
-                type: "EXECUTION_UPDATE", // Use the same message type in ChatWidget
-                taskHistory: taskHistory,
-              });
-              return true;
-            default:
-              break;
-          }
-        } catch (err) {
-          console.error("[content.ts] Error handling port message:", err);
-        }
-      });
-
-      // Send KEEP_ALIVE messages to maintain connection
       setInterval(() => {
         try {
           if (!chrome.runtime?.id) {
@@ -100,7 +101,6 @@ if (!window[AGENT_KEY]) {
     }
   };
 
-  // Initial tab ID retrieval
   try {
     if (chrome.runtime?.id) {
       chrome.runtime.sendMessage({ type: "GET_TAB_ID" }, (response) => {
@@ -114,7 +114,7 @@ if (!window[AGENT_KEY]) {
         }
         if (response?.tabId) {
           tabId = response.tabId;
-          initializePort(); // Initialize port after getting tabId
+          initializePort();
         }
       });
     } else {
@@ -126,7 +126,6 @@ if (!window[AGENT_KEY]) {
     window[AGENT_KEY] = false;
   }
 
-  // Register content script
   try {
     if (chrome.runtime?.id) {
       chrome.runtime.sendMessage({
@@ -150,7 +149,6 @@ if (!window[AGENT_KEY]) {
           success: false,
           error: "Extension context invalidated",
         });
-        window[AGENT_KEY] = false;
         return true;
       }
 
@@ -163,6 +161,7 @@ if (!window[AGENT_KEY]) {
       const currentTabId = sender.tab?.id || tabId;
       switch (message.type) {
         case "PERFORM_ACTION":
+          actionExecutor.setElements(uncompressedElements || []); // Set fresh elements
           actionExecutor
             .execute(message.action)
             .then((result) => {
@@ -175,10 +174,43 @@ if (!window[AGENT_KEY]) {
                 tabId: currentTabId,
               });
             });
-          return true; // Async response
+          return true;
+        case "RESIZE_SCREENSHOT":
+          const img = new Image();
+          const maxSize = 720;
+
+          img.onload = () => {
+            const scale = maxSize / Math.max(img.width, img.height);
+            const width = img.width * scale;
+            const height = img.height * scale;
+
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+
+            const ctx = canvas.getContext("2d");
+            if (!ctx) {
+              sendResponse({ error: "Canvas context error" });
+              return;
+            }
+
+            ctx.drawImage(img, 0, 0, width, height);
+            const webp = canvas.toDataURL("image/webp", 0.7);
+            sendResponse({ resizedDataUrl: webp });
+          };
+
+          img.onerror = () => {
+            sendResponse({ error: "Image load error" });
+          };
+
+          img.src = message.dataUrl;
+          return true;
+
         case "GET_PAGE_ELEMENTS":
-          const elements = domManager.extractPageElements(message.tabId);
-          sendResponse({ success: true, elements, tabId: currentTabId });
+          const { compressed, uncompressed } = domManager.extractPageElements();
+          uncompressedElements = uncompressed;
+          console.log("[content.ts] Extracted elements:", uncompressed);
+          sendResponse({ success: true, compressed, uncompressed: [] });
           return true;
         case "PING":
           sendResponse({ success: true, tabId: currentTabId });
@@ -229,7 +261,7 @@ if (!window[AGENT_KEY]) {
   window.addEventListener("pageshow", (event) => {
     if (event.persisted) {
       console.log("[content.ts] Page restored from cache, reinitializing...");
-      window[AGENT_KEY] = false; // Reset initialization flag to reinitialize
+      window[AGENT_KEY] = false;
     }
   });
 }

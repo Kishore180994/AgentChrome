@@ -1,3 +1,4 @@
+import { UncompressedPageElement } from "./classes/DOMManager";
 import { PageElement } from "./services/ai/interfaces";
 import { chatWithAI } from "./services/openai/api";
 import {
@@ -51,11 +52,17 @@ async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
   });
 }
 
-async function fetchPageElements(tabId: number): Promise<PageElement[]> {
-  console.log("[background.ts] Fetching page elements for tab", tabId);
+async function fetchPageElements(tabId: number): Promise<{
+  compressed: PageElement[];
+  uncompressed: UncompressedPageElement[];
+}> {
+  console.log("[background.ts] Fetching fresh page elements for tab", tabId);
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const elements = await new Promise<PageElement[]>((resolve, reject) => {
+      const result = await new Promise<{
+        compressed: PageElement[];
+        uncompressed: UncompressedPageElement[];
+      }>((resolve, reject) => {
         chrome.tabs.sendMessage(
           tabId,
           { type: "GET_PAGE_ELEMENTS", tabId },
@@ -65,16 +72,18 @@ async function fetchPageElements(tabId: number): Promise<PageElement[]> {
             } else {
               console.log(
                 "[background.ts] Fetched",
-                resp.elements.length,
-                "elements",
-                resp.elements
+                resp.compressed.length,
+                "elements"
               );
-              resolve(resp.elements);
+              resolve({
+                compressed: resp.compressed,
+                uncompressed: resp.uncompressed,
+              });
             }
           }
         );
       });
-      return elements;
+      return result;
     } catch (err) {
       console.warn(
         "[background.ts] Fetch failed (attempt",
@@ -94,8 +103,7 @@ async function fetchPageElements(tabId: number): Promise<PageElement[]> {
 async function getAllTabs(): Promise<string[]> {
   console.log("[background.ts] Fetching all tab URLs");
   const tabs = await chrome.tabs.query({});
-  const urls = tabs.map((t) => t.url ?? "");
-  return urls;
+  return tabs.map((t) => t.url ?? "");
 }
 
 const getTabUrl = (tabId: number): Promise<string> => {
@@ -117,7 +125,7 @@ async function processCommand(
   contextMessage: string,
   initialCommand: string,
   actionHistory: string[] = [],
-  model: string = "gemini" // Add model parameter with default
+  model: string = "gemini"
 ) {
   if (automationStopped) {
     console.log("[background.ts] Automation stopped. Not processing.");
@@ -127,18 +135,94 @@ async function processCommand(
   activeAutomationTabs.add(tabId);
   recentActionsMap[tabId] = recentActionsMap[tabId] || [];
 
-  const pageState = await fetchPageElements(tabId);
+  let pageState: PageElement[] = [];
+  let uncompressedPageState: UncompressedPageElement[] = [];
+  try {
+    const result = await fetchPageElements(tabId);
+    pageState = result.compressed;
+    uncompressedPageState = result.uncompressed;
+  } catch (err) {
+    console.error("[background.ts] Failed to fetch page elements:", err);
+    await chrome.runtime.sendMessage({
+      type: "FINISH_PROCESS_COMMAND",
+      response:
+        "Failed to fetch page elements: " +
+        (err instanceof Error ? err.message : String(err)),
+    });
+    return;
+  }
+
+  let screenshotDataUrl: string | null = null;
+
+  await new Promise<void>(async (resolve) => {
+    try {
+      const targetTab = await chrome.tabs.get(tabId);
+      if (!targetTab || typeof targetTab.windowId !== "number") {
+        console.error("[background.ts] No valid tab or window");
+        resolve();
+        return;
+      }
+
+      chrome.tabs.captureVisibleTab(
+        targetTab.windowId,
+        { format: "jpeg", quality: 60 },
+        (dataUrl) => {
+          if (chrome.runtime.lastError || !dataUrl) {
+            console.error(
+              "[background.ts] Failed to capture screenshot:",
+              chrome.runtime.lastError?.message || "No data URL returned"
+            );
+            resolve();
+            return;
+          }
+
+          chrome.tabs.sendMessage(
+            tabId,
+            { type: "RESIZE_SCREENSHOT", dataUrl },
+            (response) => {
+              if (response?.resizedDataUrl) {
+                screenshotDataUrl = response.resizedDataUrl;
+                console.log(
+                  "[background.ts] Screenshot resized via content.js"
+                );
+              } else {
+                console.warn(
+                  "[background.ts] Failed to compress screenshot in content.js"
+                );
+                screenshotDataUrl = dataUrl; // fallback
+              }
+              resolve();
+            }
+          );
+        }
+      );
+    } catch (err) {
+      console.error("[background.ts] Error getting tab info:", err);
+      resolve();
+    }
+  });
+
   const allTabs = await getAllTabs();
   let tabUrl: string;
   try {
     tabUrl = await getTabUrl(tabId);
   } catch (error) {
     console.error("[background.ts] Tab URL error:", error);
+    await chrome.runtime.sendMessage({
+      type: "FINISH_PROCESS_COMMAND",
+      response:
+        "Failed to get tab URL: " +
+        (error instanceof Error ? error.message : String(error)),
+    });
     return;
   }
 
   if (!pageState.length) {
     console.warn("[background.ts] No elements found, aborting");
+    await chrome.runtime.sendMessage({
+      type: "FINISH_PROCESS_COMMAND",
+      response: "No page elements found, aborting command processing.",
+    });
     return;
   }
 
@@ -147,6 +231,7 @@ async function processCommand(
     tabs: allTabs,
     currentTabUrl: tabUrl,
     actionHistory: actionHistory.slice(-3),
+    screenshot: screenshotDataUrl, // Optionally include the screenshot in the state
   };
 
   try {
@@ -159,14 +244,18 @@ async function processCommand(
       fullContextMessage,
       "session-id",
       currentState,
-      undefined, // screenshot if needed
-      model as "gemini" | "claude" // Pass model
+      screenshotDataUrl || undefined,
+      model as "gemini" | "claude"
     );
     const { current_state } = raw;
     let { action } = raw || (current_state.action ? current_state : {});
 
     if (!current_state || !action) {
       console.warn("[background.ts] No valid state or action, stopping");
+      await chrome.runtime.sendMessage({
+        type: "FINISH_PROCESS_COMMAND",
+        response: "No valid state or action returned from AI, aborting.",
+      });
       return;
     }
 
@@ -202,7 +291,7 @@ async function processCommand(
       tabIdRef,
       contextMessage,
       current_state,
-      pageState,
+      uncompressedPageState,
       executedActions,
       model
     );
@@ -211,7 +300,7 @@ async function processCommand(
       console.log(`[background.ts] Execution stopped with ${result}`);
       resetExecutionState(tabId);
       activeAutomationTabs.clear();
-      return; // Exit recursion
+      return;
     }
 
     const doneAction = localActions.find((a) => a.type === "done");
@@ -269,7 +358,7 @@ async function processCommand(
     }
   } catch (err) {
     console.error("[background.ts] Error in processCommand:", err);
-    handleError(
+    await handleError(
       err,
       tabId,
       contextMessage,
@@ -280,13 +369,13 @@ async function processCommand(
   }
 }
 
-function handleError(
+async function handleError(
   err: any,
   tabId: number,
   contextMessage: string,
   initialCommand: string,
   actionHistory: string[],
-  model: string // Add model to retry with same provider
+  model: string
 ) {
   const tabIdRef = { value: tabId };
   if (err.message?.includes("quota") || err.message?.includes("429")) {
@@ -301,7 +390,15 @@ function handleError(
       type: "DISPLAY_MESSAGE",
       response: { message },
     });
-    if (err.message.includes("429")) {
+    if (err.message.includes("quota")) {
+      // Quota exhaustion is a failure, send FINISH_PROCESS_COMMAND
+      await chrome.runtime.sendMessage({
+        type: "FINISH_PROCESS_COMMAND",
+        response: message,
+      });
+      automationStopped = true;
+    } else if (err.message.includes("429")) {
+      // Rate limit, retry after 60s, not a failure yet
       setTimeout(
         () =>
           processCommand(
@@ -313,9 +410,23 @@ function handleError(
           ),
         60000
       );
-    } else {
-      automationStopped = true;
     }
+  } else {
+    // Other errors are considered failures, send FINISH_PROCESS_COMMAND
+    const errorMessage = `Command processing failed: ${err.message}`;
+    chrome.runtime.sendMessage({
+      type: "UPDATE_SIDEPANEL",
+      response: { message: errorMessage },
+    });
+    chrome.tabs.sendMessage(tabIdRef.value, {
+      type: "DISPLAY_MESSAGE",
+      response: { message: errorMessage },
+    });
+    await chrome.runtime.sendMessage({
+      type: "FINISH_PROCESS_COMMAND",
+      response: errorMessage,
+    });
+    automationStopped = true;
   }
 }
 
@@ -334,15 +445,11 @@ function mapAiItemToLocalAction(item: AgentActionItem): LocalAction {
   switch (actionName.toLowerCase()) {
     case "click_element":
       type = "click";
-      data = { index: params.index, selector: params.selector };
+      data = { index: params.index };
       break;
     case "input_text":
       type = "input_text";
-      data = {
-        index: params.index,
-        text: params.text,
-        selector: params.selector,
-      };
+      data = { index: params.index, text: params.text };
       break;
     case "open_tab":
     case "go_to_url":
@@ -352,19 +459,15 @@ function mapAiItemToLocalAction(item: AgentActionItem): LocalAction {
       break;
     case "extract_content":
       type = "extract";
-      data = { index: params.index, selector: params.selector };
+      data = { index: params.index };
       break;
     case "submit_form":
       type = "submit_form";
-      data = { index: params.index, selector: params.selector };
+      data = { index: params.index };
       break;
     case "key_press":
       type = "key_press";
-      data = {
-        key: params.key,
-        index: params.index,
-        selector: params.selector,
-      };
+      data = { key: params.key, index: params.index };
       break;
     case "scroll":
       type = "scroll";
@@ -385,8 +488,8 @@ function mapAiItemToLocalAction(item: AgentActionItem): LocalAction {
     case "done":
       type = "done";
       data = {
-        text: params.text || "Task completed.", // Use `text` from AI
-        output: params.output, // Preserve `output`
+        text: params.text || "Task completed.",
+        output: params.output,
       };
       break;
     default:
@@ -404,7 +507,7 @@ async function executeLocalActions(
   tabIdRef: { value: number },
   contextMessage: string,
   currentState: AIResponseFormat,
-  pageElements: PageElement[],
+  uncompressedPageElements: UncompressedPageElement[],
   executedActions: string[] = [],
   model: string
 ): Promise<any> {
@@ -424,18 +527,13 @@ async function executeLocalActions(
         `${logPrefix} Executing action ${index + 1}/${actions.length}:`,
         action
       );
-      const output = await performLocalAction(
-        action,
-        tabIdRef,
-        pageElements,
-        model
-      );
+      const output = await performLocalAction(action, tabIdRef, model);
       const actionDesc = getActionDescription(action);
       executedActions.push(actionDesc);
 
       if (output === "ASK_PAUSED" || output === "DONE") {
         console.log(`${logPrefix} Paused with ${output}`);
-        return output; // Stop execution here
+        return output;
       }
       if (action.type === "extract") return output;
 
@@ -445,7 +543,7 @@ async function executeLocalActions(
         tabIdRef,
         contextMessage,
         currentState,
-        pageElements,
+        uncompressedPageElements,
         executedActions,
         model
       );
@@ -457,6 +555,7 @@ async function executeLocalActions(
         await new Promise((resolve) => setTimeout(resolve, 2000));
       } else {
         const prompt = `Action "${action.type}" failed after ${maxRetries} attempts: ${err}. Suggest alternatives for: '${currentState.user_command}'.`;
+        // Since this is a failure, we need to ensure FINISH_PROCESS_COMMAND is sent if the recursive processCommand fails
         await processCommand(
           tabIdRef.value,
           prompt,
@@ -473,16 +572,11 @@ async function executeLocalActions(
 function getActionDescription(action: LocalAction): string {
   switch (action.type) {
     case "click":
-    case "click_element":
-      return `Clicked on ${
-        action.data.index || action.data.selector || "element"
-      }`;
+      return `Clicked on element at index ${action.data.index}`;
     case "navigate":
       return `Navigated to ${action.data.url}`;
     case "extract":
-      return `Extracted from ${
-        action.data.index || action.data.selector || "element"
-      }`;
+      return `Extracted from element at index ${action.data.index}`;
     case "refetch":
       return "Re-fetched page elements";
     default:
@@ -493,165 +587,69 @@ function getActionDescription(action: LocalAction): string {
 async function performLocalAction(
   a: LocalAction,
   tabIdRef: { value: number },
-  pageElements: PageElement[],
   model: string
 ): Promise<any> {
   const logPrefix = `[background.ts] Tab ${tabIdRef.value}`;
-  const elementIndex = a.data.index;
-
-  const getElementByIndex = (index: number | undefined): PageElement | null => {
-    if (typeof index !== "number") return null;
-    const el = pageElements.find((pe) => pe.index === index);
-    if (!el)
-      throw new Error(`${logPrefix} Element not found for index ${index}`);
-    return el;
-  };
-
-  const buildSelectorFromElement = (el: PageElement): string => {
-    const { tagName, attributes } = el;
-    if (attributes.id) return `#${attributes.id}`;
-    if (attributes.class)
-      return `${tagName.toLowerCase()}.${attributes.class
-        .trim()
-        .split(/\s+/)
-        .join(".")}`;
-    const otherAttrs = Object.entries(attributes)
-      .filter(([key]) => key !== "id" && key !== "class")
-      .map(([key, value]) => `[${key}="${value}"]`)
-      .join("");
-    return otherAttrs
-      ? `${tagName.toLowerCase()}${otherAttrs}`
-      : tagName.toLowerCase();
-  };
-
-  const sendActionWithIframe = async (action: LocalAction) => {
-    const el = getElementByIndex(elementIndex);
-    if (el && el.frame.length > 0) {
-      console.log(
-        `${logPrefix} Executing in iframe with selector: ${action.data.selector}`,
-        el.frame
-      );
-      const response = await chrome.scripting.executeScript({
-        target: { tabId: tabIdRef.value },
-        func: (framePath: number[], actionData: LocalAction) => {
-          let context: Window = window;
-          for (const idx of framePath) {
-            const iframes = context.document.getElementsByTagName("iframe");
-            if (idx >= iframes.length)
-              throw new Error("Iframe index out of range");
-            const nextContext = iframes[idx].contentWindow;
-            if (!nextContext)
-              throw new Error("Iframe contentWindow inaccessible");
-            context = nextContext;
-          }
-          const el = context.document.querySelector(
-            actionData.data.selector || ""
-          );
-          if (!el)
-            throw new Error(
-              `Element not found in iframe for selector: ${actionData.data.selector}`
-            );
-          switch (actionData.type) {
-            case "click":
-            case "click_element":
-              (el as any).click();
-              break;
-            case "input_text":
-              (el as HTMLInputElement).value = actionData.data.text || "";
-              el.dispatchEvent(new Event("input", { bubbles: true }));
-              el.dispatchEvent(new Event("change", { bubbles: true }));
-              break;
-            case "submit_form":
-              (el as HTMLFormElement).submit();
-              break;
-            case "key_press":
-              el.dispatchEvent(
-                new KeyboardEvent("keydown", { key: actionData.data.key })
-              );
-              break;
-            case "extract":
-              return el.textContent || "";
-            default:
-              throw new Error(
-                `Unsupported action in iframe: ${actionData.type}`
-              );
-          }
-        },
-        args: [el.frame, action],
-      });
-      return response?.[0]?.result;
-    }
-    return sendActionToTab(action, tabIdRef.value);
-  };
-
-  console.log(`${logPrefix} Initial action data:`, a.data);
-
-  const el = getElementByIndex(elementIndex);
-  if (
-    a.type !== "scroll" &&
-    a.type !== "refetch" &&
-    a.type !== "done" &&
-    a.type !== "go_to_url" &&
-    !a.data.selector &&
-    !el
-  ) {
-    throw new Error(`${logPrefix} No selector or valid index for ${a.type}`);
-  }
-  if (!a.data.selector && el) {
-    a.data.selector = buildSelectorFromElement(el);
-    console.log(
-      `${logPrefix} Constructed selector from element: ${a.data.selector}`
-    );
-  } else {
-    console.log(`${logPrefix} Using provided selector: ${a.data.selector}`);
-  }
 
   switch (a.type) {
     case "go_to_url":
-      if (!a.data.url) throw new Error(`${logPrefix} No URL provided`);
+    case "navigate":
+      if (!a.data.url) {
+        const errorMessage = `${logPrefix} No URL provided`;
+        await chrome.runtime.sendMessage({
+          type: "FINISH_PROCESS_COMMAND",
+          response: errorMessage,
+        });
+        throw new Error(errorMessage);
+      }
       console.log(`${logPrefix} Navigating to ${a.data.url}`);
       await navigateTab(tabIdRef.value, a.data.url);
       break;
 
     case "open_tab":
-    case "navigate":
-      if (!a.data.url) throw new Error(`${logPrefix} No URL provided`);
+      if (!a.data.url) {
+        const errorMessage = `${logPrefix} No URL provided`;
+        await chrome.runtime.sendMessage({
+          type: "FINISH_PROCESS_COMMAND",
+          response: errorMessage,
+        });
+        throw new Error(errorMessage);
+      }
       console.log(`${logPrefix} Opening tab with ${a.data.url}`);
       const newTab = await createTab(a.data.url);
       if (newTab.id) tabIdRef.value = newTab.id;
       break;
 
     case "verify":
-      if (!a.data.url) throw new Error(`${logPrefix} No URL provided`);
+      if (!a.data.url) {
+        const errorMessage = `${logPrefix} No URL provided`;
+        await chrome.runtime.sendMessage({
+          type: "FINISH_PROCESS_COMMAND",
+          response: errorMessage,
+        });
+        throw new Error(errorMessage);
+      }
       console.log(`${logPrefix} Verifying URL: ${a.data.url}`);
       await verifyOrOpenTab(a.data.url, tabIdRef);
       break;
 
     case "click":
-    case "click_element":
     case "input_text":
     case "submit_form":
-    case "key_press": {
-      if (a.type === "key_press" && !a.data.key) {
-        throw new Error(`${logPrefix} No key specified`);
-      }
-      console.log(
-        `${logPrefix} Executing ${a.type} with selector: ${a.data.selector}`,
-        a.data
-      );
-      await sendActionWithIframe(a);
-      break;
-    }
-
-    case "refresh":
-      console.log(`${logPrefix} Refreshing tab`);
-      await chrome.tabs.reload(tabIdRef.value);
-      await waitForTabLoad(tabIdRef.value);
-      break;
-
+    case "key_press":
     case "extract": {
-      console.log(`${logPrefix} Extracting with selector: ${a.data.selector}`);
-      return await sendActionWithIframe(a);
+      try {
+        return await sendActionToTab(a, tabIdRef.value);
+      } catch (err) {
+        const errorMessage = `${logPrefix} Failed to perform action ${
+          a.type
+        }: ${err instanceof Error ? err.message : "Unknown error"}`;
+        await chrome.runtime.sendMessage({
+          type: "FINISH_PROCESS_COMMAND",
+          response: errorMessage,
+        });
+        throw err;
+      }
     }
 
     case "scroll":
@@ -663,25 +661,12 @@ async function performLocalAction(
       console.log(`${logPrefix} Tasks completed`);
       const response = {
         message: a.data.text || "Task completed.",
-        output: a.data.output, // Include output if present
+        output: a.data.output,
       };
-      console.log(`${logPrefix} Sending COMMAND_RESPONSE:`, response);
-      chrome.runtime.sendMessage(
-        {
-          type: "COMMAND_RESPONSE",
-          response,
-        },
-        () => {
-          if (chrome.runtime.lastError) {
-            console.warn(
-              `${logPrefix} COMMAND_RESPONSE failed:`,
-              chrome.runtime.lastError.message
-            );
-          } else {
-            console.log(`${logPrefix} COMMAND_RESPONSE sent successfully`);
-          }
-        }
-      );
+      chrome.runtime.sendMessage({
+        type: "COMMAND_RESPONSE",
+        response,
+      });
       automationStopped = true;
       return "DONE";
 
@@ -708,30 +693,20 @@ async function performLocalAction(
       const question = a.data.question || "Please provide instructions.";
       console.log(`${logPrefix} Asking: ${question}`);
       automationStopped = true;
-      chrome.runtime.sendMessage({ type: "UPDATE_SIDEPANEL", question }, () => {
-        if (chrome.runtime.lastError) {
-          console.warn(
-            `${logPrefix} Sidepanel message failed:`,
-            chrome.runtime.lastError.message
-          );
-        }
+      chrome.runtime.sendMessage({ type: "UPDATE_SIDEPANEL", question });
+      chrome.tabs.sendMessage(tabIdRef.value, {
+        type: "DISPLAY_MESSAGE",
+        response: { message: question },
       });
-      chrome.tabs.sendMessage(
-        tabIdRef.value,
-        { type: "DISPLAY_MESSAGE", response: { message: question } },
-        () => {
-          if (chrome.runtime.lastError) {
-            console.warn(
-              `${logPrefix} Tab message failed:`,
-              chrome.runtime.lastError.message
-            );
-          }
-        }
-      );
       return "ASK_PAUSED";
 
     default:
-      throw new Error(`${logPrefix} Unknown action: ${a.type}`);
+      const errorMessage = `${logPrefix} Unknown action: ${a.type}`;
+      await chrome.runtime.sendMessage({
+        type: "FINISH_PROCESS_COMMAND",
+        response: errorMessage,
+      });
+      throw new Error(errorMessage);
   }
 }
 
@@ -782,6 +757,10 @@ chrome.runtime.onMessage.addListener(async (msg, _sender, resp) => {
       currentWindow: true,
     });
     if (!activeTab?.id) {
+      await chrome.runtime.sendMessage({
+        type: "FINISH_PROCESS_COMMAND",
+        response: "No active tab found, aborting command processing.",
+      });
       resp({ success: false, error: "No active tab" });
       return;
     }
@@ -792,19 +771,16 @@ chrome.runtime.onMessage.addListener(async (msg, _sender, resp) => {
       msg.command,
       msg.command,
       [],
-      msg.model || "gemini" // Pass model from ChatWidget
+      msg.model || "gemini"
     );
-    await chrome.runtime.sendMessage({
-      type: "FINISH_PROCESS_COMMAND",
-      response: "Done",
-    });
     resp({ success: true });
   } else if (msg.type === "NEW_CHAT") {
     await chrome.storage.local.set({ conversationHistory: [] });
     resp({ success: true });
   } else if (msg.type === "STOP_AUTOMATION") {
     automationStopped = true;
-    resp({ success: true }); // Ensure response is sent
+    // User-initiated stop, do not send FINISH_PROCESS_COMMAND
+    resp({ success: true });
   }
 });
 

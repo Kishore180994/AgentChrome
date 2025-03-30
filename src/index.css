@@ -1,20 +1,47 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@keyframes gloss {
+/* Starfall Cascade */
+@keyframes starfall-cascade {
     0% {
-        transform: translateX(-100%);
+        transform: translateY(-100%) scale(0.5);
+        opacity: 0;
+    }
+
+    50% {
+        transform: translateY(0%) scale(1);
+        opacity: 1;
     }
 
     100% {
-        transform: translateX(100%);
+        transform: translateY(100%) scale(0.5);
+        opacity: 0;
     }
 }
 
-.animate-gloss {
-    animation: gloss 1.5s infinite linear;
-    background-size: 200%;
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.8) 50%, rgba(255, 255, 255, 0) 100%);
+.d4m-animate-starfall-cascade-1 {
+    animation: starfall-cascade 1.8s infinite 0s;
 }
 
+.d4m-animate-starfall-cascade-2 {
+    animation: starfall-cascade 1.8s infinite 0.4s;
+}
+
+.d4m-animate-starfall-cascade-3 {
+    animation: starfall-cascade 1.8s infinite 0.8s;
+}
+
+/* Glowing Horizon Bar */
+@keyframes glowing-horizon {
+    0% {
+        background-position: 0% 50%;
+    }
+
+    100% {
+        background-position: 200% 50%;
+    }
+}
+
+.d4m-animate-glowing-horizon {
+    animation: glowing-horizon 2s linear infinite;
+}

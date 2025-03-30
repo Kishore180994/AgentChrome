@@ -1,5 +1,4 @@
-// "actionTypes.ts" might be your union of actions like input_text, click_element, etc.
-
+// responseFormat.ts
 import { AgentActionItem } from "./actionType";
 
 /**

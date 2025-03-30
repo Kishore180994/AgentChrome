@@ -11,6 +11,50 @@ const MarkdownWrapper: React.FC<{ content: string }> = ({ content }) => {
     setIsWrapped((prev) => !prev);
   };
 
+  // Preprocess the content to fix malformed code blocks
+  const preprocessContent = (input: string): string => {
+    // Split the content into lines
+    const lines = input.split("\n");
+    let inCodeBlock = false;
+    let codeBlockLang = "";
+    const processedLines: string[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trimEnd(); // Preserve leading whitespace, trim trailing
+
+      // Detect the start of a code block
+      if (line.startsWith("```")) {
+        if (!inCodeBlock) {
+          // Start of a code block
+          inCodeBlock = true;
+          codeBlockLang = line.slice(3).trim(); // Extract language (e.g., "javascript")
+          processedLines.push(line);
+        } else {
+          // End of a code block
+          inCodeBlock = false;
+          codeBlockLang = "";
+          processedLines.push(line);
+        }
+      } else if (inCodeBlock) {
+        // Inside a code block
+        processedLines.push(line);
+      } else {
+        // Outside a code block
+        processedLines.push(line);
+      }
+    }
+
+    // If we're still in a code block at the end, add closing backticks
+    if (inCodeBlock) {
+      processedLines.push("```");
+    }
+
+    // Join the lines back together
+    return processedLines.join("\n");
+  };
+
+  const processedContent = preprocessContent(content);
+
   return (
     <div className="d4m-text-white d4m-text-xs">
       <Markdown
@@ -78,7 +122,7 @@ const MarkdownWrapper: React.FC<{ content: string }> = ({ content }) => {
           ),
         }}
       >
-        {content}
+        {processedContent}
       </Markdown>
     </div>
   );
