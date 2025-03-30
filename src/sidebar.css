@@ -1,0 +1,36 @@
+/* src/styles/index.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+@layer utilities {
+    @keyframes starfall-cascade {
+        0% {
+            transform: translateY(-100%) scale(0.5);
+            opacity: 0;
+        }
+
+        50% {
+            transform: translateY(0%) scale(1);
+            opacity: 1;
+        }
+
+        100% {
+            transform: translateY(100%) scale(0.5);
+            opacity: 0;
+        }
+    }
+
+    .d4m-animate-starfall-cascade-1 {
+        animation: starfall-cascade 1.8s infinite 0s;
+    }
+
+    .d4m-animate-starfall-cascade-2 {
+        animation: starfall-cascade 1.8s infinite 0.4s;
+    }
+
+    .d4m-animate-starfall-cascade-3 {
+        animation: starfall-cascade 1.8s infinite 0.8s;
+    }
+}
