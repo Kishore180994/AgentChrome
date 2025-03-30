@@ -55,9 +55,8 @@ export function ChatWidget() {
   const [accentColor, setAccentColor] = useState<AccentColor>("rose");
   const [mode, setMode] = useState<"light" | "dark">("dark");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [currentAnimation, setCurrentAnimation] = useState<
-    "starfallCascade" | "glowingHorizon"
-  >("glowingHorizon");
+  const [currentAnimation, setCurrentAnimation] =
+    useState<"starfallCascade">("starfallCascade");
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [showCommandPopup, setShowCommandPopup] = useState(false);
@@ -300,9 +299,7 @@ export function ChatWidget() {
     setError(null);
     setIsLoading(true);
     setIsTextareaFocused(false);
-    setCurrentAnimation(
-      Math.random() > 0.5 ? "starfallCascade" : "glowingHorizon"
-    );
+    setCurrentAnimation("starfallCascade");
     setCommandHistory((prev) => {
       const updatedHistory = [
         userMessage,
@@ -496,19 +493,6 @@ export function ChatWidget() {
           }}
         ></div>
       </div>
-      <span
-        className={`d4m-absolute d4m-top-1/2 d4m-left-1/2 d4m-transform d4m--translate-x-1/2 d4m--translate-y-1/2 ${textColor} d4m-text-sm d4m-font-medium`}
-      >
-        Processing...
-      </span>
-    </div>
-  );
-
-  const GlowingHorizonAnimation = () => (
-    <div className="d4m-relative d4m-w-full d4m-h-[48px] d4m-overflow-hidden d4m-flex d4m-items-center d4m-justify-center">
-      <div
-        className={`d4m-w-full d4m-h-2 d4m-bg-gradient-to-r d4m-from-transparent d4m-via-${accentColor}-400 d4m-to-transparent d4m-bg-[length:200%_100%] d4m-animate-glowing-horizon d4m-shadow-[0_0_15px_rgba(251,191,36,0.7)]`}
-      ></div>
       <span
         className={`d4m-absolute d4m-top-1/2 d4m-left-1/2 d4m-transform d4m--translate-x-1/2 d4m--translate-y-1/2 ${textColor} d4m-text-sm d4m-font-medium`}
       >
@@ -811,9 +795,6 @@ export function ChatWidget() {
           >
             {currentAnimation === "starfallCascade" && (
               <StarfallCascadeAnimation />
-            )}
-            {currentAnimation === "glowingHorizon" && (
-              <GlowingHorizonAnimation />
             )}
             <button
               onClick={handleStop}
