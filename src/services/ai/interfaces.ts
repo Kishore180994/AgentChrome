@@ -61,7 +61,6 @@ export interface PageElement {
   tagName: string;
   text: string;
   attributes: Record<string, string>;
-  frame: number[];
 }
 
 export interface BoundingBox {

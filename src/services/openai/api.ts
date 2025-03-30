@@ -1,5 +1,5 @@
+// api.ts
 /// <reference types="@types/chrome" />
-
 import { AgentResponseFormat, MemoryState } from "../../types/responseFormat";
 import {
   ClaudeChatContent,
@@ -44,24 +44,6 @@ export async function chatWithAI(
   try {
     // Capture screenshot if none provided and provider supports vision
     let finalScreenShotDataUrl = screenShotDataUrl;
-    // if (
-    //   !finalScreenShotDataUrl &&
-    //   (provider === "gemini" || provider === "claude")
-    // ) {
-    //   const [tab] = await chrome.tabs.query({
-    //     active: true,
-    //     currentWindow: true,
-    //   });
-    //   if (tab?.id) {
-    //     finalScreenShotDataUrl = await new Promise((resolve) => {
-    //       chrome.tabs.captureVisibleTab(
-    //         tab.windowId,
-    //         { format: "png" },
-    //         resolve
-    //       );
-    //     });
-    //   }
-    // }
 
     // Set the current provider for consistency
     currentProvider = provider;

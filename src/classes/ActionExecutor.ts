@@ -1,64 +1,45 @@
-// ActionExecutor.ts
 import { LocalAction } from "../types/actionType";
-import { DOMManager } from "./DOMManager";
-
-function querySelectorWithIframes(
-  selector: string,
-  doc: Document = document
-): { element: Element | null; ownerDocument: Document } {
-  const element = doc.querySelector(selector);
-  if (element) return { element, ownerDocument: doc };
-
-  const iframes = Array.from(doc.getElementsByTagName("iframe"));
-  for (const iframe of iframes) {
-    try {
-      const iframeDoc = iframe.contentDocument;
-      if (!iframeDoc) continue;
-      const result = querySelectorWithIframes(selector, iframeDoc);
-      if (result.element) return result;
-    } catch (error) {
-      console.warn(
-        "[querySelectorWithIframes] Could not access iframe:",
-        error
-      );
-    }
-  }
-
-  return { element: null, ownerDocument: doc };
-}
+import { UncompressedPageElement } from "./DOMManager";
 
 export class ActionExecutor {
-  private domManager: DOMManager;
+  private uncompressedElements: UncompressedPageElement[];
 
-  constructor(domManager: DOMManager) {
-    this.domManager = domManager;
+  constructor() {
+    this.uncompressedElements = [];
+  }
+
+  setElements(elements: UncompressedPageElement[]): void {
+    this.uncompressedElements = elements;
+    console.log(
+      "[ActionExecutor] Set elements:",
+      this.uncompressedElements.length
+    );
   }
 
   async execute(action: LocalAction): Promise<any> {
+    console.log(
+      `[ActionExecutor] Executing action: ${action.type}`,
+      action.data
+    );
     const { type, data } = action;
     try {
       switch (type) {
         case "click":
-        case "click_element":
-          await this.handleClick(data.selector || "", data.index);
+          await this.handleClick(data.index);
           break;
         case "input_text":
-          await this.handleInputText(
-            data.selector || "",
-            data.text || "",
-            data.index
-          );
+          await this.handleInputText(data.index, data.text || "");
           break;
         case "scroll":
           await this.handleScroll(data.offset, data.direction);
           break;
         case "submit_form":
-          await this.handleSubmitForm(data.selector || "", data.index);
+          await this.handleSubmitForm(data.index);
           break;
         case "extract":
-          return await this.handleExtract(data.selector || "", data.index);
+          return await this.handleExtract(data.index);
         case "key_press":
-          await this.handleKeyPress(data.selector || "", data.key, data.index);
+          await this.handleKeyPress(data.index, data.key);
           break;
         default:
           throw new Error(`Unknown action type: ${type}`);
@@ -69,32 +50,102 @@ export class ActionExecutor {
     }
   }
 
-  private async handleClick(selector: string, index?: number): Promise<void> {
-    const element = await this.getElement(selector, index);
-    element.click();
+  private getElementContext(index: number | undefined): {
+    element: HTMLElement;
+    contextWindow: Window;
+  } {
+    if (typeof index !== "number") {
+      throw new Error(`[ActionExecutor] Invalid index: ${index}`);
+    }
+
+    const targetElementData = this.uncompressedElements.find(
+      (e) => e.index === index
+    );
+    if (!targetElementData) {
+      throw new Error(`[ActionExecutor] Element not found for index: ${index}`);
+    }
+
+    const element = targetElementData.element;
+    if (!element) {
+      throw new Error(
+        `[ActionExecutor] Element reference missing for index: ${index}`
+      );
+    }
+
+    // Determine the context window (top-level or iframe)
+    let contextWindow: Window | null = null;
+    let currentElement: HTMLElement | null = element;
+    while (currentElement && !contextWindow) {
+      const ownerDocument = currentElement.ownerDocument;
+      contextWindow = ownerDocument.defaultView;
+      currentElement = ownerDocument.defaultView
+        ?.frameElement as HTMLElement | null;
+    }
+
+    if (!contextWindow) {
+      throw new Error(
+        `[ActionExecutor] No context window for element at index ${index}`
+      );
+    }
+
+    console.log(`[ActionExecutor] Found element ${index} in context`);
+    return { element, contextWindow };
+  }
+
+  private async handleClick(index: number | undefined): Promise<void> {
+    const { element, contextWindow } = this.getElementContext(index);
+    await new Promise<void>((resolve) => {
+      contextWindow.requestAnimationFrame(() => {
+        element.click();
+        resolve();
+      });
+    });
   }
 
   private async handleInputText(
-    selector: string,
-    text: string,
-    index?: number
+    index: number | undefined,
+    text: string
   ): Promise<void> {
-    const element = await this.getElement(selector, index);
-    const doc = element.ownerDocument;
+    const { element, contextWindow } = this.getElementContext(index);
+    const doc = contextWindow.document;
 
-    if (
-      element instanceof doc.defaultView!.HTMLInputElement ||
-      element instanceof doc.defaultView!.HTMLTextAreaElement
-    ) {
-      element.value = text;
-      element.dispatchEvent(new Event("input", { bubbles: true }));
-      element.dispatchEvent(new Event("change", { bubbles: true }));
-    } else if (element.isContentEditable) {
-      element.focus();
-      doc.execCommand("insertText", false, text);
-    } else {
-      element.textContent = text;
-    }
+    await new Promise<void>((resolve) => {
+      contextWindow.requestAnimationFrame(() => {
+        console.log("Element type:", element.constructor.name, "Text:", text); // Debug element type
+        if (
+          element instanceof HTMLInputElement ||
+          element instanceof HTMLTextAreaElement
+        ) {
+          element.focus();
+          element.value = text; // Set property
+          element.setAttribute("value", text); // Set attribute
+          console.log("Value property after set:", element.value); // Debug property
+          console.log(
+            "Value attribute after set:",
+            element.getAttribute("value")
+          ); // Debug attribute
+
+          const inputEvent = new InputEvent("input", {
+            bubbles: true,
+            cancelable: true,
+            data: text,
+          });
+          element.dispatchEvent(inputEvent);
+
+          const changeEvent = new Event("change", {
+            bubbles: true,
+            cancelable: true,
+          });
+          element.dispatchEvent(changeEvent);
+        } else if (element.isContentEditable) {
+          element.focus();
+          doc.execCommand("insertText", false, text);
+        } else {
+          element.textContent = text;
+        }
+        resolve();
+      });
+    });
   }
 
   private async handleScroll(
@@ -119,96 +170,58 @@ export class ActionExecutor {
       default:
         throw new Error(`Unknown scroll direction: ${direction}`);
     }
-    window.scrollBy(scrollOptions);
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => {
+        window.scrollBy(scrollOptions);
+        resolve();
+      });
+    });
   }
 
-  private async handleSubmitForm(
-    selector: string,
-    index?: number
-  ): Promise<void> {
-    const element = await this.getElement(selector, index);
-    const doc = element.ownerDocument;
-
-    if (element instanceof doc.defaultView!.HTMLFormElement) {
-      element.submit();
-    } else {
-      const form = element.closest("form");
-      if (form) {
-        form.submit();
-      } else {
-        throw new Error("No form found for submit_form");
-      }
-    }
+  private async handleSubmitForm(index: number | undefined): Promise<void> {
+    const { element, contextWindow } = this.getElementContext(index);
+    await new Promise<void>((resolve) => {
+      contextWindow.requestAnimationFrame(() => {
+        if (element instanceof HTMLFormElement) {
+          element.submit();
+        } else {
+          const form = element.closest("form");
+          if (form) form.submit();
+          else
+            throw new Error("[ActionExecutor] No form found for submit_form");
+        }
+        resolve();
+      });
+    });
   }
 
-  private async handleExtract(
-    selector: string,
-    index?: number
-  ): Promise<string> {
-    const element = await this.getElement(selector, index);
+  private async handleExtract(index: number | undefined): Promise<string> {
+    const { element } = this.getElementContext(index);
     const content = element.textContent || "";
     console.log(`[ActionExecutor] Extracted content: ${content}`);
     return content;
   }
 
   private async handleKeyPress(
-    selector: string,
-    key?: string,
-    index?: number
+    index: number | undefined,
+    key?: string
   ): Promise<void> {
-    const element = await this.getElement(selector, index);
-    const doc = element.ownerDocument;
-
-    element.focus();
-    if (
-      element instanceof doc.defaultView!.HTMLInputElement ||
-      element instanceof doc.defaultView!.HTMLTextAreaElement
-    ) {
-      element.value += " ";
-      element.dispatchEvent(new InputEvent("input", { bubbles: true }));
-    }
-
-    const keyToPress = key || "Enter";
-    const keyEvent = new KeyboardEvent("keydown", {
-      key: keyToPress,
-      code: keyToPress === "Enter" ? "Enter" : keyToPress,
-      keyCode: keyToPress === "Enter" ? 13 : 0,
-      which: keyToPress === "Enter" ? 13 : 0,
-      bubbles: true,
-      cancelable: true,
+    const { element, contextWindow } = this.getElementContext(index);
+    await new Promise<void>((resolve) => {
+      contextWindow.requestAnimationFrame(() => {
+        element.focus();
+        const keyToPress = key || "Enter";
+        const keyEvent = new KeyboardEvent("keydown", {
+          key: keyToPress,
+          code: keyToPress === "Enter" ? "Enter" : keyToPress,
+          keyCode: keyToPress === "Enter" ? 13 : 0,
+          which: keyToPress === "Enter" ? 13 : 0,
+          bubbles: true,
+          cancelable: true,
+        });
+        element.dispatchEvent(keyEvent);
+        resolve();
+      });
     });
-    element.dispatchEvent(keyEvent);
-  }
-
-  private async getElement(
-    selector: string,
-    index?: number
-  ): Promise<HTMLElement> {
-    if (!selector && typeof index !== "number") {
-      throw new Error("No selector or index provided");
-    }
-
-    let finalSelector = selector;
-    if (!selector && typeof index === "number") {
-      // Only use index if no selector is provided
-      const elements = this.domManager.extractPageElements(0);
-      const pageElement = elements.find((pe) => pe.index === index);
-      if (!pageElement) {
-        throw new Error(`Element not found for index: ${index}`);
-      }
-      finalSelector = `${pageElement.tagName}[data-index="${pageElement.index}"]`;
-    }
-
-    console.log(`[ActionExecutor] Using selector: ${finalSelector}`); // Debug log
-    const { element, ownerDocument } = querySelectorWithIframes(finalSelector);
-    if (!element) {
-      throw new Error(`Element not found for selector: ${finalSelector}`);
-    }
-
-    if (!(element instanceof ownerDocument.defaultView!.HTMLElement)) {
-      throw new Error(`Element is not an HTMLElement: ${finalSelector}`);
-    }
-
-    return element;
   }
 }

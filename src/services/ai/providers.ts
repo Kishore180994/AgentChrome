@@ -121,11 +121,26 @@ export async function callGemini(
   let imagePart;
   if (screenShotDataUrl) {
     const [mimeTypePart, base64Data] = screenShotDataUrl.split(",");
-    const mimeType = mimeTypePart.split(":")[1].split(";")[0];
+    console.log(
+      "[callGemini] Adding image part to message...",
+      mimeTypePart,
+      base64Data
+    );
+    // Extract mimeType more reliably
+    const mimeTypeMatch = mimeTypePart.match(/data:(image\/[a-z]+);base64/);
+    const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : null;
+    if (!mimeType) {
+      console.error(
+        "[callGemini] Failed to extract valid MIME type from:",
+        mimeTypePart
+      );
+      return null;
+    }
     imagePart = { inlineData: { data: base64Data, mimeType } };
   }
 
   const messageToSend = imagePart ? [lastUserText, imagePart] : lastUserText;
+  console.log(`[callGemini] messageToSend:`, messageToSend);
   const result = await chatSession.sendMessage(messageToSend);
 
   const raw = result.response?.text() || "";

@@ -12,7 +12,6 @@ const Sidebar: React.FC = () => {
         d4m-duration-300
         d4m-ease-in-out
         d4m-text-gray-100
-        d4m-p-4
       "
     >
       <App />

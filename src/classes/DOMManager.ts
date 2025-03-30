@@ -1,8 +1,10 @@
 import { PageElement } from "../services/ai/interfaces"; // Adjust path as needed
 
-export class DOMManager {
-  private elementCache: Map<number, PageElement[]> = new Map();
+export interface UncompressedPageElement extends PageElement {
+  element: HTMLElement; // Direct reference to the DOM element
+}
 
+export class DOMManager {
   constructor() {}
 
   /** Clears all debug highlights from the document. */
@@ -11,108 +13,120 @@ export class DOMManager {
   }
 
   /**
-   * Generates a concise XPath for an element.
-   * Uses `id` if available, otherwise builds a minimal path.
+   * Checks if an element is within the viewport (at least partially visible).
    */
-  getElementXPath(el: Element): string {
-    if (el.id) return `//*[@id="${el.id}"]`;
-    const segments: string[] = [];
-    let current: Element | null = el;
-    while (current && current.nodeType === Node.ELEMENT_NODE) {
-      const index =
-        Array.from(current.parentElement?.children || [])
-          .filter((child) => child.tagName === current?.tagName)
-          .indexOf(current) + 1;
-      segments.unshift(`${current.tagName.toLowerCase()}[${index}]`);
-      current = current.parentElement;
-    }
-    return "/" + segments.join("/");
+  private isInViewport(el: Element): boolean {
+    const rect = el.getBoundingClientRect();
+    const windowHeight =
+      window.innerHeight || document.documentElement.clientHeight;
+    const windowWidth =
+      window.innerWidth || document.documentElement.clientWidth;
+
+    // Element is in viewport if it intersects with the viewport
+    return (
+      rect.top < windowHeight &&
+      rect.bottom > 0 &&
+      rect.left < windowWidth &&
+      rect.right > 0
+    );
   }
 
   /**
    * Extracts elements from the page that are currently in the viewport for AI web automation.
+   * Returns both compressed (for AI) and uncompressed (for interaction) element sets.
+   * Adds a 2-second debug highlight to each extracted element.
    */
-  extractPageElements(tabId: number): PageElement[] {
-    const elements: PageElement[] = [];
+  extractPageElements(): {
+    compressed: PageElement[];
+    uncompressed: UncompressedPageElement[];
+  } {
+    const compressedElements: PageElement[] = [];
+    const uncompressedElements: UncompressedPageElement[] = [];
     let idx = 0;
 
     const processDocument = (
       doc: Document,
-      iframeOffset: { x: number; y: number } = { x: 0, y: 0 },
-      framePath: number[] = [],
-      depth: number = 0
-    ) => {
-      if (depth > 10) return; // Prevent infinite recursion
+      parentOffset: { x: number; y: number } = { x: 0, y: 0 }
+    ): void => {
+      // Process regular elements
+      const elements = doc.querySelectorAll(
+        "a, button, input, textarea, select, div[role='button'], h1, h2, h3, h4, h5, h6, fieldset, label"
+      );
+      elements.forEach((el) => {
+        if (!this.isElementImportant(el) || !this.isInViewport(el)) return;
 
-      // Process all elements
-      doc.querySelectorAll("*").forEach((el) => {
-        if (this.isElementImportant(el)) {
-          const rect = el.getBoundingClientRect();
-          const isInViewport =
-            rect.left + iframeOffset.x >= 0 &&
-            rect.top + iframeOffset.y >= 0 &&
-            rect.left + iframeOffset.x + rect.width <= window.innerWidth &&
-            rect.top + iframeOffset.y + rect.height <= window.innerHeight;
+        el.setAttribute("data-d4m-index", idx.toString());
+        const elementData: PageElement = {
+          index: idx,
+          tagName: el.tagName.toLowerCase(),
+          text: this.getMeaningfulText(el).slice(0, 50),
+          attributes: this.getRelevantAttributes(el),
+        };
+        compressedElements.push(elementData);
+        uncompressedElements.push({
+          ...elementData,
+          element: el as HTMLElement,
+        });
+        console.log(`[DOMManager] Element at index ${idx}:`, el);
 
-          if (!isInViewport || rect.width === 0 || rect.height === 0) return;
+        // Draw debug highlight with the parent offset
+        this.drawDebugHighlight(el, idx, parentOffset);
 
-          const attributes = this.getRelevantAttributes(el);
-
-          elements.push({
-            index: idx++,
-            tagName: el.tagName.toLowerCase(),
-            text: this.getMeaningfulText(el).slice(0, 50), // Reduced to 50 chars for token efficiency
-            attributes,
-            frame: [...framePath],
-          });
-        }
+        idx++;
       });
 
       // Process iframes
-      doc.querySelectorAll("iframe").forEach((iframe) => {
+      const iframes = doc.getElementsByTagName("iframe");
+      Array.from(iframes).forEach((iframe) => {
+        if (!this.isElementImportant(iframe) || !this.isInViewport(iframe))
+          return;
+
+        // Calculate the iframe's offset relative to the top-level document
         const iframeRect = iframe.getBoundingClientRect();
-        const isIframeInViewport =
-          iframeRect.left + iframeOffset.x >= 0 &&
-          iframeRect.top + iframeOffset.y >= 0 &&
-          iframeRect.left + iframeOffset.x + iframeRect.width <=
-            window.innerWidth &&
-          iframeRect.top + iframeOffset.y + iframeRect.height <=
-            window.innerHeight;
+        const iframeOffset = {
+          x: parentOffset.x + iframeRect.left,
+          y: parentOffset.y + iframeRect.top,
+        };
 
-        if (iframeRect.width === 0 || iframeRect.height === 0) return;
+        iframe.setAttribute("data-d4m-index", idx.toString());
+        const iframeData: PageElement = {
+          index: idx,
+          tagName: "iframe",
+          text: "",
+          attributes: this.getRelevantAttributes(iframe),
+        };
+        compressedElements.push(iframeData);
+        uncompressedElements.push({
+          ...iframeData,
+          element: iframe as HTMLElement,
+        });
+        console.log(`[DOMManager] Iframe at index ${idx}:`, iframe);
 
-        const iframeIndex = idx++;
-        const iframeAttributes = this.getRelevantAttributes(iframe);
+        // Draw debug highlight for the iframe itself
+        this.drawDebugHighlight(iframe, idx, parentOffset);
 
-        if (isIframeInViewport) {
-          elements.push({
-            index: iframeIndex,
-            tagName: "iframe",
-            text: "",
-            attributes: iframeAttributes,
-            frame: [...framePath],
-          });
-        }
+        idx++;
 
-        try {
-          const iframeDoc = iframe.contentDocument;
-          if (!iframeDoc) return;
-
-          const newFramePath = [...framePath, iframeIndex];
-          const newIframeOffset = {
-            x: iframeRect.left + window.scrollX + iframeOffset.x,
-            y: iframeRect.top + window.scrollY + iframeOffset.y,
-          };
-          processDocument(iframeDoc, newIframeOffset, newFramePath, depth + 1);
-        } catch (e) {
-          console.warn("Failed to process iframe:", e);
+        // Process iframe contents with the updated offset
+        if (iframe.contentDocument) {
+          processDocument(iframe.contentDocument, iframeOffset);
+        } else {
+          console.warn(
+            `[DOMManager] Iframe at index ${idx - 1} has no contentDocument`
+          );
         }
       });
     };
 
+    this.clearDebugHighlights();
     processDocument(document);
-    this.elementCache.set(tabId, elements);
-    return elements;
+    console.log(
+      `[DOMManager] Extracted ${uncompressedElements.length} elements`
+    );
+    return {
+      compressed: compressedElements,
+      uncompressed: uncompressedElements,
+    };
   }
 
   /**
@@ -128,22 +142,18 @@ export class DOMManager {
 
     if (!isVisible) return false;
 
-    // Interactive elements
     if (["button", "input", "a", "textarea", "select"].includes(tagName)) {
       return true;
     }
 
-    // Contextual elements with text
     if (["h1", "h2", "h3", "h4", "h5", "h6", "label"].includes(tagName)) {
       return textContent.length > 0;
     }
 
-    // Forms and fieldsets with content
     if (tagName === "form" || tagName === "fieldset") {
       return el.children.length > 0 || textContent.length > 0;
     }
 
-    // Divs and spans with interactive roles or editability
     if (tagName === "div" || tagName === "span") {
       const isEditable =
         el.getAttribute("contenteditable") === "true" ||
@@ -156,6 +166,10 @@ export class DOMManager {
         "switch",
       ].includes(role ?? "");
       return isEditable || hasInteractiveRole;
+    }
+
+    if (tagName === "iframe") {
+      return true; // Consider iframes important if they are visible
     }
 
     return false;
@@ -185,7 +199,6 @@ export class DOMManager {
       }
     });
 
-    // Add current value for inputs, textareas, and selects
     if (tagName === "input" || tagName === "textarea") {
       attributes["value"] = (
         el as HTMLInputElement | HTMLTextAreaElement
@@ -211,11 +224,10 @@ export class DOMManager {
     return `rgb(${r}, ${g}, ${b})`;
   }
 
-  /** Draws a debug highlight around an element with its index and selector, removes after 2 seconds. */
-  private drawDebugHighlight(
+  /** Draws a debug highlight around an element with its index, removes after 2 seconds. */
+  drawDebugHighlight(
     el: Element,
     index: number,
-    selector: string,
     iframeOffset: { x: number; y: number }
   ): void {
     const rect = el.getBoundingClientRect();
@@ -224,8 +236,8 @@ export class DOMManager {
     const randomColor = this.getRandomColor();
     Object.assign(highlight.style, {
       position: "absolute",
-      left: `${rect.left + window.scrollX + iframeOffset.x}px`,
-      top: `${rect.top + window.scrollY + iframeOffset.y}px`,
+      left: `${rect.left + iframeOffset.x}px`,
+      top: `${rect.top + iframeOffset.y}px`,
       width: `${rect.width}px`,
       height: `${rect.height}px`,
       border: `2px solid ${randomColor}`,
@@ -250,6 +262,6 @@ export class DOMManager {
     // Remove the highlight after 2 seconds
     setTimeout(() => {
       highlight.remove();
-    }, 2000);
+    }, 3000);
   }
 }
