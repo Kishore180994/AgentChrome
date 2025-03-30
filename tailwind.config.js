@@ -1,7 +1,13 @@
 /** @type {import('tailwindcss').Config} */
+import {
+  scopedPreflightStyles,
+  isolateInsideOfContainer,
+} from "tailwindcss-scoped-preflight";
+
 export default {
   prefix: "d4m-",
-  content: ["./index.html", "./sidepanel.html", "./src/**/*.{js,ts,jsx,tsx}"], // Fixed extra comma
+  content: ["./sidepanel.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  important: true,
   safelist: [
     "d4m-bg-rose-400",
     "d4m-bg-rose-500",
@@ -143,8 +149,6 @@ export default {
     "d4m-ring-blue-500",
     "d4m-ring-black",
     "d4m-ring-white",
-
-    // Add hover /20 background colors
     "hover:d4m-bg-rose-500/20",
     "hover:d4m-bg-cyan-500/20",
     "hover:d4m-bg-fuchsia-500/20",
@@ -157,8 +161,6 @@ export default {
     "hover:d4m-bg-blue-500/20",
     "hover:d4m-bg-black/20",
     "hover:d4m-bg-white/20",
-
-    // Add /30 selected background colors
     "d4m-bg-rose-500/30",
     "d4m-bg-cyan-500/30",
     "d4m-bg-fuchsia-500/30",
@@ -171,11 +173,30 @@ export default {
     "d4m-bg-blue-500/30",
     "d4m-bg-black/30",
     "d4m-bg-white/30",
+    // Manually added focus:ring classes
+    "focus:d4m-ring-rose-500",
+    "focus:d4m-ring-cyan-500",
+    "focus:d4m-ring-green-500",
+    "focus:d4m-ring-fuchsia-500",
+    "focus:d4m-ring-sky-500",
+    // Manually added border-t classes
+    "d4m-border-t-rose-400",
+    "d4m-border-t-cyan-400",
+    "d4m-border-t-green-400",
+    "d4m-border-t-fuchsia-400",
+    "d4m-border-t-sky-400",
+    // Manually added scrollbar-thumb classes
+    "d4m-scrollbar-thumb-gray-400",
+    "d4m-scrollbar-thumb-gray-600",
+    "d4m-scrollbar-thumb-gray-500/50",
   ],
   theme: {
     extend: {
       animation: {
         flow: "flow 2s infinite linear",
+        "starfall-cascade-1": "starfall-cascade 1.8s infinite 0s",
+        "starfall-cascade-2": "starfall-cascade 1.8s infinite 0.4s",
+        "starfall-cascade-3": "starfall-cascade 1.8s infinite 0.8s",
       },
       keyframes: {
         flow: {
@@ -183,8 +204,19 @@ export default {
           "50%": { backgroundPosition: "100% 50%" },
           "100%": { backgroundPosition: "0% 50%" },
         },
+        "starfall-cascade": {
+          "0%": { transform: "translateY(-100%) scale(0.5)", opacity: "0" },
+          "50%": { transform: "translateY(0%) scale(1)", opacity: "1" },
+          "100%": { transform: "translateY(100%) scale(0.5)", opacity: "0" },
+        },
       },
     },
   },
-  plugins: [],
+  plugins: [
+    scopedPreflightStyles({
+      isolationStrategy: isolateInsideOfContainer(".d4m-wrapper", {
+        except: "", // optional, to exclude some elements under .twp from being preflighted, like external markup
+      }),
+    }),
+  ],
 };

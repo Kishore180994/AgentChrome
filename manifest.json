@@ -16,14 +16,6 @@
   "host_permissions": [
     "*://*/*"
   ],
-  "offscreen_documents":[
-    {
-      "matches": ["*://*/*"],
-      "url": "offscreen.html",
-      "reason": "DOM_SCRAPING",
-      "use_dynamic_url": false
-    }
-  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; img-src 'self' https://doforme.s3.us-east-1.amazonaws.com; connect-src 'self' https://api.openai.com https://*.openai.com https://generativelanguage.googleapis.com https://doforme.s3.us-east-1.amazonaws.com https://api.anthropic.com/v1/messages https://api.anthropic.com/*; object-src 'none';"
   },
@@ -49,23 +41,19 @@
   "content_scripts": [
     {
       "matches": ["*://*/*"],
-      "js": ["content.js"],
-      "css": ["index.css"]
+      "js": ["content.js", "sidebar.js"],
+      "css": ["sidebar.css"]
     }
   ],
   "web_accessible_resources": [{
     "resources": [
       "sidepanel.html",
       "sidebar.js",
+      "sidebar.css",
       "storage.js",
-      "index.html",
-      "index.css",
-      "index.js",
-      "main.js",
       "*.js.map",
       "assets/*",
-      "node_modules/@aws-sdk/client-s3/dist/browser/*.js",
-      "s3UploadService.js"
+      "node_modules/@aws-sdk/client-s3/dist/browser/*.js"
     ],
     "matches": ["*://*/*"]
   }],

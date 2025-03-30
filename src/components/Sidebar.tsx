@@ -5,7 +5,7 @@ const Sidebar: React.FC = () => {
   return (
     <div
       id="agent-chrome-sidebar"
-      className="
+      className="d4m-wrapper
       d4m-bg-gray-900
         d4m-to-black/90
         d4m-transition-transform
