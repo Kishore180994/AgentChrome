@@ -74,6 +74,58 @@ export function ChatWidget() {
     "Scroll to the bottom of the page",
     "show me the code that is displayed on the screen",
   ];
+  useEffect(() => {
+    const loadInitialState = async () => {
+      try {
+        const {
+          conversationHistory,
+          commandHistory,
+          theme,
+          accentColor,
+          mode,
+        } = await chrome.storage.local.get([
+          "conversationHistory",
+          "commandHistory",
+          "theme",
+          "accentColor",
+          "mode",
+        ]);
+
+        if (Array.isArray(conversationHistory))
+          setMessages(formatMessages(conversationHistory));
+
+        if (Array.isArray(commandHistory)) setCommandHistory(commandHistory);
+        if (theme) setTheme(theme);
+        if (accentColor) setAccentColor(accentColor);
+        if (mode) setMode(mode);
+      } catch (err) {
+        console.error("Error loading initial state:", err);
+      }
+    };
+
+    const handleStorageChange = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string
+    ) => {
+      if (areaName !== "local") return;
+
+      if (changes.conversationHistory) {
+        if (
+          changes.conversationHistory &&
+          Array.isArray(changes.conversationHistory)
+        )
+          setMessages(formatMessages(changes.conversationHistory));
+      }
+      if (changes.commandHistory) {
+        const newCommands = changes.commandHistory.newValue || [];
+        setCommandHistory(newCommands);
+      }
+    };
+
+    loadInitialState();
+    chrome.storage.onChanged.addListener(handleStorageChange);
+    return () => chrome.storage.onChanged.removeListener(handleStorageChange);
+  }, []);
 
   const loadSettings = async () => {
     try {
@@ -86,7 +138,7 @@ export function ChatWidget() {
           "commandHistory",
         ]);
       if (conversationHistory && Array.isArray(conversationHistory))
-        setMessages(conversationHistory);
+        setMessages(formatMessages(conversationHistory));
       if (commandHistory && Array.isArray(commandHistory))
         setCommandHistory(commandHistory);
       setTheme(theme || "neumorphism");
@@ -97,6 +149,43 @@ export function ChatWidget() {
       setError("Failed to load conversation history or settings.");
     }
   };
+
+  function formatMessages(messages: Message[]): Message[] {
+    return messages
+      .filter((msg) => {
+        if (msg.role === "execution") {
+          return Array.isArray(msg.content) && msg.content.length > 0;
+        }
+
+        if (msg.role === "model" && typeof msg.content === "string") {
+          try {
+            const parsed = JSON.parse(msg.content);
+            return !!parsed?.action?.[0]?.done?.output;
+          } catch {
+            // If it's just a plain string (non-JSON), we keep it
+            return true;
+          }
+        }
+
+        return true; // Always keep user messages
+      })
+      .map((msg) => {
+        if (msg.role === "model" && typeof msg.content === "string") {
+          try {
+            const parsed = JSON.parse(msg.content);
+            if (parsed?.action?.[0]?.done?.output) {
+              return {
+                ...msg,
+                content: parsed.action[0].done.output,
+              };
+            }
+          } catch {
+            // Leave as-is if not JSON
+          }
+        }
+        return msg;
+      });
+  }
 
   useEffect(() => {
     loadSettings();
