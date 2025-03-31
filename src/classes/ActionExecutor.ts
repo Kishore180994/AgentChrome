@@ -61,6 +61,7 @@ export class ActionExecutor {
     const targetElementData = this.uncompressedElements.find(
       (e) => e.index === index
     );
+
     if (!targetElementData) {
       throw new Error(`[ActionExecutor] Element not found for index: ${index}`);
     }
@@ -72,23 +73,13 @@ export class ActionExecutor {
       );
     }
 
-    // Determine the context window (top-level or iframe)
-    let contextWindow: Window | null = null;
-    let currentElement: HTMLElement | null = element;
-    while (currentElement && !contextWindow) {
-      const ownerDocument = currentElement.ownerDocument;
-      contextWindow = ownerDocument.defaultView;
-      currentElement = ownerDocument.defaultView
-        ?.frameElement as HTMLElement | null;
-    }
-
+    const contextWindow = element.ownerDocument?.defaultView;
     if (!contextWindow) {
       throw new Error(
-        `[ActionExecutor] No context window for element at index ${index}`
+        `[ActionExecutor] No context window found for index: ${index}`
       );
     }
 
-    console.log(`[ActionExecutor] Found element ${index} in context`);
     return { element, contextWindow };
   }
 
@@ -107,42 +98,51 @@ export class ActionExecutor {
     text: string
   ): Promise<void> {
     const { element, contextWindow } = this.getElementContext(index);
-    const doc = contextWindow.document;
+
+    // Helper to set value using React-safe native setter
+    function reactSetInputValue(
+      input: HTMLInputElement | HTMLTextAreaElement,
+      value: string
+    ) {
+      const prototype = Object.getPrototypeOf(input);
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        prototype,
+        "value"
+      )?.set;
+      valueSetter?.call(input, value);
+
+      const inputEvent = new Event("input", {
+        bubbles: true,
+        cancelable: false,
+      });
+
+      input.dispatchEvent(inputEvent);
+    }
 
     await new Promise<void>((resolve) => {
       contextWindow.requestAnimationFrame(() => {
-        console.log("Element type:", element.constructor.name, "Text:", text); // Debug element type
         if (
           element instanceof HTMLInputElement ||
           element instanceof HTMLTextAreaElement
         ) {
           element.focus();
-          element.value = text; // Set property
-          element.setAttribute("value", text); // Set attribute
-          console.log("Value property after set:", element.value); // Debug property
-          console.log(
-            "Value attribute after set:",
-            element.getAttribute("value")
-          ); // Debug attribute
 
-          const inputEvent = new InputEvent("input", {
-            bubbles: true,
-            cancelable: true,
-            data: text,
-          });
-          element.dispatchEvent(inputEvent);
-
-          const changeEvent = new Event("change", {
-            bubbles: true,
-            cancelable: true,
-          });
-          element.dispatchEvent(changeEvent);
+          // ✅ Set value in a React-compatible way
+          reactSetInputValue(element, text);
         } else if (element.isContentEditable) {
           element.focus();
-          doc.execCommand("insertText", false, text);
+          element.textContent = text;
+
+          element.dispatchEvent(
+            new Event("input", {
+              bubbles: true,
+              cancelable: false,
+            })
+          );
         } else {
           element.textContent = text;
         }
+
         resolve();
       });
     });

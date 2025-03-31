@@ -33,4 +33,19 @@
     .d4m-animate-starfall-cascade-3 {
         animation: starfall-cascade 1.8s infinite 0.8s;
     }
+
+        @keyframes slide-in {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        .d4m-animate-slide-in {
+            animation: slide-in 0.3s ease-out;
+        }
 }
+

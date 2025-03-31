@@ -16,6 +16,8 @@ import { StepState } from "../types/responseFormat";
 import { storage } from "../utils/storage";
 import { SettingsModal } from "./SettingsModal";
 import { AccentColor, themeStyles } from "../utils/themes";
+import { useSiriBorder } from "../hooks/UseSiriBorder";
+import { ToastNotification } from "./ToastNotifications";
 
 interface Message {
   id: string;
@@ -43,8 +45,8 @@ export function ChatWidget() {
   const [expandedExecutions, setExpandedExecutions] = useState<Set<number>>(
     new Set()
   );
-  const [userTypedInput, setUserTypedInput] = useState(""); // stores the actual typed command temporarily
-  const selectedCommandRef = useRef<HTMLDivElement | null>(null); // for scrollIntoView
+  const [userTypedInput, setUserTypedInput] = useState("");
+  const selectedCommandRef = useRef<HTMLDivElement | null>(null);
   const [isTextareaFocused, setIsTextareaFocused] = useState(false);
   const [selectedModel, setSelectedModel] = useState<"gemini" | "claude">(
     "gemini"
@@ -62,6 +64,10 @@ export function ChatWidget() {
   const [showCommandPopup, setShowCommandPopup] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "success" | "info" | "error";
+  } | null>(null);
 
   const suggestions = [
     "Open a new tab with Google",
@@ -74,6 +80,7 @@ export function ChatWidget() {
     "Scroll to the bottom of the page",
     "show me the code that is displayed on the screen",
   ];
+
   useEffect(() => {
     const loadInitialState = async () => {
       try {
@@ -93,7 +100,6 @@ export function ChatWidget() {
 
         if (Array.isArray(conversationHistory))
           setMessages(formatMessages(conversationHistory));
-
         if (Array.isArray(commandHistory)) setCommandHistory(commandHistory);
         if (theme) setTheme(theme);
         if (accentColor) setAccentColor(accentColor);
@@ -108,12 +114,8 @@ export function ChatWidget() {
       areaName: string
     ) => {
       if (areaName !== "local") return;
-
       if (changes.conversationHistory) {
-        if (
-          changes.conversationHistory &&
-          Array.isArray(changes.conversationHistory)
-        )
+        if (Array.isArray(changes.conversationHistory))
           setMessages(formatMessages(changes.conversationHistory));
       }
       if (changes.commandHistory) {
@@ -156,18 +158,15 @@ export function ChatWidget() {
         if (msg.role === "execution") {
           return Array.isArray(msg.content) && msg.content.length > 0;
         }
-
         if (msg.role === "model" && typeof msg.content === "string") {
           try {
             const parsed = JSON.parse(msg.content);
             return !!parsed?.action?.[0]?.done?.output;
           } catch {
-            // If it's just a plain string (non-JSON), we keep it
             return true;
           }
         }
-
-        return true; // Always keep user messages
+        return true;
       })
       .map((msg) => {
         if (msg.role === "model" && typeof msg.content === "string") {
@@ -248,10 +247,7 @@ export function ChatWidget() {
             (task) => task.step_number || task.description || task.status
           )
         ) {
-          processed.push({
-            type: "executionGroup",
-            taskHistories,
-          });
+          processed.push({ type: "executionGroup", taskHistories });
         }
       } else {
         if (currentModelGroup.length > 0) {
@@ -273,6 +269,8 @@ export function ChatWidget() {
       });
     setProcessedMessages(processed.reverse());
   };
+
+  useSiriBorder(isLoading);
 
   useEffect(() => {
     const handleBackgroundMessage = (
@@ -312,13 +310,11 @@ export function ChatWidget() {
         } else if (message.response.message) {
           content = message.response.message;
           if (message.response.output) {
-            // Pass the output as-is without manual Markdown formatting
             content += "\n\n" + message.response.output;
           }
         } else {
           const { data } = message.response;
           const { text, output } = data || {};
-          // Concatenate text and output without adding manual Markdown
           content = (text || "Task completed") + (output || "");
         }
         setMessages((prev) => {
@@ -332,18 +328,7 @@ export function ChatWidget() {
         setIsLoading(false);
         sendResponse({ success: true });
       } else if (message.type === "FINISH_PROCESS_COMMAND") {
-        setMessages((prev) => {
-          const updatedMessages = [
-            ...prev,
-            {
-              id: Date.now().toString(),
-              role: "model" as const,
-              content: "Command processing finished.",
-            },
-          ];
-          chrome.storage.local.set({ conversationHistory: updatedMessages });
-          return updatedMessages;
-        });
+        setToast({ message: message.response, type: "success" });
         setIsLoading(false);
         sendResponse({ success: true });
       } else if (message.type === "UPDATE_SIDEPANEL") {
@@ -387,6 +372,7 @@ export function ChatWidget() {
     setInput("");
     setError(null);
     setIsLoading(true);
+    setShowCommandPopup(false);
     setIsTextareaFocused(false);
     setCurrentAnimation("starfallCascade");
     setCommandHistory((prev) => {
@@ -427,6 +413,7 @@ export function ChatWidget() {
     } catch (err) {
       console.error("Failed to send message:", err);
       setError("Failed to send message.");
+      setToast({ message: "Failed to send message", type: "error" }); // Show error toast
       setIsLoading(false);
     }
   };
@@ -459,6 +446,7 @@ export function ChatWidget() {
     } catch (err) {
       console.error("Failed to send stop message:", err);
       setError("Failed to stop automation.");
+      setToast({ message: "Failed to stop automation", type: "error" }); // Show error toast
       setIsLoading(false);
     }
   };
@@ -471,10 +459,12 @@ export function ChatWidget() {
         setError(null);
         setIsLoading(false);
         chrome.storage.local.set({ conversationHistory: [] });
+        setToast({ message: "New chat started", type: "success" }); // Show toast
       });
     } catch (err) {
       console.error("Failed to send NEW_CHAT message:", err);
       setError("Failed to start new chat.");
+      setToast({ message: "Failed to start new chat", type: "error" }); // Show error toast
     }
   };
 
@@ -485,9 +475,8 @@ export function ChatWidget() {
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       if (commandHistory.length === 0) return;
-
       if (historyIndex === null) {
-        setUserTypedInput(input); // save current input
+        setUserTypedInput(input);
         setHistoryIndex(0);
         setInput(commandHistory[0]);
         setShowCommandPopup(true);
@@ -499,9 +488,7 @@ export function ChatWidget() {
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
       if (historyIndex === null) return;
-
       const prevIndex = historyIndex - 1;
-
       if (prevIndex < 0) {
         setHistoryIndex(null);
         setInput(userTypedInput);
@@ -556,7 +543,6 @@ export function ChatWidget() {
   const borderColor =
     mode === "light" ? "d4m-border-gray-300" : "d4m-border-gray-700";
 
-  // Animation Components
   const StarfallCascadeAnimation = () => (
     <div className="d4m-relative d4m-w-full d4m-h-[48px] d4m-overflow-hidden d4m-flex d4m-items-center d4m-justify-center">
       <div className="d4m-w-full d4m-h-full d4m-relative">
@@ -595,7 +581,6 @@ export function ChatWidget() {
       <div
         className={`d4m-w-full d4m-h-full d4m-flex d4m-flex-col ${currentTheme.container} d4m-relative`}
       >
-        {/* Overlay for blur effect */}
         {isTextareaFocused && (
           <div
             className={`d4m-absolute d4m-inset-0 d4m-backdrop-blur-[0.6px] d4m-bg-opacity-80 d4m-z-10 ${
@@ -604,7 +589,6 @@ export function ChatWidget() {
           ></div>
         )}
 
-        {/* Header */}
         <div
           className={`d4m-flex d4m-justify-between d4m-items-center d4m-px-3 d4m-py-2 ${currentTheme.header}`}
         >
@@ -641,7 +625,6 @@ export function ChatWidget() {
           </div>
         </div>
 
-        {/* Messages Container */}
         <div
           ref={messagesContainerRef}
           className={`d4m-flex-1 d4m-overflow-y-auto d4m-space-y-4 d4m-px-3 d4m-py-2 d4m-bg-transparent d4m-scrollbar-thin d4m-relative ${
@@ -856,7 +839,6 @@ export function ChatWidget() {
             return null;
           })}
 
-          {/* Suggestions Box - Centered in Messages Area */}
           {isTextareaFocused && (
             <div
               className={`d4m-absolute d4m-inset-0 d4m-flex d4m-items-center d4m-justify-center d4m-p-2 d4m-z-20 ${currentTheme.suggestion} d4m-bg-opacity-0 d4m-rounded-lg d4m-overflow-y-auto`}
@@ -877,7 +859,6 @@ export function ChatWidget() {
           )}
         </div>
 
-        {/* Loading Animation and Stop Button */}
         {isLoading ? (
           <div
             className={`d4m-w-full d4m-px-3 d4m-py-4 d4m-flex d4m-items-center d4m-justify-between ${currentTheme.loading}`}
@@ -970,6 +951,13 @@ export function ChatWidget() {
         accentColor={accentColor}
         mode={mode}
       />
+      {toast && (
+        <ToastNotification
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
     </>
   );
 }

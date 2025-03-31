@@ -91,7 +91,7 @@ async function fetchPageElements(tabId: number): Promise<{
         "):",
         err
       );
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // await new Promise((resolve) => setTimeout(resolve, 1000));
       await ensureContentScriptInjected(tabId);
     }
   }
@@ -382,10 +382,10 @@ async function handleError(
     const message = err.message.includes("quota")
       ? "API Quota Exhausted. Try again later."
       : "Rate limit hit. Retrying in 60s.";
-    chrome.runtime.sendMessage({
-      type: "UPDATE_SIDEPANEL",
-      response: { message },
-    });
+    // chrome.runtime.sendMessage({
+    //   type: "UPDATE_SIDEPANEL",
+    //   response: { message },
+    // });
     chrome.tabs.sendMessage(tabIdRef.value, {
       type: "DISPLAY_MESSAGE",
       response: { message },
@@ -414,10 +414,10 @@ async function handleError(
   } else {
     // Other errors are considered failures, send FINISH_PROCESS_COMMAND
     const errorMessage = `Command processing failed: ${err.message}`;
-    chrome.runtime.sendMessage({
-      type: "UPDATE_SIDEPANEL",
-      response: { message: errorMessage },
-    });
+    // chrome.runtime.sendMessage({
+    //   type: "UPDATE_SIDEPANEL",
+    //   response: { message: errorMessage },
+    // });
     chrome.tabs.sendMessage(tabIdRef.value, {
       type: "DISPLAY_MESSAGE",
       response: { message: errorMessage },
@@ -552,10 +552,9 @@ async function executeLocalActions(
       retryCount++;
       if (retryCount <= maxRetries) {
         console.log(`${logPrefix} Retrying (${retryCount}/${maxRetries})`);
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, 500));
       } else {
         const prompt = `Action "${action.type}" failed after ${maxRetries} attempts: ${err}. Suggest alternatives for: '${currentState.user_command}'.`;
-        // Since this is a failure, we need to ensure FINISH_PROCESS_COMMAND is sent if the recursive processCommand fails
         await processCommand(
           tabIdRef.value,
           prompt,
@@ -637,20 +636,23 @@ async function performLocalAction(
     case "input_text":
     case "submit_form":
     case "key_press":
-    case "extract": {
-      try {
-        return await sendActionToTab(a, tabIdRef.value);
-      } catch (err) {
-        const errorMessage = `${logPrefix} Failed to perform action ${
-          a.type
-        }: ${err instanceof Error ? err.message : "Unknown error"}`;
-        await chrome.runtime.sendMessage({
-          type: "FINISH_PROCESS_COMMAND",
-          response: errorMessage,
-        });
-        throw err;
+    case "extract":
+      {
+        try {
+          return await sendActionToTab(a, tabIdRef.value);
+        } catch (err) {
+          const errorMessage = `Failed to perform action ${a.type}: ${
+            err instanceof Error ? err.message : "Unknown error"
+          }`;
+          console.log(`${logPrefix} ${errorMessage}`);
+          // await chrome.runtime.sendMessage({
+          //   type: "FINISH_PROCESS_COMMAND",
+          //   response: errorMessage,
+          // });
+          // throw err;
+        }
       }
-    }
+      break;
 
     case "scroll":
       console.log(`${logPrefix} Scrolling`, a.data);
@@ -693,7 +695,7 @@ async function performLocalAction(
       const question = a.data.question || "Please provide instructions.";
       console.log(`${logPrefix} Asking: ${question}`);
       automationStopped = true;
-      chrome.runtime.sendMessage({ type: "UPDATE_SIDEPANEL", question });
+      // chrome.runtime.sendMessage({ type: "UPDATE_SIDEPANEL", question });
       chrome.tabs.sendMessage(tabIdRef.value, {
         type: "DISPLAY_MESSAGE",
         response: { message: question },

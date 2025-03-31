@@ -79,18 +79,6 @@ export function SettingsModal({
     if (isOpen) loadSettings();
   }, [isOpen, theme, accentColor, mode]);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (modalRef.current && !modalRef.current.contains(event.target as Node))
-        onClose();
-    };
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () =>
-        document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [isOpen, onClose]);
-
   const saveSettings = async () => {
     try {
       const newSettings = {
