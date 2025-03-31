@@ -239,6 +239,14 @@ Rules:
 10. EXTRACTION:
    - Use "extract_content" only for complex data retrieval. For simple outputs or game moves, include data directly in "done".
    - If tasked to find text or a game move, return it in "done" if available in Interactive Elements or screenshot, else use "extract_content".
+
+11. VAGUE_INFORMATION:
+  - If the user query is vague or lacks critical details, issue 'ask' action for necessary information only.
+  Example:
+  - Buy a product → {"ask": {"question": "Please provide the product details and payment method for the purchase."}}
+  - Send an email → {"ask": {"question": "Please provide the email content and recipient."}}
+  - Buy a product for my car - {"ask": {"question": "Please provide the product details for your car."}} etc.
+
 `;
 
 export const inputString = `

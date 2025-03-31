@@ -50,7 +50,7 @@ export class DOMManager {
     ): void => {
       // Process regular elements
       const elements = doc.querySelectorAll(
-        "a, button, input, textarea, select, div[role='button'], h1, h2, h3, h4, h5, h6, fieldset, label"
+        "a, button, input, textarea, select, div[role='button'], div, h1, h2, h3, h4, h5, h6, fieldset, label, canvas"
       );
       elements.forEach((el) => {
         if (!this.isElementImportant(el) || !this.isInViewport(el)) return;
@@ -67,7 +67,6 @@ export class DOMManager {
           ...elementData,
           element: el as HTMLElement,
         });
-        console.log(`[DOMManager] Element at index ${idx}:`, el);
 
         // Draw debug highlight with the parent offset
         this.drawDebugHighlight(el, idx, parentOffset);
@@ -100,7 +99,6 @@ export class DOMManager {
           ...iframeData,
           element: iframe as HTMLElement,
         });
-        console.log(`[DOMManager] Iframe at index ${idx}:`, iframe);
 
         // Draw debug highlight for the iframe itself
         this.drawDebugHighlight(iframe, idx, parentOffset);
@@ -142,7 +140,9 @@ export class DOMManager {
 
     if (!isVisible) return false;
 
-    if (["button", "input", "a", "textarea", "select"].includes(tagName)) {
+    if (
+      ["button", "input", "a", "textarea", "select", "canvas"].includes(tagName)
+    ) {
       return true;
     }
 
@@ -155,9 +155,7 @@ export class DOMManager {
     }
 
     if (tagName === "div" || tagName === "span") {
-      const isEditable =
-        el.getAttribute("contenteditable") === "true" ||
-        (el.parentElement && el.parentElement.isContentEditable);
+      const isEditable = (el as HTMLElement).isContentEditable;
       const hasInteractiveRole = [
         "button",
         "link",
@@ -169,7 +167,7 @@ export class DOMManager {
     }
 
     if (tagName === "iframe") {
-      return true; // Consider iframes important if they are visible
+      return true;
     }
 
     return false;
@@ -250,11 +248,11 @@ export class DOMManager {
     Object.assign(label.style, {
       position: "absolute",
       top: "-20px",
-      left: "0",
+      right: "0",
       background: "rgba(0, 0, 0, 0.7)",
       color: "white",
-      padding: "2px 5px",
-      fontSize: "12px",
+      padding: "2px 2px",
+      fontSize: "10px",
     });
     highlight.appendChild(label);
     document.body.appendChild(highlight);
