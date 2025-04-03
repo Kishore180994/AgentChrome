@@ -1,11 +1,12 @@
 // content.ts
-import { DOMManager, UncompressedPageElement } from "./classes/DOMManager"; // Adjust path
+import { DOMManager } from "./classes/DOMManager";
 import { ActionExecutor } from "./classes/ActionExecutor";
-import html2canvas from "html2canvas";
+import { UncompressedPageElement } from "./services/ai/interfaces";
 
 const domManager = new DOMManager();
 const actionExecutor = new ActionExecutor();
-let uncompressedElements: UncompressedPageElement[] = []; // Store locally
+let uncompressedElements: UncompressedPageElement[] = [];
+
 declare global {
   interface Window {
     __AGENT_CHROME_INITIALIZED__?: boolean;
@@ -40,40 +41,6 @@ if (!window[AGENT_KEY]) {
         port = null;
         window[AGENT_KEY] = false;
       });
-
-      // port.onMessage.addListener(async (message) => {
-      //   try {
-      //     switch (message.type) {
-      //       case "PERFORM_ACTION":
-      //         await actionExecutor.execute(message.action);
-      //         return true;
-      //       case "GET_PAGE_ELEMENTS":
-      //         const { compressed, uncompressed } =
-      //           domManager.extractPageElements();
-      //         port?.postMessage({
-      //           type: "PAGE_ELEMENTS",
-      //           compressed,
-      //           uncompressed,
-      //         });
-      //         return true;
-      //       case "EXECUTION_UPDATE":
-      //         const { taskHistory } = message;
-      //         console.log(
-      //           "[content.ts] Received EXECUTION_UPDATE:",
-      //           taskHistory
-      //         );
-      //         port?.postMessage({
-      //           type: "EXECUTION_UPDATE",
-      //           taskHistory,
-      //         });
-      //         return true;
-      //       default:
-      //         break;
-      //     }
-      //   } catch (err) {
-      //     console.error("[content.ts] Error handling port message:", err);
-      //   }
-      // });
 
       setInterval(() => {
         try {
@@ -161,16 +128,24 @@ if (!window[AGENT_KEY]) {
       const currentTabId = sender.tab?.id || tabId;
       switch (message.type) {
         case "PERFORM_ACTION":
-          actionExecutor.setElements(uncompressedElements || []); // Set fresh elements
+          // Refresh elements before executing the action
+          const { compressed, uncompressed } = domManager.extractPageElements();
+          uncompressedElements = uncompressed;
+          console.log(
+            "[content.ts] Refreshed elements before action:",
+            uncompressed.length
+          );
+          actionExecutor.setElements(uncompressedElements);
           actionExecutor
             .execute(message.action)
             .then((result) => {
               sendResponse({ success: true, result, tabId: currentTabId });
             })
             .catch((error: any) => {
+              console.error("[content.ts] Action execution failed:", error);
               sendResponse({
                 success: false,
-                error: error.message,
+                error: error.message || "Action failed",
                 tabId: currentTabId,
               });
             });
@@ -207,10 +182,17 @@ if (!window[AGENT_KEY]) {
           return true;
 
         case "GET_PAGE_ELEMENTS":
-          const { compressed, uncompressed } = domManager.extractPageElements();
-          uncompressedElements = uncompressed;
-          console.log("[content.ts] Extracted elements:", uncompressed);
-          sendResponse({ success: true, compressed, uncompressed: [] });
+          const elements = domManager.extractPageElements();
+          uncompressedElements = elements.uncompressed;
+          console.log(
+            "[content.ts] Extracted elements:",
+            uncompressedElements.length
+          );
+          sendResponse({
+            success: true,
+            compressed: elements.compressed,
+            uncompressed: [],
+          });
           return true;
         case "PING":
           sendResponse({ success: true, tabId: currentTabId });
@@ -224,16 +206,15 @@ if (!window[AGENT_KEY]) {
           sendResponse({ success: true, tabId: currentTabId });
           return true;
         case "DISPLAY_MESSAGE":
-          console.log("DISPLAY_MESSAGE", message);
-          if (message) {
-            console.log("[content.ts] Received final response:", message);
+          console.log("[content.ts] DISPLAY_MESSAGE:", message);
+          if (message.response) {
             chrome.runtime.sendMessage({
               type: "COMMAND_RESPONSE",
               response: message.response,
             });
           } else {
             console.warn(
-              "[content.ts] Received DISPLAY_MESSAGE with undefined response"
+              "[content.ts] DISPLAY_MESSAGE with undefined response"
             );
             chrome.runtime.sendMessage({
               type: "COMMAND_RESPONSE",

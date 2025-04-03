@@ -1,8 +1,9 @@
-import { PageElement } from "../services/ai/interfaces"; // Adjust path as needed
-
-export interface UncompressedPageElement extends PageElement {
-  element: HTMLElement; // Direct reference to the DOM element
-}
+import {
+  PageElement,
+  UncompressedPageElement,
+  BoundingBox,
+  ChildElement,
+} from "../services/ai/interfaces"; // Adjust path as needed
 
 export class DOMManager {
   constructor() {}
@@ -12,17 +13,12 @@ export class DOMManager {
     doc.querySelectorAll(".debug-highlight").forEach((el) => el.remove());
   }
 
-  /**
-   * Checks if an element is within the viewport (at least partially visible).
-   */
   private isInViewport(el: Element): boolean {
     const rect = el.getBoundingClientRect();
     const windowHeight =
       window.innerHeight || document.documentElement.clientHeight;
     const windowWidth =
       window.innerWidth || document.documentElement.clientWidth;
-
-    // Element is in viewport if it intersects with the viewport
     return (
       rect.top < windowHeight &&
       rect.bottom > 0 &&
@@ -31,11 +27,19 @@ export class DOMManager {
     );
   }
 
-  /**
-   * Extracts elements from the page that are currently in the viewport for AI web automation.
-   * Returns both compressed (for AI) and uncompressed (for interaction) element sets.
-   * Adds a 2-second debug highlight to each extracted element.
-   */
+  private getBoundingBox(
+    el: Element,
+    offset: { x: number; y: number }
+  ): BoundingBox {
+    const rect = el.getBoundingClientRect();
+    return {
+      x: rect.left + offset.x,
+      y: rect.top + offset.y,
+      width: rect.width,
+      height: rect.height,
+    };
+  }
+
   extractPageElements(): {
     compressed: PageElement[];
     uncompressed: UncompressedPageElement[];
@@ -48,39 +52,62 @@ export class DOMManager {
       doc: Document,
       parentOffset: { x: number; y: number } = { x: 0, y: 0 }
     ): void => {
-      // Process regular elements
-      const elements = doc.querySelectorAll(
-        "a, button, input, textarea, select, div[role='button'], div, h1, h2, h3, h4, h5, h6, fieldset, label, canvas"
-      );
-      elements.forEach((el) => {
-        if (!this.isElementImportant(el) || !this.isInViewport(el)) return;
+      const containers = doc.querySelectorAll("div, form, section, article");
+      containers.forEach((el) => {
+        const interactiveChildren = el.querySelectorAll(
+          "a, button, input, textarea, select, div[role='button']"
+        );
+        if (!this.isInViewport(el) || interactiveChildren.length === 0) return;
 
         el.setAttribute("data-d4m-index", idx.toString());
-        const elementData: PageElement = {
+
+        let childIdCounter = 1;
+        const childElements: ChildElement[] = Array.from(interactiveChildren)
+          .filter(
+            (child) =>
+              this.isElementImportant(child) && this.isInViewport(child)
+          )
+          .map((child) => {
+            child.setAttribute("data-d4m-child-id", childIdCounter.toString());
+            const result: ChildElement = [
+              child.tagName.toLowerCase(),
+              this.getMeaningfulText(child).slice(0, 50),
+              this.getRelevantAttributes(child),
+              this.getBoundingBox(child, parentOffset),
+              childIdCounter,
+            ];
+            childIdCounter++;
+            return result;
+          });
+
+        const elementData: PageElement = [
+          idx,
+          el.tagName.toLowerCase(),
+          this.getMeaningfulText(el).slice(0, 50),
+          this.getRelevantAttributes(el),
+          this.getBoundingBox(el, parentOffset),
+          childElements,
+        ];
+        compressedElements.push(elementData);
+        uncompressedElements.push({
           index: idx,
           tagName: el.tagName.toLowerCase(),
           text: this.getMeaningfulText(el).slice(0, 50),
           attributes: this.getRelevantAttributes(el),
-        };
-        compressedElements.push(elementData);
-        uncompressedElements.push({
-          ...elementData,
+          boundingBox: this.getBoundingBox(el, parentOffset),
+          childElements,
           element: el as HTMLElement,
         });
 
-        // Draw debug highlight with the parent offset
         this.drawDebugHighlight(el, idx, parentOffset);
-
+        this.drawAllInteractiveHighlights(el, parentOffset);
         idx++;
       });
 
-      // Process iframes
       const iframes = doc.getElementsByTagName("iframe");
       Array.from(iframes).forEach((iframe) => {
         if (!this.isElementImportant(iframe) || !this.isInViewport(iframe))
           return;
-
-        // Calculate the iframe's offset relative to the top-level document
         const iframeRect = iframe.getBoundingClientRect();
         const iframeOffset = {
           x: parentOffset.x + iframeRect.left,
@@ -88,24 +115,28 @@ export class DOMManager {
         };
 
         iframe.setAttribute("data-d4m-index", idx.toString());
-        const iframeData: PageElement = {
+        const iframeData: PageElement = [
+          idx,
+          "iframe",
+          "",
+          this.getRelevantAttributes(iframe),
+          this.getBoundingBox(iframe, parentOffset),
+          [],
+        ];
+        compressedElements.push(iframeData);
+        uncompressedElements.push({
           index: idx,
           tagName: "iframe",
           text: "",
           attributes: this.getRelevantAttributes(iframe),
-        };
-        compressedElements.push(iframeData);
-        uncompressedElements.push({
-          ...iframeData,
+          boundingBox: this.getBoundingBox(iframe, parentOffset),
+          childElements: [],
           element: iframe as HTMLElement,
         });
 
-        // Draw debug highlight for the iframe itself
         this.drawDebugHighlight(iframe, idx, parentOffset);
-
         idx++;
 
-        // Process iframe contents with the updated offset
         if (iframe.contentDocument) {
           processDocument(iframe.contentDocument, iframeOffset);
         } else {
@@ -127,9 +158,6 @@ export class DOMManager {
     };
   }
 
-  /**
-   * Determines if an element is important for AI web automation.
-   */
   private isElementImportant(el: Element): boolean {
     const tagName = el.tagName.toLowerCase();
     const textContent = el.textContent?.trim() || "";
@@ -173,9 +201,6 @@ export class DOMManager {
     return false;
   }
 
-  /**
-   * Extracts only relevant attributes for AI automation.
-   */
   private getRelevantAttributes(el: Element): Record<string, string> {
     const relevantAttrs = [
       "id",
@@ -222,7 +247,6 @@ export class DOMManager {
     return `rgb(${r}, ${g}, ${b})`;
   }
 
-  /** Draws a debug highlight around an element with its index, removes after 2 seconds. */
   drawDebugHighlight(
     el: Element,
     index: number,
@@ -239,7 +263,7 @@ export class DOMManager {
       width: `${rect.width}px`,
       height: `${rect.height}px`,
       border: `2px solid ${randomColor}`,
-      backgroundColor: `${randomColor}20`, // 20% opacity for background
+      backgroundColor: `${randomColor}20`,
       zIndex: "9999",
       pointerEvents: "none",
     });
@@ -256,10 +280,36 @@ export class DOMManager {
     });
     highlight.appendChild(label);
     document.body.appendChild(highlight);
+    setTimeout(() => highlight.remove(), 3000);
+  }
 
-    // Remove the highlight after 2 seconds
-    setTimeout(() => {
-      highlight.remove();
-    }, 3000);
+  private drawAllInteractiveHighlights(
+    el: Element,
+    parentOffset: { x: number; y: number }
+  ): void {
+    const allInteractive = el.querySelectorAll(
+      "a, button, input, textarea, select, div[role='button']"
+    );
+    allInteractive.forEach((child) => {
+      if (!child.hasAttribute("data-d4m-index")) {
+        const rect = child.getBoundingClientRect();
+        const highlight = document.createElement("div");
+        highlight.className = "debug-highlight";
+        const randomColor = this.getRandomColor();
+        Object.assign(highlight.style, {
+          position: "absolute",
+          left: `${rect.left + parentOffset.x}px`,
+          top: `${rect.top + parentOffset.y}px`,
+          width: `${rect.width}px`,
+          height: `${rect.height}px`,
+          border: `2px solid ${randomColor}`,
+          backgroundColor: `${randomColor}20`,
+          zIndex: "9999",
+          pointerEvents: "none",
+        });
+        document.body.appendChild(highlight);
+        setTimeout(() => highlight.remove(), 3000);
+      }
+    });
   }
 }

@@ -34,18 +34,118 @@
         animation: starfall-cascade 1.8s infinite 0.8s;
     }
 
-        @keyframes slide-in {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
+    @keyframes slide-in {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
         }
-        .d4m-animate-slide-in {
-            animation: slide-in 0.3s ease-out;
+        to {
+            transform: translateX(0);
+            opacity: 1;
         }
+    }
+
+    .d4m-animate-slide-in {
+        animation: slide-in 0.3s ease-out;
+    }
+
+    @keyframes mic-ripple {
+        0% {
+            transform: scale(1);
+            opacity: 0.5;
+        }
+
+        100% {
+            transform: scale(1.5);
+            opacity: 0;
+        }
+    }
+
+    @keyframes mic-glow {
+        0% {
+            opacity: 0.7;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+
+        50% {
+            opacity: 1;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.8);
+        }
+
+        100% {
+            opacity: 0.7;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+    }
+    
+    @keyframes mic-bounce {
+
+        0%,
+        100% {
+            transform: translateY(0);
+        }
+
+        50% {
+            transform: translateY(-5px);
+        }
+    }
+    
+    @keyframes sound-wave {
+        0% {
+            transform: scale(0.8);
+            opacity: 0.5;
+        }
+
+        100% {
+            transform: scale(1.2);
+            opacity: 0;
+        }
+    }
+    
+    @keyframes fade-in {
+        0% {
+            opacity: 0;
+        }
+
+        100% {
+            opacity: 1;
+        }
+    }
+
+    .d4m-animate-mic-ripple {
+        animation: mic-ripple 1.5s infinite;
+    }
+
+    .d4m-animate-mic-glow {
+        animation: mic-glow 2s infinite;
+    }
+
+    .d4m-animate-mic-bounce {
+        animation: mic-bounce 1s infinite;
+    }
+
+    .d4m-animate-sound-wave {
+        animation: sound-wave 2s infinite;
+    }
+
+    .d4m-animate-fade-in {
+        animation: fade-in 0.5s ease-in;
+    }
+
+    .d4m-delay-200 {
+        animation-delay: 0.2s;
+    }
+
+    .d4m-delay-300 {
+        animation-delay: 0.3s;
+    }
+
+    .d4m-delay-400 {
+        animation-delay: 0.4s;
+    }
+
+    .d4m-delay-600 {
+        animation-delay: 0.6s;
+    }
 }
 

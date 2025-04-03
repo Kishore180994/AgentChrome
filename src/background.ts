@@ -1,5 +1,4 @@
-import { UncompressedPageElement } from "./classes/DOMManager";
-import { PageElement } from "./services/ai/interfaces";
+import { PageElement, UncompressedPageElement } from "./services/ai/interfaces";
 import { chatWithAI } from "./services/openai/api";
 import {
   AgentActionItem,
@@ -91,7 +90,6 @@ async function fetchPageElements(tabId: number): Promise<{
         "):",
         err
       );
-      // await new Promise((resolve) => setTimeout(resolve, 1000));
       await ensureContentScriptInjected(tabId);
     }
   }
@@ -119,6 +117,26 @@ const getTabUrl = (tabId: number): Promise<string> => {
     });
   });
 };
+
+async function waitForPotentialNavigation(
+  tabId: number,
+  lastActionType: string
+): Promise<void> {
+  if (
+    lastActionType === "go_to_url" ||
+    lastActionType === "open_tab" ||
+    lastActionType === "navigate"
+  ) {
+    await waitForTabLoad(tabId);
+  } else if (lastActionType === "click" || lastActionType === "submit_form") {
+    const initialUrl = await getTabUrl(tabId);
+    await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait 2 seconds for potential navigation
+    const currentUrl = await getTabUrl(tabId);
+    if (currentUrl !== initialUrl) {
+      await waitForTabLoad(tabId);
+    }
+  }
+}
 
 async function processCommand(
   tabId: number,
@@ -231,8 +249,9 @@ async function processCommand(
     tabs: allTabs,
     currentTabUrl: tabUrl,
     actionHistory: actionHistory.slice(-3),
-    screenshot: screenshotDataUrl, // Optionally include the screenshot in the state
+    screenshot: screenshotDataUrl,
   };
+  console.log({ pageState });
 
   try {
     const recentActionsStr = actionHistory.length
@@ -301,6 +320,12 @@ async function processCommand(
       resetExecutionState(tabId);
       activeAutomationTabs.clear();
       return;
+    }
+
+    // Check if the last action was potentially DOM-changing and wait if necessary
+    if (localActions.length > 0) {
+      const lastAction = localActions[localActions.length - 1];
+      await waitForPotentialNavigation(tabIdRef.value, lastAction.type);
     }
 
     const doneAction = localActions.find((a) => a.type === "done");
@@ -382,23 +407,17 @@ async function handleError(
     const message = err.message.includes("quota")
       ? "API Quota Exhausted. Try again later."
       : "Rate limit hit. Retrying in 60s.";
-    // chrome.runtime.sendMessage({
-    //   type: "UPDATE_SIDEPANEL",
-    //   response: { message },
-    // });
     chrome.tabs.sendMessage(tabIdRef.value, {
       type: "DISPLAY_MESSAGE",
       response: { message },
     });
     if (err.message.includes("quota")) {
-      // Quota exhaustion is a failure, send FINISH_PROCESS_COMMAND
       await chrome.runtime.sendMessage({
         type: "FINISH_PROCESS_COMMAND",
         response: message,
       });
       automationStopped = true;
     } else if (err.message.includes("429")) {
-      // Rate limit, retry after 60s, not a failure yet
       setTimeout(
         () =>
           processCommand(
@@ -412,12 +431,7 @@ async function handleError(
       );
     }
   } else {
-    // Other errors are considered failures, send FINISH_PROCESS_COMMAND
     const errorMessage = `Command processing failed: ${err.message}`;
-    // chrome.runtime.sendMessage({
-    //   type: "UPDATE_SIDEPANEL",
-    //   response: { message: errorMessage },
-    // });
     chrome.tabs.sendMessage(tabIdRef.value, {
       type: "DISPLAY_MESSAGE",
       response: { message: errorMessage },
@@ -445,11 +459,20 @@ function mapAiItemToLocalAction(item: AgentActionItem): LocalAction {
   switch (actionName.toLowerCase()) {
     case "click_element":
       type = "click";
-      data = { index: params.index };
+      data = {
+        index: params.index,
+        selector: params.selector,
+        ...(params.childId !== undefined && { childId: params.childId }),
+      };
       break;
     case "input_text":
       type = "input_text";
-      data = { index: params.index, text: params.text };
+      data = {
+        index: params.index,
+        text: params.text,
+        selector: params.selector,
+        ...(params.childId !== undefined && { childId: params.childId }),
+      };
       break;
     case "open_tab":
     case "go_to_url":
@@ -459,15 +482,28 @@ function mapAiItemToLocalAction(item: AgentActionItem): LocalAction {
       break;
     case "extract_content":
       type = "extract";
-      data = { index: params.index };
+      data = {
+        index: params.index,
+        selector: params.selector,
+        ...(params.childId !== undefined && { childId: params.childId }),
+      };
       break;
     case "submit_form":
       type = "submit_form";
-      data = { index: params.index };
+      data = {
+        index: params.index,
+        selector: params.selector,
+        ...(params.childId !== undefined && { childId: params.childId }),
+      };
       break;
     case "key_press":
       type = "key_press";
-      data = { key: params.key, index: params.index };
+      data = {
+        key: params.key,
+        index: params.index,
+        selector: params.selector,
+        ...(params.childId !== undefined && { childId: params.childId }),
+      };
       break;
     case "scroll":
       type = "scroll";
@@ -645,11 +681,6 @@ async function performLocalAction(
             err instanceof Error ? err.message : "Unknown error"
           }`;
           console.log(`${logPrefix} ${errorMessage}`);
-          // await chrome.runtime.sendMessage({
-          //   type: "FINISH_PROCESS_COMMAND",
-          //   response: errorMessage,
-          // });
-          // throw err;
         }
       }
       break;
@@ -695,7 +726,6 @@ async function performLocalAction(
       const question = a.data.question || "Please provide instructions.";
       console.log(`${logPrefix} Asking: ${question}`);
       automationStopped = true;
-      // chrome.runtime.sendMessage({ type: "UPDATE_SIDEPANEL", question });
       chrome.tabs.sendMessage(tabIdRef.value, {
         type: "DISPLAY_MESSAGE",
         response: { message: question },
@@ -781,7 +811,6 @@ chrome.runtime.onMessage.addListener(async (msg, _sender, resp) => {
     resp({ success: true });
   } else if (msg.type === "STOP_AUTOMATION") {
     automationStopped = true;
-    // User-initiated stop, do not send FINISH_PROCESS_COMMAND
     resp({ success: true });
   }
 });
