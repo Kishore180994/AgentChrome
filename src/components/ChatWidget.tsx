@@ -16,8 +16,8 @@ import { StepState } from "../types/responseFormat";
 import { storage } from "../utils/storage";
 import { SettingsModal } from "./SettingsModal";
 import { AccentColor, themeStyles } from "../utils/themes";
-import { useSiriBorder } from "../hooks/UseSiriBorder";
 import { ToastNotification } from "./ToastNotifications";
+import { useSiriBorder } from "../hooks/useSiriBorder";
 
 interface Message {
   id: string;
