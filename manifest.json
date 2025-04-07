@@ -13,9 +13,7 @@
     "sidePanel",
     "downloads"
   ],
-  "host_permissions": [
-    "*://*/*"
-  ],
+  "host_permissions": ["<all_urls>"],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; img-src 'self' https://doforme.s3.us-east-1.amazonaws.com; connect-src 'self' https://api.openai.com https://*.openai.com https://generativelanguage.googleapis.com https://doforme.s3.us-east-1.amazonaws.com https://api.anthropic.com/v1/messages wss://api.deepgram.com https://api.anthropic.com/*; object-src 'none';"
   },

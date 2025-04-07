@@ -799,7 +799,7 @@ async function sendActionToTab(
   });
 }
 
-chrome.runtime.onMessage.addListener(async (msg, _sender, resp) => {
+chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
   if (msg.type === "PROCESS_COMMAND") {
     automationStopped = false;
     const [activeTab] = await chrome.tabs.query({
@@ -811,7 +811,7 @@ chrome.runtime.onMessage.addListener(async (msg, _sender, resp) => {
         type: "FINISH_PROCESS_COMMAND",
         response: "No active tab found, aborting command processing.",
       });
-      resp({ success: false, error: "No active tab" });
+      sendResponse({ success: false, error: "No active tab" });
       return;
     }
     recentActionsMap[activeTab.id] = [];
@@ -823,13 +823,26 @@ chrome.runtime.onMessage.addListener(async (msg, _sender, resp) => {
       [],
       msg.model || "gemini"
     );
-    resp({ success: true });
+    sendResponse({ success: true });
   } else if (msg.type === "NEW_CHAT") {
     await chrome.storage.local.set({ conversationHistory: [] });
-    resp({ success: true });
+    sendResponse({ success: true });
   } else if (msg.type === "STOP_AUTOMATION") {
     automationStopped = true;
-    resp({ success: true });
+    sendResponse({ success: true });
+  } else if (msg.type === "GET_TAB_ID") {
+    if (sender.tab?.id) {
+      console.log(
+        `[background.ts] Responding to GET_TAB_ID from tab: ${sender.tab.id}`
+      );
+      sendResponse({ success: true, tabId: sender.tab.id });
+    } else {
+      console.error(
+        "[background.ts] GET_TAB_ID received, but sender tab ID is missing."
+      );
+      sendResponse({ success: false, error: "Sender tab ID not found" });
+    }
+    return false; // Indicate synchronous response (optional but good practice here)
   }
 });
 

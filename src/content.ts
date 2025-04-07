@@ -1,3 +1,9 @@
+console.log(
+  `[content.ts] Script executing on: ${
+    window.location.href
+  } at ${new Date().toISOString()}`
+);
+
 // content.ts
 import { DOMManager } from "./classes/DOMManager";
 import { ActionExecutor } from "./classes/ActionExecutor";
@@ -88,7 +94,6 @@ if (!window[AGENT_KEY]) {
         window[AGENT_KEY] = false;
         return;
       }
-      // Assuming background script handles 'GET_TAB_ID' message
       chrome.runtime.sendMessage({ type: "GET_TAB_ID" }, (response) => {
         if (chrome.runtime.lastError) {
           console.warn(

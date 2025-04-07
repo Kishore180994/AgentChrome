@@ -1,11 +1,11 @@
-// DOMManager.ts (UPDATED with documentURI fix)
+// DOMManager.ts (FINAL - Fast Cleanup + Differentiated Highlighting)
 import {
   PageElement,
   UncompressedPageElement,
   BoundingBox,
 } from "../services/ai/interfaces"; // Adjust path as needed
 
-// Helper type guards (place at top or bottom)
+// Helper type guards
 function isInputElement(
   el: Element | null | undefined
 ): el is HTMLInputElement {
@@ -22,18 +22,21 @@ function isSelectElement(
   return !!el && el.tagName === "SELECT";
 }
 
+const HIGHLIGHT_CONTAINER_ID = "d4m-highlight-container"; // ID for the container
+
 export class DOMManager {
   private elementMap: Map<number, HTMLElement>;
 
   constructor() {
     this.elementMap = new Map();
-    console.log("[DOMManager] Initialized (Direct Indexing Model).");
+    console.log("[DOMManager] Initialized (Highlight Container Model).");
   }
 
-  /** Clears all debug highlights AND temporary index attributes, and resets the element map. */
+  // --- THIS FUNCTION IS UPDATED ---
+  /** Clears attributes, finds and removes highlight containers, resets map. */
   clearDebugHighlights(doc: Document = document): void {
     try {
-      // Remove the attribute from elements in the main document
+      // Remove attributes (this is generally fast enough)
       doc.querySelectorAll("[data-d4m-index]").forEach((el) => {
         try {
           el.removeAttribute("data-d4m-index");
@@ -44,15 +47,17 @@ export class DOMManager {
           );
         }
       });
-      // Remove highlight divs from main document
-      doc.querySelectorAll(".debug-highlight").forEach((el) => el.remove());
 
-      // Clear highlights AND attributes from within IFRAMES
+      // --- Remove Highlight Container(s) - FAST ---
+      doc.getElementById(HIGHLIGHT_CONTAINER_ID)?.remove();
+
+      // Remove from within IFRAMES
       const iframes = doc.getElementsByTagName("iframe");
       Array.from(iframes).forEach((iframe) => {
         try {
           const contentDoc = iframe.contentDocument;
           if (contentDoc) {
+            // Remove attributes within iframe first
             contentDoc.querySelectorAll("[data-d4m-index]").forEach((el) => {
               try {
                 el.removeAttribute("data-d4m-index");
@@ -60,24 +65,56 @@ export class DOMManager {
                 /* ignore */
               }
             });
-            contentDoc
-              .querySelectorAll(".debug-highlight")
-              .forEach((el) => el.remove());
+            // Remove the container within the iframe by ID
+            contentDoc.getElementById(HIGHLIGHT_CONTAINER_ID)?.remove();
           }
         } catch (e) {
           /* ignore potential cross-origin */
         }
       });
+      // --- End Removal ---
 
       this.elementMap.clear(); // Clear the internal map
-      console.log("[DOMManager] Cleared highlights, attributes, and map.");
+      console.log(
+        "[DOMManager] Cleared attributes, highlight containers, and map."
+      );
     } catch (error) {
       console.error("[DOMManager] Error during clearDebugHighlights:", error);
     }
   }
+  // --- END OF UPDATED FUNCTION ---
 
-  /** Checks if an element is currently within the browser's viewport. */
+  // --- NEW HELPER FUNCTION ---
+  /** Finds or creates the highlight container div within a given document context. */
+  private ensureHighlightContainer(docContext: Document): HTMLElement {
+    let container = docContext.getElementById(HIGHLIGHT_CONTAINER_ID);
+    if (!container) {
+      // console.log("[DOMManager] Creating highlight container in:", docContext.URL || 'document'); // Log if needed
+      container = docContext.createElement("div");
+      container.id = HIGHLIGHT_CONTAINER_ID;
+      Object.assign(container.style, {
+        position: "absolute",
+        top: "0",
+        left: "0",
+        width: "0",
+        height: "0", // No dimensions itself
+        pointerEvents: "none", // Crucial: container shouldn't block interactions
+        zIndex: "2147483645", // Below individual highlights but high overall
+      });
+      // Prepend to body to be early in DOM order (can help stacking)
+      if (docContext.body) {
+        docContext.body.prepend(container);
+      } else {
+        docContext.documentElement.appendChild(container);
+      } // Fallback
+    }
+    return container;
+  }
+  // --- END NEW HELPER FUNCTION ---
+
+  /** Checks if element is in viewport. */
   private isInViewport(el: Element): boolean {
+    /* ... same as before ... */
     try {
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return false;
@@ -88,98 +125,121 @@ export class DOMManager {
         parseFloat(style.opacity || "1") === 0
       )
         return false;
-      const windowHeight =
-        window.innerHeight || document.documentElement.clientHeight;
-      const windowWidth =
-        window.innerWidth || document.documentElement.clientWidth;
-      const vertInView = rect.top < windowHeight && rect.bottom > 0;
-      const horzInView = rect.left < windowWidth && rect.right > 0;
-      return vertInView && horzInView;
+      const wh = window.innerHeight || document.documentElement.clientHeight;
+      const ww = window.innerWidth || document.documentElement.clientWidth;
+      const vert = rect.top < wh && rect.bottom > 0;
+      const horz = rect.left < ww && rect.right > 0;
+      return vert && horz;
     } catch (error) {
       console.error("[DOMManager] Error isInViewport:", error, el);
       return false;
     }
   }
 
-  /** Determines if an element is considered interactive and important. Includes visibility/viewport checks. */
-  private isInteractiveElement(el: Element): boolean {
+  /** Determines if element is relevant (interactive or content) */
+  private isRelevantElement(el: Element): {
+    isRelevant: boolean;
+    isInteractive: boolean;
+  } {
+    /* ... same as before ... */
+    let isRelevant = false,
+      isInteractive = false;
     try {
       const id = el.id ? `#${el.id}` : "";
       const tagName = el.tagName.toLowerCase();
-      if (!this.isInViewport(el)) return false; // Skip if not in viewport first
-      const isDisabled = el.hasAttribute("disabled");
-      // --- Log Reason for Skipping ---
-      if (isDisabled) {
-        console.log(
-          `[DOMManager isInteractiveElement] Skip ${tagName}${id}: Disabled`
-        );
-        return false;
-      }
+      if (!this.isInViewport(el))
+        return { isRelevant: false, isInteractive: false };
       const style = window.getComputedStyle(el);
       if (
         style.display === "none" ||
         style.visibility === "hidden" ||
         parseFloat(style.opacity || "1") === 0
-      ) {
-        console.log(
-          `[DOMManager isInteractiveElement] Skip ${tagName}${id}: Not visible`
-        );
-        return false;
-      }
-      // --- End Logging Skips ---
-      const isStandardInteractive = [
-        "a",
-        "button",
-        "input",
-        "textarea",
-        "select",
-      ].includes(tagName);
-      const role = el.getAttribute("role")?.toLowerCase();
-      const hasInteractiveRole =
-        role &&
-        [
-          "button",
-          "link",
-          "checkbox",
-          "radio",
-          "switch",
-          "menuitem",
-          "menuitemcheckbox",
-          "menuitemradio",
-          "tab",
-          "slider",
-          "spinbutton",
-          "textbox",
-          "combobox",
-          "listbox",
-          "option",
-        ].includes(role);
-      const isEditable = (el as HTMLElement).isContentEditable;
-      const hasTabIndex =
-        el.hasAttribute("tabindex") &&
-        parseInt(el.getAttribute("tabindex") || "-1", 10) >= 0;
-      const isFocusableDivSpan =
-        hasTabIndex && (tagName === "div" || tagName === "span");
-      if (
-        isStandardInteractive ||
-        hasInteractiveRole ||
-        isEditable ||
-        isFocusableDivSpan
       )
-        return true;
-      return false; // Skip if none of the above
+        return { isRelevant: false, isInteractive: false };
+      const isDisabled = el.hasAttribute("disabled");
+      if (!isDisabled) {
+        const isStandard = [
+          "a",
+          "button",
+          "input",
+          "textarea",
+          "select",
+        ].includes(tagName);
+        const role = el.getAttribute("role")?.toLowerCase();
+        const hasRole =
+          role &&
+          [
+            "button",
+            "link",
+            "checkbox",
+            "radio",
+            "switch",
+            "menuitem",
+            "menuitemcheckbox",
+            "menuitemradio",
+            "tab",
+            "slider",
+            "spinbutton",
+            "textbox",
+            "combobox",
+            "listbox",
+            "option",
+          ].includes(role);
+        const isEdit = (el as HTMLElement).isContentEditable;
+        const hasIdx =
+          el.hasAttribute("tabindex") &&
+          parseInt(el.getAttribute("tabindex") || "-1", 10) >= 0;
+        const isFocusDS = hasIdx && (tagName === "div" || tagName === "span");
+        if (isStandard || hasRole || isEdit || isFocusDS) isInteractive = true;
+      } else {
+        console.log(`[DOMManager] Info ${tagName}${id}: Disabled`);
+      }
+      const isContentTag = [
+        "p",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "li",
+        "td",
+        "th",
+        "blockquote",
+        "article",
+        "section",
+        "main",
+        "aside",
+        "nav",
+        "ul",
+        "ol",
+        "dl",
+        "figure",
+        "figcaption",
+        "details",
+        "summary",
+        "label",
+      ].includes(tagName);
+      let hasText = false;
+      if (["div", "span"].includes(tagName) && !isInteractive) {
+        const text = (el as HTMLElement).innerText?.trim();
+        if (text && text.length > 25) hasText = true;
+      }
+      isRelevant = isInteractive || isContentTag || hasText;
     } catch (error) {
-      console.error("[DOMManager] Error isInteractiveElement:", error, el);
-      return false;
+      console.error("[DOMManager] Error isRelevantElement:", error, el);
+      isRelevant = false;
+      isInteractive = false;
     }
+    return { isRelevant, isInteractive };
   }
 
-  /** Calculates bounding box relative to the main document's viewport. */
+  /** Calculates bounding box. */
   private getBoundingBox(
     el: Element,
     offset: { x: number; y: number }
   ): BoundingBox {
-    const rect = el.getBoundingClientRect();
+    /* ... same ... */ const rect = el.getBoundingClientRect();
     return {
       x: rect.left + offset.x,
       y: rect.top + offset.y,
@@ -187,18 +247,17 @@ export class DOMManager {
       height: rect.height,
     };
   }
-  /** Converts BoundingBox object to the tuple format [x, y, width, height]. */
+  /** Converts BoundingBox to tuple. */
   private boundingBoxToTuple(
     box: BoundingBox
   ): [number, number, number, number] {
-    return [box.x, box.y, box.width, box.height];
+    /* ... same ... */ return [box.x, box.y, box.width, box.height];
   }
-
-  /** Extracts relevant attributes from an element. */
+  /** Extracts relevant attributes. */
   private getRelevantAttributes(el: Element): Record<string, string> {
-    const attributes: Record<string, string> = {};
+    /* ... same ... */ const attributes: Record<string, string> = {};
     try {
-      const relevantAttrs = [
+      const attrs = [
         "id",
         "class",
         "href",
@@ -220,7 +279,7 @@ export class DOMManager {
         "data-cy",
         "data-qa",
       ];
-      relevantAttrs.forEach((attr) => {
+      attrs.forEach((attr) => {
         if (el.hasAttribute(attr))
           attributes[attr] = el.getAttribute(attr) || "";
       });
@@ -239,13 +298,13 @@ export class DOMManager {
           attributes["selectedText"] = el.options[el.selectedIndex].text;
       }
     } catch (error) {
-      console.error("[DOMManager] Error getRelevantAttributes:", error, el);
+      console.error("Error getRelevantAttributes:", error, el);
     }
     return attributes;
   }
-  /** Gets meaningful text content, prioritizing value, labels, etc. */
+  /** Gets meaningful text content. */
   private getMeaningfulText(el: Element): string {
-    try {
+    /* ... same ... */ try {
       const ariaLabel = el.getAttribute("aria-label")?.trim();
       if (ariaLabel) return ariaLabel;
       if (isInputElement(el) && el.type !== "password")
@@ -260,44 +319,89 @@ export class DOMManager {
       const text = (el as HTMLElement).innerText || el.textContent || "";
       return text.trim().replace(/\s+/g, " ").slice(0, 100);
     } catch (error) {
-      console.error("[DOMManager] Error getMeaningfulText:", error, el);
+      console.error("Error getMeaningfulText:", error, el);
       return "";
     }
   }
-  /** Generates a random color for debug highlights. */
+  /** Generates a random color. */
   private getRandomColor(): string {
-    const r = Math.floor(Math.random() * 200 + 56);
+    /* ... same ... */ const r = Math.floor(Math.random() * 200 + 56);
     const g = Math.floor(Math.random() * 200 + 56);
     const b = Math.floor(Math.random() * 200 + 56);
     return `rgb(${r}, ${g}, ${b})`;
   }
 
-  /** Draws a debug highlight box - initially applies SECONDARY style and stores index */
+  // --- UPDATED drawDebugHighlight function ---
+  /** Draws debug highlight into the appropriate container, applying differentiated styles directly. */
   drawDebugHighlight(
     el: Element,
     index: number,
     offset: { x: number; y: number },
-    docContext: Document // The document to add the highlight div to (usually main doc)
-    // No longer needs modalContentDocument passed here directly
+    docContext: Document, // Document where highlight div should be added
+    modalContentDocument: Document | null, // Used for styling decision
+    isInteractive: boolean // Used for styling decision
   ): void {
     try {
       const rect = el.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return; // Don't draw zero-size elements
+      if (rect.width === 0 || rect.height === 0) return;
+
+      // --- Get or create the container IN THE CORRECT DOCUMENT ---
+      const container = this.ensureHighlightContainer(docContext);
+      // ---
 
       const highlight = docContext.createElement("div");
-      highlight.className = "debug-highlight"; // Class for easy removal
-      // --- Store index on the element for later lookup ---
+      highlight.className = "debug-highlight";
       highlight.dataset.d4mIndex = index.toString();
 
-      // --- Style definitions for SECONDARY only initially ---
-      const secondaryOutlineColor = "rgba(100, 100, 100, 0.8)";
-      const secondaryOutlineStyle = `2px dashed ${secondaryOutlineColor}`; // Use dashed outline
-      const secondaryBgColor = "rgba(128, 128, 128, 0.05)";
+      // Determine Highlight Style Based on Context & Interactivity
+      const isPrimaryContext =
+        !modalContentDocument || el.ownerDocument === modalContentDocument;
+      const primaryInteractiveColor = this.getRandomColor();
+      const primaryContentColor = this.getRandomColor();
+      const secondaryColor = "rgba(100, 100, 100, 0.8)";
+      const primaryInteractiveStyle = `2px solid ${primaryInteractiveColor}`;
+      const primaryContentStyle = `2px dotted ${primaryContentColor}`;
+      const secondaryStyle = `2px dashed ${secondaryColor}`;
+      const primaryInteractiveBg = `${primaryInteractiveColor}33`;
+      const primaryContentBg = `${primaryContentColor}1A`;
+      const secondaryBg = "rgba(128, 128, 128, 0.05)";
+      const primaryInteractiveLabelBg = primaryInteractiveColor;
+      const primaryContentLabelBg = primaryContentColor;
       const secondaryLabelBg = "rgba(80, 80, 80, 0.7)";
+      const primaryLabelColor = "black";
       const secondaryLabelColor = "white";
+      const primaryZIndex = "2147483647";
       const secondaryZIndex = "2147483646";
 
-      // Apply base styles + SECONDARY border/outline/bg/zIndex
+      // Apply final styles directly
+      let finalBorderStyle = "none";
+      let finalOutlineStyle = "none";
+      let finalBgColor = secondaryBg;
+      let finalLabelBg = secondaryLabelBg;
+      let finalLabelColor = secondaryLabelColor;
+      let finalZIndex = secondaryZIndex;
+      if (isPrimaryContext) {
+        if (isInteractive) {
+          finalBorderStyle = primaryInteractiveStyle;
+          finalBgColor = primaryInteractiveBg;
+          finalLabelBg = primaryInteractiveLabelBg;
+          finalLabelColor = primaryLabelColor;
+          finalZIndex = primaryZIndex;
+        } else {
+          finalOutlineStyle = primaryContentStyle;
+          finalBgColor = primaryContentBg;
+          finalLabelBg = primaryContentLabelBg;
+          finalLabelColor = primaryLabelColor;
+          finalZIndex = (parseInt(primaryZIndex) - 1).toString();
+        }
+      } else {
+        finalOutlineStyle = secondaryStyle;
+        finalBgColor = secondaryBg;
+        finalLabelBg = secondaryLabelBg;
+        finalLabelColor = secondaryLabelColor;
+        finalZIndex = secondaryZIndex;
+      }
+
       Object.assign(highlight.style, {
         position: "absolute",
         left: `${rect.left + offset.x + window.scrollX}px`,
@@ -306,53 +410,49 @@ export class DOMManager {
         height: `${rect.height}px`,
         pointerEvents: "none",
         boxSizing: "border-box",
-        backgroundColor: secondaryBgColor, // Apply secondary BG
-        zIndex: secondaryZIndex, // Apply secondary Z
-        outline: secondaryOutlineStyle, // Apply secondary outline
-        border: "none", // Ensure no border initially
-        outlineOffset: "-2px", // Optional offset
+        backgroundColor: finalBgColor,
+        zIndex: finalZIndex,
+        border: finalBorderStyle,
+        outline: finalOutlineStyle,
+        outlineOffset: finalOutlineStyle !== "none" ? "-2px" : "",
       });
 
       const label = docContext.createElement("span");
       label.textContent = `${index}`;
-      // Apply SECONDARY label styles initially
       Object.assign(label.style, {
         position: "absolute",
         top: "-16px",
         left: "0px",
-        background: secondaryLabelBg,
-        color: secondaryLabelColor,
+        background: finalLabelBg,
+        color: finalLabelColor,
         padding: "1px 3px",
         fontSize: "10px",
         fontWeight: "bold",
         borderRadius: "2px",
         boxShadow: "0 0 2px rgba(0,0,0,0.5)",
-        zIndex: "2147483647", // Keep label zIndex high
+        zIndex: "2147483647",
       });
 
       highlight.appendChild(label);
-      docContext.body.appendChild(highlight);
-
-      // Auto-remove timeout (applies to all highlights)
-      setTimeout(() => {
-        highlight.remove();
-      }, 3000);
+      // --- Append to container, NOT body ---
+      container.appendChild(highlight);
+      // --- REMOVED setTimeout for individual removal ---
     } catch (error) {
       console.error(
-        `[DOMManager] Error drawing initial highlight index ${index}:`,
+        `[DOMManager] Error drawing highlight index ${index}:`,
         error,
         el
       );
     }
   }
+  // --- END drawDebugHighlight ---
 
-  /** Extracts interactive elements and applies final highlight styles */
+  /** Extracts relevant elements, draws highlights into containers */
   extractPageElements(): {
     compressed: PageElement[];
     uncompressed: UncompressedPageElement[];
   } {
-    // --- Call the UPDATED clear function ---
-    this.clearDebugHighlights(); // Clears attributes too
+    this.clearDebugHighlights(); // Uses fast container removal now
 
     const compressedElements: PageElement[] = [];
     const uncompressedElements: UncompressedPageElement[] = [];
@@ -368,7 +468,7 @@ export class DOMManager {
       try {
         potentialElements = Array.from(
           node.querySelectorAll(
-            "a, button, input, textarea, select, [role], [contenteditable='true'], [tabindex]"
+            "a, button, input, textarea, select, [role], [contenteditable='true'], [tabindex], p, h1, h2, h3, h4, h5, h6, li, td, th, article, section, main, label, dl, dt, dd, figure, summary"
           )
         );
       } catch (error) {
@@ -381,9 +481,10 @@ export class DOMManager {
 
       potentialElements.forEach((el) => {
         try {
-          if (this.isInteractiveElement(el)) {
+          const { isRelevant, isInteractive } = this.isRelevantElement(el);
+          if (isRelevant) {
             const elementIndex = currentIndex++;
-            el.setAttribute("data-d4m-index", elementIndex.toString()); // Set attribute for this scan cycle
+            el.setAttribute("data-d4m-index", elementIndex.toString());
             const boundingBox = this.getBoundingBox(el, currentOffset);
             const attributes = this.getRelevantAttributes(el);
             const text = this.getMeaningfulText(el);
@@ -408,12 +509,15 @@ export class DOMManager {
             compressedElements.push(compressedData);
             uncompressedElements.push(uncompressedData);
             this.elementMap.set(elementIndex, el as HTMLElement);
-            // --- Draw initial SECONDARY highlight ---
+
+            // --- Call drawDebugHighlight directly with context info ---
             this.drawDebugHighlight(
               el,
               elementIndex,
               currentOffset,
-              ownerDocument
+              ownerDocument,
+              modalContentDocument,
+              isInteractive
             );
           }
         } catch (elementError) {
@@ -423,14 +527,15 @@ export class DOMManager {
             el
           );
         }
-      }); // End forEach potentialElement
+      });
 
-      // --- Recursively process IFrames ---
+      // --- Process IFrames (sets modalContentDocument for subsequent processing) ---
       try {
         const iframes = (node as Document).getElementsByTagName?.("iframe");
         if (iframes) {
           Array.from(iframes).forEach((iframe) => {
-            const iframeSrc = iframe.getAttribute("src") || "no src";
+            /* ... iframe logic same as before, sets modalContentDocument ... */ const iframeSrc =
+              iframe.getAttribute("src") || "no src";
             const viewportCheck = this.isInViewport(iframe);
             console.log(
               `[DOMManager iframe Check] Src: ${iframeSrc}, InViewport: ${viewportCheck}`
@@ -450,55 +555,48 @@ export class DOMManager {
                 );
                 if (readyState === "complete") {
                   let isLikelyModal = false;
-                  // Identify potential modal iframe (only first one found when scanning main doc)
                   if (node === document && !modalContentDocument) {
-                    console.log(
-                      `[DOMManager] Identifying potential modal iframe: ${iframeSrc}`
-                    );
-                    modalContentDocument = contentDoc; // Store its document
+                    console.log(`Identifying modal iframe: ${iframeSrc}`);
+                    modalContentDocument = contentDoc;
                     isLikelyModal = true;
                   }
-                  // Log and Recurse
                   console.log(
-                    `[DOMManager iframe Recurse START] Processing. Modal: ${isLikelyModal}, Src: ${iframeSrc}`
+                    `[DOMManager iframe Recurse START] Modal: ${isLikelyModal}, Src: ${iframeSrc}`
                   );
-                  let iframeElementCount = 0;
-                  const originalIndex = currentIndex;
-                  processNode(contentDoc, iframeOffset, ownerDocument); // Recursive Call
-                  iframeElementCount = currentIndex - originalIndex;
+                  let iCount = 0;
+                  const oIdx = currentIndex;
+                  processNode(contentDoc, iframeOffset, ownerDocument);
+                  iCount = currentIndex - oIdx;
                   console.log(
-                    `[DOMManager iframe Recurse END] Finished. Found ${iframeElementCount} elements inside. Src: ${iframeSrc}`
+                    `[DOMManager iframe Recurse END] Found ${iCount} elements inside. Src: ${iframeSrc}`
                   );
                 } else {
                   console.warn(
-                    `[DOMManager] Skipping iframe content (not complete). State: ${readyState}, Src: ${iframeSrc}`
+                    `Skipping iframe (not complete). State: ${readyState}, Src: ${iframeSrc}`
                   );
                 }
               } else {
                 console.warn(
-                  `[DOMManager] Skipping iframe content (no contentDocument). Src: ${iframeSrc}`,
+                  `Skipping iframe (no contentDoc). Src: ${iframeSrc}`,
                   iframe
                 );
               }
             } catch (e: any) {
               console.warn(
-                `[DOMManager] Error accessing iframe contentDoc. Src: ${iframeSrc}. Error: ${e.message}`,
+                `Error accessing iframe contentDoc. Src: ${iframeSrc}. Error: ${e.message}`,
                 iframe
               );
             }
           });
         }
       } catch (iframeError) {
-        console.error(
-          "[DOMManager processNode] Error processing iframes:",
-          iframeError
-        );
+        console.error("Error processing iframes:", iframeError);
       }
 
-      // --- Recursively process Shadow DOM ---
+      // --- Process Shadow DOM ---
       try {
-        const elementsWithShadowRoot = node.querySelectorAll("*");
-        elementsWithShadowRoot.forEach((el) => {
+        const shadowHosts = node.querySelectorAll("*");
+        shadowHosts.forEach((el) => {
           if (
             el.shadowRoot &&
             el.shadowRoot.mode === "open" &&
@@ -512,11 +610,8 @@ export class DOMManager {
             processNode(el.shadowRoot, shadowOffset, ownerDocument);
           }
         });
-      } catch (shadowDomError) {
-        console.error(
-          "[DOMManager processNode] Error processing Shadow DOM:",
-          shadowDomError
-        );
+      } catch (shadowError) {
+        console.error("Error processing Shadow DOM:", shadowError);
       }
     }; // End of processNode definition
 
@@ -529,73 +624,11 @@ export class DOMManager {
       console.error("[DOMManager] Error starting extraction:", mainError);
     }
 
-    // --- Post-Processing: Update styles for primary context elements ---
-    // This loop runs AFTER the entire scan (all processNode calls) is complete
-    if (modalContentDocument) {
-      // *** USE documentURI instead of URL ***
-      console.log(
-        `[DOMManager] Applying primary styles to elements in modal:`,
-        (modalContentDocument as Document).documentURI || "..."
-      ); // Use Type Assertion
-      // *** END CHANGE ***
-      const primaryBorderColor = this.getRandomColor(); // Use a consistent random color for the primary elements in this pass
-      const primaryBorderStyle = `2px solid ${primaryBorderColor}`;
-      const primaryBgColor = `${primaryBorderColor}33`;
-      const primaryLabelBg = primaryBorderColor;
-      const primaryLabelColor = "black";
-      const primaryZIndex = "2147483647";
-
-      // *** USE 'document' HERE instead of 'ownerDocument' - CORRECTED ***
-      document.body
-        .querySelectorAll(".debug-highlight")
-        .forEach((highlightDiv) => {
-          const indexStr = (highlightDiv as HTMLElement).dataset.d4mIndex;
-          if (indexStr) {
-            const index = parseInt(indexStr, 10);
-            // Check if index exists in the map before getting element
-            if (this.elementMap.has(index)) {
-              const element = this.elementMap.get(index);
-              // If element exists AND belongs to the identified modal document, update its style
-              if (element && element.ownerDocument === modalContentDocument) {
-                try {
-                  Object.assign((highlightDiv as HTMLElement).style, {
-                    backgroundColor: primaryBgColor,
-                    zIndex: primaryZIndex,
-                    border: primaryBorderStyle, // Apply primary border
-                    outline: "none", // Remove outline
-                    outlineOffset: "", // Reset offset
-                  });
-                  // Update label style too
-                  const label = highlightDiv.querySelector("span");
-                  if (label) {
-                    Object.assign(label.style, {
-                      background: primaryLabelBg,
-                      color: primaryLabelColor,
-                    });
-                  }
-                } catch (styleError) {
-                  console.error(
-                    `[DOMManager] Error updating primary style for index ${index}:`,
-                    styleError
-                  );
-                }
-              }
-            } else {
-              console.warn(
-                `[DOMManager] Post-processing: Element for index ${index} not found in map.`
-              );
-            }
-          }
-        });
-    } else {
-      console.log(
-        "[DOMManager] No modal iframe identified, all highlights remain secondary style."
-      );
-    }
-    // --- End Post-Processing ---
+    // --- REMOVED Post-Processing Style Loop ---
+    // Styles are now applied directly in drawDebugHighlight based on context known at that point
 
     console.log(
-      `[DOMManager] Extracted ${currentIndex} total interactive elements.`
+      `[DOMManager] Extracted ${currentIndex} total relevant elements.`
     );
     return {
       compressed: compressedElements,
