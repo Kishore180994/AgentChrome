@@ -23,6 +23,8 @@ export interface LocalAction {
     question?: string; // For ask
     selector?: string; // Optional, derived dynamically if not provided
     output?: string; // For extract
+    childElement?: any;
+    duration?: any;
   };
   description?: string;
 }

@@ -454,25 +454,23 @@ function mapAiItemToLocalAction(item: AgentActionItem): LocalAction {
   const params = (item as any)[actionName] || {};
 
   let type: LocalActionType;
-  let data: LocalAction["data"] = {};
+  // --- Focus on extracting the direct index ---
+  const index = typeof params.index === "number" ? params.index : undefined;
+  let data: LocalAction["data"] = {}; // Initialize data
 
   switch (actionName.toLowerCase()) {
     case "click_element":
       type = "click";
-      data = {
-        index: params.index,
-        selector: params.selector,
-        ...(params.childId !== undefined && { childId: params.childId }),
-      };
+      // Only pass the index, as per the new prompt/DOM structure
+      data = { index };
+      // Optional: keep selector for logging/debugging if AI still provides it
+      // if (params.selector) data.selector = params.selector;
       break;
     case "input_text":
       type = "input_text";
-      data = {
-        index: params.index,
-        text: params.text,
-        selector: params.selector,
-        ...(params.childId !== undefined && { childId: params.childId }),
-      };
+      // Pass index and text
+      data = { index, text: params.text };
+      // if (params.selector) data.selector = params.selector; // Optional logging
       break;
     case "open_tab":
     case "go_to_url":
@@ -482,40 +480,38 @@ function mapAiItemToLocalAction(item: AgentActionItem): LocalAction {
       break;
     case "extract_content":
       type = "extract";
-      data = {
-        index: params.index,
-        selector: params.selector,
-        ...(params.childId !== undefined && { childId: params.childId }),
-      };
+      // Pass index
+      data = { index };
+      // if (params.selector) data.selector = params.selector; // Optional logging
       break;
     case "submit_form":
       type = "submit_form";
-      data = {
-        index: params.index,
-        selector: params.selector,
-        ...(params.childId !== undefined && { childId: params.childId }),
-      };
+      // Pass index (targeting the submit button/element directly)
+      data = { index };
+      // if (params.selector) data.selector = params.selector; // Optional logging
       break;
     case "key_press":
       type = "key_press";
-      data = {
-        key: params.key,
-        index: params.index,
-        selector: params.selector,
-        ...(params.childId !== undefined && { childId: params.childId }),
-      };
+      // Pass index and key
+      data = { key: params.key, index };
+      // if (params.selector) data.selector = params.selector; // Optional logging
       break;
     case "scroll":
       type = "scroll";
-      data = { direction: params.direction, offset: params.offset || 200 };
+      // Scroll doesn't usually target an index, pass direction/offset
+      data = { direction: params.direction, offset: params.offset };
       break;
     case "verify":
+      // This action seems browser-level, not element specific
       type = "verify";
       data = { url: params.url };
       break;
     case "ask":
       type = "ask";
-      data = { question: (item as AskAction).ask.question };
+      // Ensure correct type casting if using AskAction type
+      data = {
+        question: (item as AskAction).ask?.question || "Missing question",
+      };
       break;
     case "refetch":
       type = "refetch";
@@ -529,9 +525,31 @@ function mapAiItemToLocalAction(item: AgentActionItem): LocalAction {
       };
       break;
     default:
-      console.warn("[background.ts] Unknown action:", actionName);
-      type = "wait";
+      console.warn(
+        "[background.ts] Unknown action from AI:",
+        actionName,
+        params
+      );
+      // Default to 'wait' or handle as an error appropriately
+      type = "wait"; // Or potentially throw an error
       data = {};
+  }
+
+  // Ensure index is valid number for actions that require it
+  if (
+    ["click", "input_text", "extract", "submit_form", "key_press"].includes(
+      type
+    ) &&
+    typeof index !== "number"
+  ) {
+    console.error(
+      `[background.ts] Invalid or missing index for action type ${type}:`,
+      params
+    );
+    // Handle error - maybe default to a 'fail' state or throw?
+    // For now, let's map it but ActionExecutor will likely fail it.
+    // Alternatively, map to a different action type like 'wait' or 'fail'.
+    // type = 'wait'; // Example: Change type if index is invalid
   }
 
   return { id: Date.now().toString(), type, data, description: actionName };

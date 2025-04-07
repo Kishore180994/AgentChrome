@@ -49,20 +49,6 @@ export interface BoundingBox {
   height: number;
 }
 
-/**
- * Represents an element on a web page in array format for compression.
- * - Container: [index, tagName, text, attributes, boundingBox, childElements]
- * - Child: [tagName, text, attributes, boundingBox, childId]
- */
-export type PageElement = [
-  number, // index (containers only)
-  string, // tagName
-  string, // text
-  Record<string, string>, // attributes
-  BoundingBox, // boundingBox
-  ChildElement[]? // childElements (containers only, optional)
-];
-
 export type ChildElement = [
   string, // tagName
   string, // text
@@ -71,15 +57,22 @@ export type ChildElement = [
   number // childId (1-based per container)
 ];
 
-/**
- * Represents an uncompressed element with a direct DOM reference.
- */
+// Type definitions (assumed to be in a separate file or above)
+export type PageElement = [
+  number, // index
+  string, // tagName
+  string, // text
+  Record<string, string>, // attributes
+  [number, number, number, number], // boundingBox
+  PageElement[] // childElements
+];
+
 export interface UncompressedPageElement {
   index: number;
   tagName: string;
   text: string;
   attributes: Record<string, string>;
-  boundingBox: BoundingBox;
-  childElements: ChildElement[];
+  boundingBox: [number, number, number, number];
+  childElements: UncompressedPageElement[];
   element: HTMLElement;
 }

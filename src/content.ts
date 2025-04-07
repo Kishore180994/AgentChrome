@@ -1,16 +1,14 @@
 // content.ts
 import { DOMManager } from "./classes/DOMManager";
 import { ActionExecutor } from "./classes/ActionExecutor";
-import { UncompressedPageElement } from "./services/ai/interfaces";
+// import { UncompressedPageElement } from "./services/ai/interfaces"; // No longer needed here
 
 const domManager = new DOMManager();
-const actionExecutor = new ActionExecutor();
-let uncompressedElements: UncompressedPageElement[] = [];
+const actionExecutor = new ActionExecutor(domManager); // Pass instance
 
 declare global {
   interface Window {
     __AGENT_CHROME_INITIALIZED__?: boolean;
-    postMessage(message: any, targetOrigin: string): void;
   }
 }
 
@@ -20,8 +18,14 @@ if (!window[AGENT_KEY]) {
 
   let tabId: number | null = null;
   let port: chrome.runtime.Port | null = null;
+  let keepAliveInterval: NodeJS.Timeout | null = null; // Keep track of interval
 
   const initializePort = () => {
+    // Clear existing interval if any
+    if (keepAliveInterval) clearInterval(keepAliveInterval);
+    keepAliveInterval = null;
+    port = null; // Reset port
+
     try {
       if (!chrome.runtime?.id) {
         console.warn(
@@ -30,87 +34,101 @@ if (!window[AGENT_KEY]) {
         window[AGENT_KEY] = false;
         return;
       }
-      port = chrome.runtime.connect({
-        name: `content-script-${tabId || -1}`,
-      });
+      // Ensure tabId is set before connecting
+      if (tabId === null) {
+        console.warn("[content.ts] Cannot initialize port, tabId not set.");
+        window[AGENT_KEY] = false;
+        return;
+      }
+
+      port = chrome.runtime.connect({ name: `content-script-${tabId}` }); // Use tabId in name
+      console.log(`[content.ts] Port connected for tab ${tabId}.`);
 
       port.onDisconnect.addListener(() => {
-        console.log(
-          "[content.ts] Port disconnected, attempting to reconnect..."
+        console.warn(
+          `[content.ts] Port disconnected for tab ${tabId}. Clearing keep-alive.`
         );
+        if (keepAliveInterval) clearInterval(keepAliveInterval);
+        keepAliveInterval = null;
         port = null;
-        window[AGENT_KEY] = false;
+        // Consider if re-initialization should be attempted or rely on user action/background retry
+        // window[AGENT_KEY] = false; // Re-setting this might cause loops if connection fails repeatedly
       });
 
-      setInterval(() => {
+      // Start keep-alive
+      keepAliveInterval = setInterval(() => {
         try {
-          if (!chrome.runtime?.id) {
+          if (!chrome.runtime?.id || !port) {
+            // Check port existence too
             console.warn(
-              "[content.ts] Extension context invalidated, stopping KEEP_ALIVE."
+              "[content.ts] Context/Port invalid, stopping KEEP_ALIVE."
             );
-            window[AGENT_KEY] = false;
+            if (keepAliveInterval) clearInterval(keepAliveInterval);
+            keepAliveInterval = null;
+            port = null; // Ensure port is nullified
             return;
           }
-          if (port) {
-            port.postMessage({
-              type: "KEEP_ALIVE",
-              tabId: tabId || -1,
-            });
-          }
+          port.postMessage({ type: "KEEP_ALIVE", tabId: tabId });
         } catch (err) {
-          console.warn("[content.ts] KEEP_ALIVE failed:", err);
-          window[AGENT_KEY] = false;
+          console.warn("[content.ts] KEEP_ALIVE postMessage failed:", err);
+          if (keepAliveInterval) clearInterval(keepAliveInterval); // Stop on error
+          keepAliveInterval = null;
+          port = null;
         }
-      }, 5000);
+      }, 20000); // 20 seconds interval
     } catch (err) {
-      console.warn("[content.ts] Failed to initialize port:", err);
-      window[AGENT_KEY] = false;
+      console.error("[content.ts] Failed to initialize port:", err);
+      window[AGENT_KEY] = false; // Mark as failed
     }
   };
 
-  try {
-    if (chrome.runtime?.id) {
+  const getTabAndInitialize = () => {
+    try {
+      if (!chrome.runtime?.id) {
+        window[AGENT_KEY] = false;
+        return;
+      }
+      // Assuming background script handles 'GET_TAB_ID' message
       chrome.runtime.sendMessage({ type: "GET_TAB_ID" }, (response) => {
         if (chrome.runtime.lastError) {
           console.warn(
             "[content.ts] GET_TAB_ID failed:",
-            chrome.runtime.lastError
+            chrome.runtime.lastError.message
           );
           window[AGENT_KEY] = false;
           return;
         }
         if (response?.tabId) {
           tabId = response.tabId;
-          initializePort();
+          console.log("[content.ts] Received tabId:", tabId);
+          initializePort(); // Initialize port only after getting tabId
+        } else {
+          console.warn(
+            "[content.ts] Did not receive valid tabId from background."
+          );
+          window[AGENT_KEY] = false;
         }
       });
-    } else {
-      console.warn("[content.ts] Extension context invalidated on startup.");
+    } catch (err) {
+      console.error("[content.ts] Failed to send GET_TAB_ID:", err);
       window[AGENT_KEY] = false;
     }
-  } catch (err) {
-    console.warn("[content.ts] Failed to send GET_TAB_ID:", err);
-    window[AGENT_KEY] = false;
-  }
+  };
 
-  try {
-    if (chrome.runtime?.id) {
-      chrome.runtime.sendMessage({
-        type: "REGISTER_CONTENT_SCRIPT",
-        tabId: tabId || -1,
-      });
-    }
-  } catch (err) {
-    console.warn("[content.ts] Failed to register content script:", err);
-    window[AGENT_KEY] = false;
-  }
+  // --- Initialization ---
+  getTabAndInitialize(); // Get tabId first, then initialize port
 
+  // --- Message Listener ---
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    const messageType = message?.type;
+    // Optional: Add sender check: if (sender.id !== chrome.runtime.id) return false;
+    console.log(`[content.ts] Received message: ${messageType}`, message);
+
     try {
       if (!chrome.runtime?.id) {
         console.warn(
-          "[content.ts] Extension context invalidated, cannot process message:",
-          message
+          "[content.ts] Context invalidated, ignoring message:",
+          messageType
         );
         sendResponse({
           success: false,
@@ -119,130 +137,170 @@ if (!window[AGENT_KEY]) {
         return true;
       }
 
-      if (message.type === "GET_TAB_ID" && sender.tab?.id) {
-        tabId = sender.tab.id;
-        sendResponse({ tabId });
-        return true;
-      }
+      const currentTabId = tabId; // Use initialized tabId
 
-      const currentTabId = sender.tab?.id || tabId;
-      switch (message.type) {
+      switch (messageType) {
         case "PERFORM_ACTION":
-          // Refresh elements before executing the action
-          const { compressed, uncompressed } = domManager.extractPageElements();
-          uncompressedElements = uncompressed;
-          console.log(
-            "[content.ts] Refreshed elements before action:",
-            uncompressed.length
-          );
-          actionExecutor.setElements(uncompressedElements);
+          // --- Action Execution ---
+          // Scan is NOT performed here. ActionExecutor uses state from last GET_PAGE_ELEMENTS.
+          console.log("[content.ts] Executing action:", message.action);
           actionExecutor
             .execute(message.action)
             .then((result) => {
-              sendResponse({ success: true, result, tabId: currentTabId });
+              console.log("[content.ts] Action success, result:", result);
+              sendResponse({
+                success: true,
+                result: result ?? null,
+                tabId: currentTabId,
+              });
             })
             .catch((error: any) => {
-              console.error("[content.ts] Action execution failed:", error);
+              console.error(
+                "[content.ts] Action failed:",
+                error.message,
+                error.stack
+              );
               sendResponse({
                 success: false,
                 error: error.message || "Action failed",
                 tabId: currentTabId,
               });
             });
-          return true;
-        case "RESIZE_SCREENSHOT":
-          const img = new Image();
-          const maxSize = 720;
-
-          img.onload = () => {
-            const scale = maxSize / Math.max(img.width, img.height);
-            const width = img.width * scale;
-            const height = img.height * scale;
-
-            const canvas = document.createElement("canvas");
-            canvas.width = width;
-            canvas.height = height;
-
-            const ctx = canvas.getContext("2d");
-            if (!ctx) {
-              sendResponse({ error: "Canvas context error" });
-              return;
-            }
-
-            ctx.drawImage(img, 0, 0, width, height);
-            const webp = canvas.toDataURL("image/webp", 0.7);
-            sendResponse({ resizedDataUrl: webp });
-          };
-
-          img.onerror = () => {
-            sendResponse({ error: "Image load error" });
-          };
-
-          img.src = message.dataUrl;
-          return true;
+          return true; // Async response
 
         case "GET_PAGE_ELEMENTS":
-          const elements = domManager.extractPageElements();
-          uncompressedElements = elements.uncompressed;
+          // --- Element Extraction ---
           console.log(
-            "[content.ts] Extracted elements:",
-            uncompressedElements.length
+            `[content.ts] GET_PAGE_ELEMENTS request. State: ${
+              document.readyState
+            }, Body: ${!!document.body}`
           );
-          sendResponse({
-            success: true,
-            compressed: elements.compressed,
-            uncompressed: [],
-          });
-          return true;
-        case "PING":
-          sendResponse({ success: true, tabId: currentTabId });
-          return true;
-        case "EXECUTION_UPDATE":
-          const { taskHistory } = message;
-          chrome.runtime.sendMessage({
-            type: "UPDATE_SIDEPANEL",
-            taskHistory,
-          });
-          sendResponse({ success: true, tabId: currentTabId });
-          return true;
-        case "DISPLAY_MESSAGE":
-          console.log("[content.ts] DISPLAY_MESSAGE:", message);
-          if (message.response) {
-            chrome.runtime.sendMessage({
-              type: "COMMAND_RESPONSE",
-              response: message.response,
-            });
-          } else {
+          if (
+            document.readyState !== "complete" &&
+            document.readyState !== "interactive"
+          ) {
             console.warn(
-              "[content.ts] DISPLAY_MESSAGE with undefined response"
+              `[content.ts] Doc state '${document.readyState}' during GET_PAGE_ELEMENTS. Results may be incomplete.`
             );
-            chrome.runtime.sendMessage({
-              type: "COMMAND_RESPONSE",
-              response: "No response received",
+            // Consider returning error or empty if state is 'loading'?
+          }
+          try {
+            const elements = domManager.extractPageElements(); // Scan and update internal map
+            console.log(
+              `[content.ts] DOMManager extracted ${elements.compressed.length} elements.`
+            );
+            sendResponse({
+              success: true,
+              compressed: elements.compressed,
+              uncompressed: elements.uncompressed,
+            });
+          } catch (extractError: any) {
+            console.error(
+              "[content.ts] Error calling domManager.extractPageElements():",
+              extractError.message,
+              extractError.stack
+            );
+            sendResponse({
+              success: false,
+              error: "Extraction error: " + extractError.message,
             });
           }
+          return true; // Async response (though likely fast)
+
+        case "RESIZE_SCREENSHOT":
+          // Logic remains the same, ensure it handles errors
+          const img = new Image();
+          const maxSize = 720;
+          img.onload = () => {
+            /* ... (resizing logic as before) ... */
+            try {
+              const canvas = document.createElement("canvas"); // Create inside onload
+              let scale = 1;
+              if (img.width > maxSize || img.height > maxSize) {
+                scale = maxSize / Math.max(img.width, img.height);
+              }
+              canvas.width = img.width * scale;
+              canvas.height = img.height * scale;
+              const ctx = canvas.getContext("2d");
+              if (!ctx) {
+                sendResponse({ error: "Canvas context error" });
+                return;
+              }
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              const webp = canvas.toDataURL("image/webp", 0.7);
+              console.log("[content.ts] Resized screenshot (WebP)");
+              sendResponse({ resizedDataUrl: webp });
+            } catch (e) {
+              console.error("[content.ts] Error during resize/encode:", e);
+              sendResponse({ error: "Resize/encode error" }); // Send error back
+            }
+          };
+          img.onerror = (err) => {
+            console.error("[content.ts] Image load error for resizing:", err);
+            sendResponse({ error: "Image load error" });
+          };
+          img.src = message.dataUrl;
+          return true; // Async response
+
+        case "PING":
+          // console.log("[content.ts] Received PING"); // Less verbose
+          sendResponse({ success: true, tabId: currentTabId });
+          return true;
+
+        case "DISPLAY_MESSAGE": // Handle messages from background if needed
+          console.log(
+            "[content.ts] Received DISPLAY_MESSAGE:",
+            message.response?.message || message.response
+          );
+          // Currently just logs, background handles sidepanel update
           sendResponse({ success: true });
           return true;
+
         default:
+          console.warn(
+            "[content.ts] Received unknown message type:",
+            messageType
+          );
           sendResponse({
             success: false,
-            error: "Unknown message type",
+            error: "Unknown message type: " + messageType,
             tabId: currentTabId,
           });
           return true;
       }
-    } catch (err) {
-      console.error("[content.ts] Runtime message error:", err);
-      sendResponse({ success: false, error: (err as Error).message });
-      window[AGENT_KEY] = false;
+    } catch (err: any) {
+      console.error(
+        "[content.ts] Error processing runtime message:",
+        messageType,
+        err.message,
+        err.stack
+      );
+      try {
+        sendResponse({
+          success: false,
+          error: "Content script error: " + err.message,
+        });
+      } catch (respErr) {
+        console.error("[content.ts] Failed sending error response:", respErr);
+      }
       return true;
     }
-  });
+  }); // End of message listener
 
   window.addEventListener("pageshow", (event) => {
     if (event.persisted) {
-      console.log("[content.ts] Page restored from cache, reinitializing...");
-      window[AGENT_KEY] = false;
+      // Page loaded from back/forward cache
+      console.log(
+        "[content.ts] Page restored from BFCache. Re-checking connection."
+      );
+      // Re-validate connection or re-initialize
+      getTabAndInitialize(); // Re-run init logic
     }
   });
+
+  console.log("[content.ts] Agent content script initialized successfully.");
+} else {
+  console.log(
+    "[content.ts] Agent content script already initialized (AGENT_KEY found)."
+  );
 }
