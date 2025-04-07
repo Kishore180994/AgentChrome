@@ -1,10 +1,5 @@
 /**
  * Represents the role of an entity in the system.
- *
- * @typedef {("model" | "user")} Role
- *
- * @property {"model"} model - Represents the AI model role.
- * @property {"user"} user - Represents the user role.
  */
 export type Role = "model" | "user" | "assistant";
 
@@ -19,9 +14,6 @@ export interface ClaudeChatContent {
   }; // Required if type is "image"
 }
 
-/**
- * Represents a chat message in the system.
- */
 export interface GeminiChatMessage {
   role: Role;
   parts: Array<Parts>;
@@ -37,35 +29,50 @@ export interface ClaudeChatMessage {
   content: ClaudeChatContent[];
 }
 
-/**
- * Represents the data of a file.
- */
 export interface FileData {
   mimeType: string;
   fileUri: string;
 }
 
-/**
- * Represents the parts of a data structure that can include file data and text.
- */
 export interface Parts {
   fileData?: FileData;
   text?: string;
 }
 
 /**
- * Represents an element on a web page.
+ * Represents a bounding box for an element on a web page.
  */
-export interface PageElement {
-  index: number;
-  tagName: string;
-  text: string;
-  attributes: Record<string, string>;
-}
-
 export interface BoundingBox {
   x: number;
   y: number;
   width: number;
   height: number;
+}
+
+export type ChildElement = [
+  string, // tagName
+  string, // text
+  Record<string, string>, // attributes
+  BoundingBox, // boundingBox
+  number // childId (1-based per container)
+];
+
+// Type definitions (assumed to be in a separate file or above)
+export type PageElement = [
+  number, // index
+  string, // tagName
+  string, // text
+  Record<string, string>, // attributes
+  [number, number, number, number], // boundingBox
+  PageElement[] // childElements
+];
+
+export interface UncompressedPageElement {
+  index: number;
+  tagName: string;
+  text: string;
+  attributes: Record<string, string>;
+  boundingBox: [number, number, number, number];
+  childElements: UncompressedPageElement[];
+  element: HTMLElement;
 }
