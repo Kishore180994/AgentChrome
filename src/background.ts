@@ -842,7 +842,7 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
       );
       sendResponse({ success: false, error: "Sender tab ID not found" });
     }
-    return false; // Indicate synchronous response (optional but good practice here)
+    return false;
   }
 });
 

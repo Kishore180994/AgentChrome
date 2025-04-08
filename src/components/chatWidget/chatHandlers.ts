@@ -26,7 +26,7 @@ export const handleSubmit = async (
   setError(null);
   setIsLoading(true);
   setShowCommandPopup(false);
-  setIsTextareaFocused(false);
+  // setIsTextareaFocused(false);
   setCurrentAnimation("starfallCascade");
   setCommandHistory((prev) => {
     const updatedHistory = [
@@ -215,7 +215,7 @@ export const handleChipClick = (
   textareaRef: RefObject<HTMLTextAreaElement>
 ) => {
   setInput(suggestion);
-  setIsTextareaFocused(false);
+  // setIsTextareaFocused(false);
   textareaRef.current?.blur();
 };
 
@@ -230,7 +230,9 @@ export const handleFocus =
     setShowCommandPopup: (value: boolean) => void
   ) =>
   () => {
+    console.log("[chatHandlers] handleFocus executed!"); // <-- ADD THIS LOG
     setIsTextareaFocused(true);
+    console.log("[chatHandlers] setIsTextareaFocused(true) called."); // <-- ADD THIS LOG
     setShowCommandPopup(false);
   };
 
@@ -240,7 +242,11 @@ export const handleBlur =
     setShowCommandPopup: (value: boolean) => void
   ) =>
   () => {
+    console.log("[chatHandlers] handleBlur executed! Setting timeout..."); // <-- ADD THIS LOG
     setTimeout(() => {
+      console.log(
+        "[chatHandlers] handleBlur timeout finished. Setting states to false."
+      ); // <-- ADD THIS LOG
       setIsTextareaFocused(false);
       setShowCommandPopup(false);
     }, 200);

@@ -84,7 +84,7 @@ if (!window[AGENT_KEY]) {
       }, 20000); // 20 seconds interval
     } catch (err) {
       console.error("[content.ts] Failed to initialize port:", err);
-      window[AGENT_KEY] = false; // Mark as failed
+      window[AGENT_KEY] = false;
     }
   };
 

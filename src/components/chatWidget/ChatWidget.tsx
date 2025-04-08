@@ -18,7 +18,6 @@ import { storage } from "../../utils/storage";
 import { SettingsModal } from "../SettingsModal";
 import { AccentColor, themeStyles } from "../../utils/themes";
 import { ToastNotification } from "../ToastNotifications";
-import { useSiriBorder } from "../../hooks/useSiriBorder";
 import {
   handleSubmit,
   handleStop,
@@ -35,6 +34,7 @@ import { Message, ProcessedMessage } from "./chatInterface";
 import { RecordingMic } from "./RecordingMic";
 import StarfallCascadeAnimation from "../../utils/helpers";
 import { TranscriptLine, useDeepgramLive } from "../../hooks/useDeepgramLive";
+import { useSiriBorderWithRef } from "../../hooks/useSiriBorder";
 
 export function ChatWidget() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -74,12 +74,13 @@ export function ChatWidget() {
   } | null>(null);
   const [liveTranscript, setLiveTranscript] = useState<TranscriptLine[]>([]);
 
-  const { startRecording, stopRecording, isRecording } = useDeepgramLive({
+  const { startRecording, stopRecording } = useDeepgramLive({
     apiKey: "0f7e30b6546822958e971a12c1a4215bccceabb5",
     onTranscript: (line) => {
       setLiveTranscript((prev) => [...prev, line]);
     },
   });
+  const widgetContainerRef = useRef<HTMLDivElement>(null);
   const suggestions = [
     "Open a new tab with Google",
     "Summarize this page",
@@ -259,8 +260,6 @@ export function ChatWidget() {
     setProcessedMessages(processed.reverse());
   };
 
-  useSiriBorder(isLoading);
-
   useEffect(() => {
     const handleBackgroundMessage = (
       message: any,
@@ -347,6 +346,8 @@ export function ChatWidget() {
     processMessages(messages);
   }, [messages]);
 
+  useSiriBorderWithRef(isLoading, "16px");
+
   useEffect(() => {
     if (selectedCommandRef.current) {
       selectedCommandRef.current.scrollIntoView({ block: "nearest" });
@@ -360,8 +361,9 @@ export function ChatWidget() {
     mode === "light" ? "d4m-border-gray-300" : "d4m-border-gray-700";
 
   return (
-    <>
+    <React.Fragment>
       <div
+        ref={widgetContainerRef}
         className={`d4m-w-full d4m-h-full d4m-flex d4m-flex-col ${currentTheme.container} d4m-relative`}
       >
         {isTextareaFocused && (
@@ -423,7 +425,15 @@ export function ChatWidget() {
             </div>
           </div>
         </div>
-
+        {toast && (
+          <ToastNotification
+            message={toast.message}
+            type={toast.type}
+            onClose={() => setToast(null)}
+            duration={1000}
+            animationDuration={300}
+          />
+        )}
         <div
           ref={messagesContainerRef}
           className={`d4m-flex-1 d4m-overflow-y-auto d4m-space-y-4 d4m-px-3 d4m-py-2 d4m-bg-transparent d4m-scrollbar-thin d4m-relative ${
@@ -434,6 +444,57 @@ export function ChatWidget() {
               : "d4m-scrollbar-thumb-gray-600"
           } d4m-flex d4m-flex-col-reverse`}
         >
+          {processedMessages.length === 0 &&
+            !isLoading &&
+            !isRecordingClicked && (
+              <div className="d4m-flex d4m-flex-col d4m-items-center d4m-justify-center d4m-text-center d4m-p-6 d4m-animate-fade-in d4m-h-full">
+                {" "}
+                {/* Ensure it can fill height */}
+                {/* Logo from public folder - ADJUST PATH/FILENAME IF NEEDED */}
+                <img
+                  src="/icons/icon128.png"
+                  alt="Agent Logo"
+                  className="d4m-w-16 d4m-h-16 d4m-mb-4 d4m-opacity-80"
+                />
+                <h2
+                  className={`d4m-text-lg d4m-font-semibold ${textColor} d4m-mb-2`}
+                >
+                  Welcome!
+                </h2>
+                <p className={`d4m-text-sm ${accentColor} d4m-mb-6`}>
+                  How can I assist you today?
+                </p>
+                <p
+                  className={`d4m-text-xs d4m-font-medium ${accentColor} d4m-mb-3`}
+                >
+                  Try an example:
+                </p>
+                <div className="d4m-flex d4m-flex-wrap d4m-gap-2 d4m-justify-center d4m-max-w-xs">
+                  {/* Map over your suggestions array */}
+                  {suggestions.slice(0, 4).map(
+                    (
+                      suggestion // Show first 4 suggestions
+                    ) => (
+                      <button
+                        key={suggestion}
+                        onClick={() =>
+                          handleChipClick(
+                            suggestion,
+                            setInput,
+                            setIsTextareaFocused,
+                            textareaRef
+                          )
+                        }
+                        // Apply theme styles for consistency
+                        className={`d4m-text-xs ${currentTheme.suggestion} d4m-px-3 d4m-py-1 hover:d4m-opacity-80 d4m-transition-opacity d4m-rounded-full`}
+                      >
+                        {suggestion}
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+            )}
           {isRecordingClicked ? (
             <RecordingMic
               accentColor={accentColor}
@@ -751,12 +812,15 @@ export function ChatWidget() {
                       userTypedInput
                     )
                   }
-                  onFocus={() =>
-                    handleFocus(setIsTextareaFocused, setShowCommandPopup)
-                  }
-                  onBlur={() =>
-                    handleBlur(setIsTextareaFocused, setShowCommandPopup)
-                  }
+                  onFocus={() => {
+                    console.log("[ChatWidget] Textarea onFocus triggered!"); // <-- ADD THIS LOG
+                    // Make sure to call the function returned by handleFocus
+                    handleFocus(setIsTextareaFocused, setShowCommandPopup)();
+                  }}
+                  onBlur={() => {
+                    console.log("[ChatWidget] Textarea onBlur triggered!"); // <-- ADD THIS LOG
+                    handleBlur(setIsTextareaFocused, setShowCommandPopup)();
+                  }}
                   placeholder="Enter command..."
                   className={`d4m-flex-1 d4m-px-3 d4m-py-2 ${textColor} d4m-text-sm d4m-rounded-xl d4m-border-none ${
                     currentTheme.textarea
@@ -846,13 +910,6 @@ export function ChatWidget() {
         accentColor={accentColor}
         mode={mode}
       />
-      {toast && (
-        <ToastNotification
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
-    </>
+    </React.Fragment>
   );
 }

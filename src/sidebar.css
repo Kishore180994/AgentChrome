@@ -77,7 +77,7 @@
             box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
         }
     }
-    
+
     @keyframes mic-bounce {
 
         0%,
@@ -89,7 +89,7 @@
             transform: translateY(-5px);
         }
     }
-    
+
     @keyframes sound-wave {
         0% {
             transform: scale(0.8);
@@ -101,7 +101,7 @@
             opacity: 0;
         }
     }
-    
+
     @keyframes fade-in {
         0% {
             opacity: 0;

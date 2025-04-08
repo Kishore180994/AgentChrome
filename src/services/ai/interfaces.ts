@@ -57,7 +57,6 @@ export type ChildElement = [
   number // childId (1-based per container)
 ];
 
-// Type definitions (assumed to be in a separate file or above)
 export type PageElement = [
   number, // index
   string, // tagName

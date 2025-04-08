@@ -1,9 +1,9 @@
-// DOMManager.ts (FINAL - Fast Cleanup + Differentiated Highlighting)
+// DOMManager.ts
 import {
   PageElement,
   UncompressedPageElement,
   BoundingBox,
-} from "../services/ai/interfaces"; // Adjust path as needed
+} from "../services/ai/interfaces";
 
 // Helper type guards
 function isInputElement(
@@ -434,9 +434,9 @@ export class DOMManager {
       });
 
       highlight.appendChild(label);
-      // --- Append to container, NOT body ---
+
       container.appendChild(highlight);
-      // --- REMOVED setTimeout for individual removal ---
+      setTimeout(() => this.clearDebugHighlights(), 2000);
     } catch (error) {
       console.error(
         `[DOMManager] Error drawing highlight index ${index}:`,
@@ -624,7 +624,6 @@ export class DOMManager {
       console.error("[DOMManager] Error starting extraction:", mainError);
     }
 
-    // --- REMOVED Post-Processing Style Loop ---
     // Styles are now applied directly in drawDebugHighlight based on context known at that point
 
     console.log(
