@@ -34,7 +34,7 @@ export class DOMManager {
 
   // --- THIS FUNCTION IS UPDATED ---
   /** Clears attributes, finds and removes highlight containers, resets map. */
-  clearDebugHighlights(doc: Document = document): void {
+  clearDebugHighlights(doc: Document = document, isInitial: boolean): void {
     try {
       // Remove attributes (this is generally fast enough)
       doc.querySelectorAll("[data-d4m-index]").forEach((el) => {
@@ -74,7 +74,7 @@ export class DOMManager {
       });
       // --- End Removal ---
 
-      this.elementMap.clear(); // Clear the internal map
+      isInitial && this.elementMap.clear();
       console.log(
         "[DOMManager] Cleared attributes, highlight containers, and map."
       );
@@ -436,7 +436,7 @@ export class DOMManager {
       highlight.appendChild(label);
 
       container.appendChild(highlight);
-      setTimeout(() => this.clearDebugHighlights(), 2000);
+      setTimeout(() => this.clearDebugHighlights(docContext, false), 2000);
     } catch (error) {
       console.error(
         `[DOMManager] Error drawing highlight index ${index}:`,
@@ -452,7 +452,7 @@ export class DOMManager {
     compressed: PageElement[];
     uncompressed: UncompressedPageElement[];
   } {
-    this.clearDebugHighlights(); // Uses fast container removal now
+    this.clearDebugHighlights(document, true); // Uses fast container removal now
 
     const compressedElements: PageElement[] = [];
     const uncompressedElements: UncompressedPageElement[] = [];

@@ -1,6 +1,5 @@
-// ActionExecutor.ts (UPDATED to use tagName checks)
-
-import { LocalAction } from "../types/actionType"; // Assuming this defines action structure
+// ActionExecutor.ts
+import { LocalAction } from "../types/actionType"; // Defines the structure of actions
 import { DOMManager } from "./DOMManager";
 
 export class ActionExecutor {
@@ -26,7 +25,7 @@ export class ActionExecutor {
     );
     const { type, data } = action;
 
-    // --- Input Validation ---
+    // Validate input for actions that require an index
     const requiresIndex = [
       "click",
       "input_text",
@@ -521,15 +520,15 @@ export class ActionExecutor {
             }
           }
 
-          resolve(); // Resolve after events are dispatched
+          resolve();
         } catch (err: any) {
           console.error(
             `[ActionExecutor] KeyPress error index ${index}:`,
             err.message
           );
-          reject(err); // Reject promise on error
+          reject(err);
         }
       });
     });
   }
-} // End of class ActionExecutor
+}
