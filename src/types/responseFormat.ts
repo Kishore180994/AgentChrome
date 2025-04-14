@@ -70,13 +70,6 @@ export interface AIResponseFormat {
   memory: MemoryState;
 
   current_goal: string;
-
-  /**
-   * "What needs to be done with the next actions"
-   */
-  next_goal: string;
-
-  next_goal_elements_type: string[];
 }
 
 /**
@@ -95,4 +88,6 @@ export interface AgentResponseFormat {
    * (e.g. input_text, click_element, open_tab, etc.)
    */
   action: AgentActionItem[];
+
+  functionCall?: any;
 }

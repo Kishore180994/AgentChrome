@@ -44,3 +44,63 @@ const StarfallCascadeAnimation: React.FC<StarfallCascadeAnimationProps> = ({
 };
 
 export default StarfallCascadeAnimation;
+
+export const geminiFunctionDeclarations = [
+  // Function to create a new Google Doc
+  {
+    name: "createNewGoogleDoc",
+    description:
+      "Creates a new Google Document in the user's Drive, optionally inserting initial text content. Use this when the user asks to create or draft something in a new Google Doc and is not currently viewing a specific Doc.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        fileName: {
+          type: "STRING",
+          description:
+            "The desired file name for the new Google Doc. Generate a descriptive name if not specified by the user (e.g., 'Draft Email to Dad').",
+        },
+        initialText: {
+          type: "STRING",
+          description:
+            "Optional. The initial text content (e.g., drafted email, notes) to insert into the newly created document.",
+        },
+      },
+      required: ["fileName"], // Filename is essential
+    },
+  },
+  // Function to interact with an existing Doc/Sheet or perform other Apps Script actions
+  {
+    name: "callWorkspaceAppsScript",
+    description:
+      "Executes a specific function via a secure Google Apps Script backend to interact with Google Workspace files (Docs, Sheets, etc.) identified by their fileId. Use this for reading, writing, modifying content, or performing other actions within a specific Google Doc or Sheet.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        scriptFunction: {
+          type: "STRING",
+          description:
+            "The exact name of the function to execute within the deployed Google Apps Script (e.g., 'updateSheetCell', 'insertDocText', 'readSheetRange', 'appendSheetRow', 'getDocContent', 'getFileName').",
+        },
+        fileId: {
+          type: "STRING",
+          description:
+            "The unique ID of the target Google Doc or Sheet file. This MUST be obtained from the user's current context (e.g., extracted from the active tab URL if they are viewing a Doc/Sheet) or from the result of creating a new document.",
+        },
+        functionArgs: {
+          type: "OBJECT",
+          description:
+            "An object containing the specific named arguments required by the target 'scriptFunction' in Apps Script. Structure depends on the function being called (e.g., for 'updateSheetCell', required args are sheetName, cellNotation, value; for 'insertDocText', required args are text, insertionPoint).",
+        },
+      },
+      required: ["scriptFunction", "fileId", "functionArgs"],
+    },
+  },
+  // TODO: You might later add a function declaration for your ActionExecutor
+  // if you want Gemini to explicitly request simple DOM actions too, e.g.:
+  // { "name": "executeSimpleDomAction", "description": "Performs simple DOM actions...", "parameters": {...}}
+];
+
+// You'll also need to define the 'Tool' structure Gemini expects
+export const geminiTools = [
+  { functionDeclarations: geminiFunctionDeclarations },
+];

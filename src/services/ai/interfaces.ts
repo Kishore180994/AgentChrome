@@ -1,7 +1,9 @@
+import { Part } from "@google/generative-ai";
+
 /**
  * Represents the role of an entity in the system.
  */
-export type Role = "model" | "user" | "assistant";
+export type Role = "model" | "user" | "assistant" | "function";
 
 export interface ClaudeChatContent {
   type: "text" | "image";
@@ -16,7 +18,7 @@ export interface ClaudeChatContent {
 
 export interface GeminiChatMessage {
   role: Role;
-  parts: Array<Parts>;
+  parts: Array<Part>;
 }
 
 export interface ConversationHistory {
@@ -32,11 +34,6 @@ export interface ClaudeChatMessage {
 export interface FileData {
   mimeType: string;
   fileUri: string;
-}
-
-export interface Parts {
-  fileData?: FileData;
-  text?: string;
 }
 
 /**

@@ -121,6 +121,10 @@ export interface DoneAction {
   };
 }
 
+export interface AgentFunctionCall {
+  functionCall: any;
+}
+
 export interface AskAction {
   ask: {
     question: string;
@@ -138,4 +142,6 @@ export type AgentActionItem =
   | KeyPressAction
   | VerifyAction
   | DoneAction
-  | AskAction;
+  | AskAction
+  | "functionCall"
+  | AgentFunctionCall;

@@ -32,7 +32,6 @@ export class DOMManager {
     console.log("[DOMManager] Initialized (Highlight Container Model).");
   }
 
-  // --- THIS FUNCTION IS UPDATED ---
   /** Clears attributes, finds and removes highlight containers, resets map. */
   clearDebugHighlights(doc: Document = document, isInitial: boolean): void {
     try {
@@ -72,7 +71,6 @@ export class DOMManager {
           /* ignore potential cross-origin */
         }
       });
-      // --- End Removal ---
 
       isInitial && this.elementMap.clear();
       console.log(
@@ -82,14 +80,11 @@ export class DOMManager {
       console.error("[DOMManager] Error during clearDebugHighlights:", error);
     }
   }
-  // --- END OF UPDATED FUNCTION ---
-
-  // --- NEW HELPER FUNCTION ---
   /** Finds or creates the highlight container div within a given document context. */
   private ensureHighlightContainer(docContext: Document): HTMLElement {
     let container = docContext.getElementById(HIGHLIGHT_CONTAINER_ID);
     if (!container) {
-      // console.log("[DOMManager] Creating highlight container in:", docContext.URL || 'document'); // Log if needed
+      // console.log("[DOMManager] Creating highlight container in:", docContext.URL || 'document');
       container = docContext.createElement("div");
       container.id = HIGHLIGHT_CONTAINER_ID;
       Object.assign(container.style, {
@@ -97,24 +92,20 @@ export class DOMManager {
         top: "0",
         left: "0",
         width: "0",
-        height: "0", // No dimensions itself
-        pointerEvents: "none", // Crucial: container shouldn't block interactions
-        zIndex: "2147483645", // Below individual highlights but high overall
+        height: "0",
+        pointerEvents: "none",
+        zIndex: "2147483645",
       });
-      // Prepend to body to be early in DOM order (can help stacking)
       if (docContext.body) {
         docContext.body.prepend(container);
       } else {
         docContext.documentElement.appendChild(container);
-      } // Fallback
+      }
     }
     return container;
   }
-  // --- END NEW HELPER FUNCTION ---
-
   /** Checks if element is in viewport. */
   private isInViewport(el: Element): boolean {
-    /* ... same as before ... */
     try {
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return false;
@@ -141,7 +132,6 @@ export class DOMManager {
     isRelevant: boolean;
     isInteractive: boolean;
   } {
-    /* ... same as before ... */
     let isRelevant = false,
       isInteractive = false;
     try {
@@ -239,7 +229,7 @@ export class DOMManager {
     el: Element,
     offset: { x: number; y: number }
   ): BoundingBox {
-    /* ... same ... */ const rect = el.getBoundingClientRect();
+    const rect = el.getBoundingClientRect();
     return {
       x: rect.left + offset.x,
       y: rect.top + offset.y,
@@ -251,11 +241,11 @@ export class DOMManager {
   private boundingBoxToTuple(
     box: BoundingBox
   ): [number, number, number, number] {
-    /* ... same ... */ return [box.x, box.y, box.width, box.height];
+    return [box.x, box.y, box.width, box.height];
   }
   /** Extracts relevant attributes. */
   private getRelevantAttributes(el: Element): Record<string, string> {
-    /* ... same ... */ const attributes: Record<string, string> = {};
+    const attributes: Record<string, string> = {};
     try {
       const attrs = [
         "id",
@@ -304,7 +294,7 @@ export class DOMManager {
   }
   /** Gets meaningful text content. */
   private getMeaningfulText(el: Element): string {
-    /* ... same ... */ try {
+    try {
       const ariaLabel = el.getAttribute("aria-label")?.trim();
       if (ariaLabel) return ariaLabel;
       if (isInputElement(el) && el.type !== "password")
@@ -325,30 +315,26 @@ export class DOMManager {
   }
   /** Generates a random color. */
   private getRandomColor(): string {
-    /* ... same ... */ const r = Math.floor(Math.random() * 200 + 56);
+    const r = Math.floor(Math.random() * 200 + 56);
     const g = Math.floor(Math.random() * 200 + 56);
     const b = Math.floor(Math.random() * 200 + 56);
     return `rgb(${r}, ${g}, ${b})`;
   }
 
-  // --- UPDATED drawDebugHighlight function ---
   /** Draws debug highlight into the appropriate container, applying differentiated styles directly. */
   drawDebugHighlight(
     el: Element,
     index: number,
     offset: { x: number; y: number },
-    docContext: Document, // Document where highlight div should be added
-    modalContentDocument: Document | null, // Used for styling decision
-    isInteractive: boolean // Used for styling decision
+    docContext: Document,
+    modalContentDocument: Document | null,
+    isInteractive: boolean
   ): void {
     try {
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return;
 
-      // --- Get or create the container IN THE CORRECT DOCUMENT ---
       const container = this.ensureHighlightContainer(docContext);
-      // ---
-
       const highlight = docContext.createElement("div");
       highlight.className = "debug-highlight";
       highlight.dataset.d4mIndex = index.toString();
@@ -445,19 +431,18 @@ export class DOMManager {
       );
     }
   }
-  // --- END drawDebugHighlight ---
 
   /** Extracts relevant elements, draws highlights into containers */
   extractPageElements(): {
     compressed: PageElement[];
     uncompressed: UncompressedPageElement[];
   } {
-    this.clearDebugHighlights(document, true); // Uses fast container removal now
+    this.clearDebugHighlights(document, true);
 
     const compressedElements: PageElement[] = [];
     const uncompressedElements: UncompressedPageElement[] = [];
     let currentIndex = 0;
-    let modalContentDocument: Document | null = null; // Track primary modal
+    let modalContentDocument: Document | null = null;
 
     const processNode = (
       node: Document | ShadowRoot,
@@ -529,13 +514,11 @@ export class DOMManager {
         }
       });
 
-      // --- Process IFrames (sets modalContentDocument for subsequent processing) ---
       try {
         const iframes = (node as Document).getElementsByTagName?.("iframe");
         if (iframes) {
           Array.from(iframes).forEach((iframe) => {
-            /* ... iframe logic same as before, sets modalContentDocument ... */ const iframeSrc =
-              iframe.getAttribute("src") || "no src";
+            const iframeSrc = iframe.getAttribute("src") || "no src";
             const viewportCheck = this.isInViewport(iframe);
             console.log(
               `[DOMManager iframe Check] Src: ${iframeSrc}, InViewport: ${viewportCheck}`
@@ -613,9 +596,8 @@ export class DOMManager {
       } catch (shadowError) {
         console.error("Error processing Shadow DOM:", shadowError);
       }
-    }; // End of processNode definition
+    };
 
-    // Start processing
     try {
       if (document && document.readyState !== "loading")
         processNode(document, { x: 0, y: 0 }, document);
@@ -624,8 +606,6 @@ export class DOMManager {
       console.error("[DOMManager] Error starting extraction:", mainError);
     }
 
-    // Styles are now applied directly in drawDebugHighlight based on context known at that point
-
     console.log(
       `[DOMManager] Extracted ${currentIndex} total relevant elements.`
     );
@@ -633,9 +613,9 @@ export class DOMManager {
       compressed: compressedElements,
       uncompressed: uncompressedElements,
     };
-  } // End of extractPageElements
+  }
 
   getElementByIndex(index: number): HTMLElement | undefined {
     return this.elementMap.get(index);
   }
-} // End of class DOMManager
+}

@@ -35,8 +35,6 @@ export async function chatWithAI(
       evaluation_previous_goal: "Unknown",
       memory: {} as MemoryState,
       current_goal: "",
-      next_goal: "",
-      next_goal_elements_type: [],
     },
     action: [],
   };
@@ -141,7 +139,11 @@ async function sendWithRetry(
 ): Promise<AgentResponseFormat | null> {
   try {
     console.debug(`[sendWithRetry][${sessionId}] requesting AI...`);
-    const resp = await callAI(currentProvider, conversation, screenShotDataUrl);
+    const resp = await callAI(
+      currentProvider,
+      conversation,
+      screenShotDataUrl || ""
+    );
     if (!resp) throw new Error("Null response from AI");
     return resp;
   } catch (err) {
@@ -166,15 +168,15 @@ async function sendWithRetry(
 /**
  * Parses the API response to match the AgentResponseFormat.
  */
-function parseAgentResponseFormat(apiResponse: any): AgentResponseFormat {
+export function parseAgentResponseFormat(
+  apiResponse: any
+): AgentResponseFormat {
   const fallback: AgentResponseFormat = {
     current_state: {
       page_summary: "",
       evaluation_previous_goal: "Unknown",
       memory: {} as MemoryState,
       current_goal: "",
-      next_goal: "",
-      next_goal_elements_type: [],
     },
     action: [],
   };

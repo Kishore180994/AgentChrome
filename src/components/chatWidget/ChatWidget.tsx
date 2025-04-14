@@ -22,7 +22,6 @@ import {
   handleSubmit,
   handleStop,
   handleNewChat,
-  handleKeyDown,
   handlePopupSelect,
   toggleExecutionGroup,
   handleChipClick,
@@ -478,12 +477,7 @@ export function ChatWidget() {
                       <button
                         key={suggestion}
                         onClick={() =>
-                          handleChipClick(
-                            suggestion,
-                            setInput,
-                            setIsTextareaFocused,
-                            textareaRef
-                          )
+                          handleChipClick(suggestion, setInput, textareaRef)
                         }
                         // Apply theme styles for consistency
                         className={`d4m-text-xs ${currentTheme.suggestion} d4m-px-3 d4m-py-1 hover:d4m-opacity-80 d4m-transition-opacity d4m-rounded-full`}
@@ -729,12 +723,7 @@ export function ChatWidget() {
                         key={suggestion}
                         type="button"
                         onClick={() =>
-                          handleChipClick(
-                            suggestion,
-                            setInput,
-                            setIsTextareaFocused,
-                            textareaRef
-                          )
+                          handleChipClick(suggestion, setInput, textareaRef)
                         }
                         className={`d4m-px-2 d4m-py-1 d4m-text-${accentColor}-400 d4m-text-xs ${currentTheme.suggestion} d4m-transition-transform d4m-duration-200 d4m-active:scale-95 d4m-rounded-md`}
                       >
@@ -785,13 +774,13 @@ export function ChatWidget() {
                   setError,
                   setIsLoading,
                   setShowCommandPopup,
-                  setIsTextareaFocused,
                   setCurrentAnimation,
                   setCommandHistory,
                   setHistoryIndex,
                   setMessages,
                   selectedModel,
-                  setToast
+                  setToast,
+                  setIsTextareaFocused
                 )
               }
             >
@@ -800,18 +789,27 @@ export function ChatWidget() {
                   ref={textareaRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) =>
-                    handleKeyDown(
-                      e,
-                      commandHistory,
-                      historyIndex,
-                      setUserTypedInput,
-                      setHistoryIndex,
-                      setInput,
-                      setShowCommandPopup,
-                      userTypedInput
-                    )
-                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSubmit(
+                        e,
+                        input,
+                        isLoading,
+                        setInput,
+                        setError,
+                        setIsLoading,
+                        setShowCommandPopup,
+                        setCurrentAnimation,
+                        setCommandHistory,
+                        setHistoryIndex,
+                        setMessages,
+                        selectedModel,
+                        setToast,
+                        setIsTextareaFocused
+                      );
+                    }
+                  }}
                   onFocus={() => {
                     console.log("[ChatWidget] Textarea onFocus triggered!"); // <-- ADD THIS LOG
                     // Make sure to call the function returned by handleFocus

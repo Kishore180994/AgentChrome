@@ -11,11 +11,12 @@
     "scripting",
     "desktopCapture",
     "sidePanel",
-    "downloads"
+    "downloads",
+    "identity"
   ],
   "host_permissions": ["<all_urls>"],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; img-src 'self' https://doforme.s3.us-east-1.amazonaws.com; connect-src 'self' https://api.openai.com https://*.openai.com https://generativelanguage.googleapis.com https://doforme.s3.us-east-1.amazonaws.com https://api.anthropic.com/v1/messages wss://api.deepgram.com https://api.anthropic.com/*; object-src 'none';"
+    "extension_pages": "script-src 'self'; img-src 'self' https://doforme.s3.us-east-1.amazonaws.com; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://api.openai.com https://*.openai.com https://generativelanguage.googleapis.com https://doforme.s3.us-east-1.amazonaws.com https://api.anthropic.com/v1/messages wss://api.deepgram.com https://api.anthropic.com/*; object-src 'none';"
   },
   "action": {
     "default_icon": {
@@ -55,7 +56,16 @@
     ],
     "matches": ["*://*/*"]
   }],
-
+  "oauth2": {
+  "client_id": "429423689983-70unnfvua48h78u3lkagkdgtagn2s40t.apps.googleusercontent.com",
+  "scopes": [
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/documents",
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive.file"
+  ]
+},
   "commands": {
     "toggle-listening": {
       "suggested_key": {

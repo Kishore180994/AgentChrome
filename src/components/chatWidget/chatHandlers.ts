@@ -9,7 +9,6 @@ export const handleSubmit = async (
   setError: (value: string | null) => void,
   setIsLoading: (value: boolean) => void,
   setShowCommandPopup: (value: boolean) => void,
-  setIsTextareaFocused: (value: boolean) => void,
   setCurrentAnimation: (value: "starfallCascade") => void,
   setCommandHistory: (value: (prev: string[]) => string[]) => void,
   setHistoryIndex: (value: number | null) => void,
@@ -17,7 +16,8 @@ export const handleSubmit = async (
   selectedModel: "gemini" | "claude",
   setToast: (
     value: { message: string; type: "success" | "info" | "error" } | null
-  ) => void
+  ) => void,
+  setIsTextAreaFocussed: (value: boolean) => void
 ) => {
   e.preventDefault();
   if (!input.trim() || isLoading) return;
@@ -26,7 +26,7 @@ export const handleSubmit = async (
   setError(null);
   setIsLoading(true);
   setShowCommandPopup(false);
-  // setIsTextareaFocused(false);
+  setIsTextAreaFocussed(false);
   setCurrentAnimation("starfallCascade");
   setCommandHistory((prev) => {
     const updatedHistory = [
@@ -211,11 +211,9 @@ export const toggleExecutionGroup = (
 export const handleChipClick = (
   suggestion: string,
   setInput: (value: string) => void,
-  setIsTextareaFocused: (value: boolean) => void,
   textareaRef: RefObject<HTMLTextAreaElement>
 ) => {
   setInput(suggestion);
-  // setIsTextareaFocused(false);
   textareaRef.current?.blur();
 };
 

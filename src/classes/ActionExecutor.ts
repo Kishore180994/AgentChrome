@@ -47,7 +47,6 @@ export class ActionExecutor {
       );
     }
 
-    // --- Action Execution ---
     try {
       let result: any = undefined; // To store potential return value
 
@@ -111,7 +110,6 @@ export class ActionExecutor {
     contextWindow: Window;
   } {
     // Index validity (being a number) is checked in `execute` before calling this
-
     const element = this.domManager.getElementByIndex(index);
 
     // Log the retrieved element for debugging
@@ -120,7 +118,6 @@ export class ActionExecutor {
       element
     );
 
-    // --- Element Validation ---
     if (!element) {
       throw new Error(
         `[ActionExecutor] Element not found for index: ${index}. Page state might have changed, or index is invalid.`
@@ -136,7 +133,6 @@ export class ActionExecutor {
       );
     }
 
-    // --- Context Window Determination ---
     const ownerDoc = element.ownerDocument;
     const contextWindow = ownerDoc?.defaultView;
 
@@ -157,7 +153,6 @@ export class ActionExecutor {
   private async handleClick(index: number): Promise<void> {
     const { element, contextWindow } = this.getElementContext(index);
 
-    // --- Pre-click Checks ---
     if (element.hasAttribute("disabled")) {
       console.warn(
         `[ActionExecutor] Attempting to click a disabled element at index: ${index}`
@@ -180,10 +175,8 @@ export class ActionExecutor {
       console.warn(
         `[ActionExecutor] Element at index ${index} has pointer-events: none.`
       );
-      // Might still attempt click, depending on desired strictness
     }
 
-    // --- Perform Click ---
     await new Promise<void>((resolve, reject) => {
       contextWindow.requestAnimationFrame(() => {
         // Use rAF for better timing
@@ -197,7 +190,7 @@ export class ActionExecutor {
             `[ActionExecutor] Click error index ${index}:`,
             err.message
           );
-          reject(err); // Reject promise on error
+          reject(err);
         }
       });
     });
@@ -211,7 +204,6 @@ export class ActionExecutor {
     const tagNameLower = element.tagName.toLowerCase();
     const isInputElementTag = tagNameLower === "input";
     const isTextAreaElementTag = tagNameLower === "textarea";
-    // --- End Change ---
     const isContentEditable = element.isContentEditable;
     const tagOk =
       isInputElementTag || isTextAreaElementTag || isContentEditable; // Check using tags now
@@ -304,7 +296,7 @@ export class ActionExecutor {
       typeof offset === "number" && offset > 0 ? offset : 200;
     const scrollDirection = direction?.toLowerCase() || "down";
     const scrollOptions: ScrollToOptions = { behavior: "smooth" };
-    const targetWindow: Window = window; // Scrolls the main window where content script runs
+    const targetWindow: Window = window;
 
     switch (scrollDirection) {
       case "up":
@@ -322,10 +314,10 @@ export class ActionExecutor {
       case "top":
         scrollOptions.top = 0;
         scrollOptions.left = 0;
-        break; // Scroll to top-left
+        break;
       case "bottom":
         scrollOptions.top = targetWindow.document.body.scrollHeight;
-        break; // Scroll to bottom
+        break;
       default:
         console.warn(
           `[ActionExecutor] Unknown scroll direction: ${scrollDirection}. Defaulting to 'down'.`
@@ -347,10 +339,10 @@ export class ActionExecutor {
             targetWindow.scrollBy(scrollOptions);
           } else {
             targetWindow.scrollTo(scrollOptions);
-          } // Use scrollTo for absolute positions
+          }
           console.log(`[ActionExecutor] Scrolled window ${scrollDirection}.`);
         }
-        resolve(); // Resolve even if no scroll options were applicable
+        resolve();
       });
     });
   }
@@ -389,24 +381,24 @@ export class ActionExecutor {
               `[ActionExecutor] Clicking submit button within form for index ${index}`
             );
             submitButton.focus();
-            submitButton.click(); // Click the button
+            submitButton.click();
           } else {
             console.log(
               `[ActionExecutor] No submit button found/usable, submitting form directly index ${index}`
             );
             if (typeof form.requestSubmit === "function") {
-              form.requestSubmit(); // Use requestSubmit if available
+              form.requestSubmit();
             } else {
-              form.submit(); // Fallback to submit
+              form.submit();
             }
           }
-          resolve(); // Resolve after initiating submit/click
+          resolve();
         } catch (err: any) {
           console.error(
             `[ActionExecutor] Submit error index ${index}:`,
             err.message
           );
-          reject(err); // Reject promise on error
+          reject(err);
         }
       });
     });
@@ -414,7 +406,7 @@ export class ActionExecutor {
 
   /** Extracts text content from the element specified by index. Prioritizes element value. */
   private async handleExtract(index: number): Promise<string> {
-    const { element } = this.getElementContext(index); // No contextWindow needed
+    const { element } = this.getElementContext(index);
 
     let content = "";
     // Use direct tag check for consistency, though instanceof less likely problematic here
@@ -440,9 +432,8 @@ export class ActionExecutor {
   /** Simulates a key press event on the element specified by index. */
   private async handleKeyPress(index: number, key?: string): Promise<void> {
     const { element, contextWindow } = this.getElementContext(index);
-    const keyToPress = key || "Enter"; // Default to Enter
+    const keyToPress = key || "Enter";
 
-    // --- Pre-KeyPress Checks (using tagName) ---
     if (
       element.hasAttribute("disabled") ||
       (element.tagName === "INPUT" && (element as HTMLInputElement).readOnly) ||
@@ -460,7 +451,6 @@ export class ActionExecutor {
       );
     }
 
-    // --- Perform Key Press ---
     await new Promise<void>((resolve, reject) => {
       contextWindow.requestAnimationFrame(() => {
         // Use rAF
@@ -481,12 +471,12 @@ export class ActionExecutor {
 
           // Use global KeyboardEvent constructor
           const keyDownEvent = new KeyboardEvent("keydown", eventOptions);
-          const keyPressEvent = new KeyboardEvent("keypress", eventOptions); // Note: deprecated
+          const keyPressEvent = new KeyboardEvent("keypress", eventOptions);
           const keyUpEvent = new KeyboardEvent("keyup", eventOptions);
 
-          let proceed = element.dispatchEvent(keyDownEvent); // Dispatch keydown
-          if (proceed) proceed = element.dispatchEvent(keyPressEvent); // Dispatch keypress if not cancelled
-          element.dispatchEvent(keyUpEvent); // Always dispatch keyup
+          let proceed = element.dispatchEvent(keyDownEvent);
+          if (proceed) proceed = element.dispatchEvent(keyPressEvent);
+          element.dispatchEvent(keyUpEvent);
 
           console.log(
             `[ActionExecutor] Dispatched key "${keyToPress}" index: ${index}`

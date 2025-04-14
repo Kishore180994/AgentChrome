@@ -1,0 +1,1377 @@
+// background.ts
+// Imports FunctionCall/FunctionResponse if needed for type checking potentialFunctionCall
+import { FunctionCall } from "@google/generative-ai";
+import { PageElement, UncompressedPageElement } from "./services/ai/interfaces";
+// Assuming parseAgentResponseFormat is correctly imported and exported from api.ts
+import { chatWithAI, parseAgentResponseFormat } from "./services/openai/api";
+import {
+  AgentActionItem,
+  AskAction, // Used in mapAiItemToLocalAction
+  LocalAction,
+  LocalActionType,
+} from "./types/actionType";
+import { AIResponseFormat } from "./types/responseFormat";
+
+let automationStopped: boolean = false;
+const activeAutomationTabs: Set<number> = new Set();
+const recentActionsMap: Record<number, string[]> = {}; // Stores descriptions
+const currentTasks: Record<number, string> = {};
+const activePorts: Record<number, chrome.runtime.Port> = {};
+
+// --- Listeners ---
+
+chrome.action.onClicked.addListener(async (tab) => {
+  console.log("[background.ts] Extension action clicked, tab:", tab);
+  if (!tab?.id || !tab.windowId) {
+    console.error("[background.ts] Invalid tab/window ID on action click.");
+    return;
+  }
+  try {
+    const panels = await chrome.sidePanel
+      .getOptions({ tabId: tab.id })
+      .catch(() => ({ enabled: false }));
+    if (!panels.enabled) {
+      try {
+        await chrome.sidePanel.open({ windowId: tab.windowId });
+      } catch (openError: any) {
+        console.warn(`[bg] Side panel open err: ${openError.message}`);
+      }
+    }
+    await chrome.sidePanel.setOptions({
+      tabId: tab.id,
+      enabled: true,
+      path: "sidepanel.html",
+    });
+    await ensureContentScriptInjected(tab.id);
+    activeAutomationTabs.delete(tab.id); // Reset state on click?
+    resetExecutionState(tab.id);
+  } catch (error: any) {
+    console.error(`[bg] Action click err tab ${tab.id}:`, error.message);
+  }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  console.log(`[background.ts] Tab ${tabId} removed.`);
+  activeAutomationTabs.delete(tabId);
+  resetExecutionState(tabId);
+  delete activePorts[tabId];
+});
+
+// --- Content Script Injection ---
+async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
+  if (isNaN(tabId) || tabId <= 0) {
+    console.warn(`[bg] Invalid tabId (${tabId}) ensureContentScript.`);
+    return false;
+  }
+  console.log(`[bg] Ensuring content script tab ${tabId}`);
+  return new Promise((resolve) => {
+    chrome.tabs.get(tabId, (tab) => {
+      if (chrome.runtime.lastError || !tab) {
+        console.warn(
+          `[bg] Tab ${tabId} inaccessible ensureInject: ${chrome.runtime.lastError?.message}`
+        );
+        resolve(false);
+        return;
+      }
+      const restrictedPrefixes = [
+        "chrome://",
+        "about:",
+        "chrome-extension://",
+        "view-source:",
+        "data:",
+        "file://",
+        "devtools://",
+      ];
+      if (
+        (tab.url ?? "") &&
+        restrictedPrefixes.some((p) => (tab.url ?? "").startsWith(p))
+      ) {
+        console.log(`[bg] Skip inject restricted URL tab ${tabId}: ${tab.url}`);
+        resolve(true);
+        return;
+      }
+      chrome.tabs.sendMessage(tabId, { type: "PING" }, (res) => {
+        if (chrome.runtime.lastError || !res?.success) {
+          console.log(
+            `[bg] Content script ping fail tab ${tabId}. Injecting... Err: ${
+              chrome.runtime.lastError?.message || "No response"
+            }`
+          );
+          chrome.scripting
+            .executeScript({ target: { tabId }, files: ["content.js"] })
+            .then(() => {
+              console.log(`[bg] Content script injected tab ${tabId}.`);
+              setTimeout(() => resolve(true), 750);
+            })
+            .catch((err) => {
+              console.error(`[bg] Injection error tab ${tabId}:`, err);
+              resolve(false);
+            });
+        } else {
+          console.log(`[bg] Content script active tab ${tabId}.`);
+          resolve(true);
+        }
+      });
+    });
+  });
+}
+
+// --- Apps Script Execution ---
+async function executeAppsScriptFunction(
+  functionName: string,
+  argsFromGemini: any
+): Promise<any> {
+  // !! IMPORTANT !! Replace with your Deployed Apps Script Web App URL
+  const webAppUrl = "YOUR_APPS_SCRIPT_WEB_APP_URL"; // <-- PASTE YOUR URL HERE
+
+  if (!webAppUrl || webAppUrl === "YOUR_APPS_SCRIPT_WEB_APP_URL") {
+    console.error("Apps Script URL missing in background.ts");
+    throw new Error("Apps Script integration not configured.");
+  }
+  console.log(
+    `[bg] Calling Apps Script: ${functionName} with args:`,
+    argsFromGemini
+  );
+  let authToken = "";
+  try {
+    const tokenResp = await chrome.identity.getAuthToken({ interactive: true });
+    if (chrome.runtime.lastError || !tokenResp?.token)
+      throw new Error(
+        `Auth token fail: ${chrome.runtime.lastError?.message || "No token"}`
+      );
+    authToken = tokenResp.token;
+    console.log("[bg] OAuth token obtained.");
+  } catch (error: any) {
+    if (error.message?.includes("consent")) throw new Error("Auth denied.");
+    throw new Error(`Auth fail: ${error.message || error}`);
+  }
+
+  let payload: any = {};
+  if (functionName === "createNewGoogleDoc") {
+    if (!argsFromGemini.fileName)
+      throw new Error("Missing 'fileName' for createNewGoogleDoc");
+    payload = {
+      scriptFunction: "createNewDocWithText",
+      fileName: argsFromGemini.fileName,
+      text: argsFromGemini.initialText || "",
+    };
+  } else if (functionName === "callWorkspaceAppsScript") {
+    const { scriptFunction, fileId, functionArgs } = argsFromGemini;
+    if (!scriptFunction || !fileId)
+      throw new Error(
+        `Missing scriptFunction/fileId for callWorkspaceAppsScript`
+      );
+    payload = { scriptFunction, fileId, ...(functionArgs || {}) };
+  } else throw new Error(`Unsupported Apps Script func name: ${functionName}`);
+
+  try {
+    console.log(
+      `[bg] Calling Apps Script URL: ${webAppUrl} Payload: ${JSON.stringify(
+        payload
+      )}`
+    );
+    const response = await fetch(webAppUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        "Content-Type": "application/json",
+      },
+      mode: "cors",
+      body: JSON.stringify(payload),
+    });
+    console.log(`[bg] Apps Script status: ${response.status}`);
+    if (!response.ok) {
+      let errTxt = `Apps Script fail (Status ${response.status})`;
+      let body = "[Read Err]";
+      try {
+        body = await response.text();
+        console.error("AS Err Body:", body);
+        try {
+          const j = JSON.parse(body);
+          errTxt += `: ${j.error?.message || j.message || body.slice(0, 500)}`;
+        } catch {
+          errTxt += `: ${body.slice(0, 500)}`;
+        }
+      } catch (e: any) {
+        errTxt += `(Read Err: ${e.message})`;
+      }
+      throw new Error(errTxt);
+    }
+    const result = await response.json();
+    console.log("[bg] Apps Script Result:", result);
+    if (result.status === "error")
+      throw new Error(
+        `AS function '${payload.scriptFunction}' failed: ${
+          result.message || "Unknown AS error"
+        }`
+      );
+    return result;
+  } catch (error: any) {
+    console.error(`[bg] Fetch err to AS (${functionName}):`, error);
+    throw new Error(`Apps Script call failed: ${error.message || error}`);
+  }
+}
+
+// --- Page State Fetching ---
+async function fetchPageElements(tabId: number): Promise<{
+  compressed: PageElement[];
+  uncompressed: UncompressedPageElement[];
+}> {
+  console.log(`[bg] Fetch elements tab ${tabId}`);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const injected = await ensureContentScriptInjected(tabId);
+      if (!injected) {
+        const tab = await chrome.tabs.get(tabId).catch(() => null);
+        if (
+          !tab ||
+          tab.url?.startsWith("chrome://") ||
+          tab.url?.startsWith("about:")
+        ) {
+          console.log(
+            `[bg] Cannot fetch elements restricted/missing: ${
+              tab?.url || "N/A"
+            }`
+          );
+          return { compressed: [], uncompressed: [] };
+        }
+        throw new Error("Inject fail.");
+      }
+      const result = await new Promise<{
+        compressed: PageElement[];
+        uncompressed: UncompressedPageElement[];
+      }>((resolve, reject) => {
+        const timeout = setTimeout(
+          () => reject(new Error(`Timeout GET_PAGE_ELEMENTS tab ${tabId}`)),
+          8000
+        );
+        chrome.tabs.sendMessage(
+          tabId,
+          { type: "GET_PAGE_ELEMENTS", tabId },
+          (resp) => {
+            clearTimeout(timeout);
+            if (chrome.runtime.lastError)
+              reject(
+                new Error(
+                  `Msg Err GET_PAGE_ELEMENTS: ${chrome.runtime.lastError.message}`
+                )
+              );
+            else if (resp?.success === false)
+              reject(new Error(`CS Err: ${resp.error}`));
+            else if (resp?.compressed && resp?.uncompressed) {
+              console.log(`[bg] Fetched ${resp.compressed.length} elements.`);
+              resolve(resp);
+            } else reject(new Error("Invalid GET_PAGE_ELEMENTS response"));
+          }
+        );
+      });
+      return result;
+    } catch (err: any) {
+      console.warn(
+        `[bg] Fetch elements attempt ${attempt + 1}/3 failed tab ${tabId}:`,
+        err.message
+      );
+      if (attempt < 2)
+        await new Promise((res) => setTimeout(res, 1200 * (attempt + 1)));
+      else
+        throw new Error(`Failed fetch elements tab ${tabId}: ${err.message}`);
+    }
+  }
+  throw new Error("Exited fetch loop.");
+}
+
+async function getAllTabs(): Promise<string[]> {
+  try {
+    const tabs = await chrome.tabs.query({});
+    return tabs
+      .map((t) => t.url ?? "about:blank")
+      .filter(
+        (url) =>
+          !url.startsWith("chrome://") && !url.startsWith("chrome-extension://")
+      );
+  } catch (error) {
+    console.error("[bg] Err fetching tabs:", error);
+    return [];
+  }
+}
+
+const getTabUrl = (tabId: number): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.get(tabId, (tab) => {
+      if (chrome.runtime.lastError)
+        reject(
+          new Error(
+            `Err fetch tab ${tabId}: ${chrome.runtime.lastError.message}`
+          )
+        );
+      else resolve(tab?.url ?? "about:blank");
+    });
+  });
+};
+
+async function captureAndResizeScreenshot(
+  tabId: number
+): Promise<string | undefined> {
+  console.log(`[bg] Capture screenshot tab ${tabId}`);
+  try {
+    const tab = await new Promise<chrome.tabs.Tab>((res, rej) =>
+      chrome.tabs.get(tabId, (t) =>
+        chrome.runtime.lastError
+          ? rej(new Error(chrome.runtime.lastError.message))
+          : !t
+          ? rej("Tab not found")
+          : res(t)
+      )
+    );
+    const restricted = [
+      "chrome://",
+      "about:",
+      "chrome-extension://",
+      "file://",
+      "devtools://",
+    ];
+    if (
+      !tab.windowId ||
+      !tab.url ||
+      restricted.some((p) => tab.url?.startsWith(p) ?? false)
+    ) {
+      console.warn(`[bg] Cannot capture restricted/invalid tab: ${tab.url}`);
+      return undefined;
+    }
+    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+      format: "jpeg",
+      quality: 75,
+    });
+    if (!dataUrl) {
+      console.warn(`[bg] captureVisibleTab empty dataUrl tab ${tabId}`);
+      return undefined;
+    }
+    console.log(
+      `[bg] Screenshot captured tab ${tabId}. Len: ${dataUrl.length}`
+    );
+    return dataUrl;
+  } catch (err: any) {
+    console.error(`[bg] Screenshot capture error tab ${tabId}:`, err.message);
+    if (err.message?.includes("Cannot capture"))
+      console.warn(`[bg] Tab ${tabId} screenshot fail (inactive?).`);
+    return undefined;
+  }
+}
+
+// --- Main Processing Logic ---
+async function processCommand(
+  tabId: number,
+  contextMessage: string,
+  initialCommand: string,
+  actionHistory: string[] = [],
+  model: string = "gemini"
+  // *** NO conversationHistory parameter ***
+) {
+  if (automationStopped) {
+    console.log(`[bg][Tab ${tabId}] Automation stopped. Not processing.`);
+    return;
+  }
+  console.log(
+    `%c[bg][Tab <span class="math-inline">\{tabId\}\] Starting processCommand\. Goal\: "</span>{initialCommand}"`,
+    "color: blue; font-weight: bold;"
+  );
+  activeAutomationTabs.add(tabId);
+  currentTasks[tabId] = initialCommand;
+  recentActionsMap[tabId] = actionHistory; // Use passed actionHistory
+
+  let pageState: PageElement[] = [],
+    uncompressedPageState: UncompressedPageElement[] = [];
+  let screenshotDataUrl: string | undefined,
+    tabUrl: string = "about:blank",
+    allTabs: string[] = [];
+  try {
+    // Fetch state sequentially
+    console.time(`[bg][Tab ${tabId}] State Fetch`);
+    const elementsResult = await fetchPageElements(tabId);
+    pageState = elementsResult.compressed;
+    uncompressedPageState = elementsResult.uncompressed;
+    console.log(`[bg][Tab ${tabId}] Fetched ${pageState.length} elems.`);
+    tabUrl = await getTabUrl(tabId);
+    allTabs = await getAllTabs();
+    screenshotDataUrl = await captureAndResizeScreenshot(tabId);
+    if (screenshotDataUrl)
+      console.log(`[bg][Tab ${tabId}] Screenshot captured.`);
+    else console.warn(`[bg][Tab ${tabId}] Screenshot failed.`);
+    console.timeEnd(`[bg][Tab ${tabId}] State Fetch`);
+    if (!pageState.length && !tabUrl.startsWith("https://docs.google.com/")) {
+      console.warn(`[bg][Tab ${tabId}] No elements on ${tabUrl}, aborting.`);
+      chrome.runtime.sendMessage({
+        type: "FINISH_PROCESS_COMMAND",
+        response: "No page elements.",
+      });
+      activeAutomationTabs.delete(tabId);
+      return;
+    }
+  } catch (err: any) {
+    console.error(`[bg][Tab ${tabId}] State fetch failed:`, err);
+    chrome.runtime.sendMessage({
+      type: "FINISH_PROCESS_COMMAND",
+      response: `State fetch err: ${err.message}`,
+    });
+    activeAutomationTabs.delete(tabId);
+    return;
+  }
+
+  const currentStateForAI = {
+    elements: pageState.slice(0, 150),
+    tabs: allTabs,
+    currentTabUrl: tabUrl,
+    actionHistory: actionHistory.slice(-5),
+  };
+  try {
+    // --- Call AI (api.ts handles history internally) ---
+    console.log(
+      `[bg][Tab <span class="math-inline">\{tabId\}\] Calling AI\.\.\. Context\: "</span>{contextMessage.substring(0,100)}..."`
+    );
+    const raw = await chatWithAI(
+      contextMessage,
+      `session-${tabId}`,
+      currentStateForAI,
+      screenshotDataUrl,
+      model as "gemini" | "claude"
+    );
+    console.log(`[bg][Tab ${tabId}] Raw AI response received.`);
+    if (!raw) throw new Error("Null response from AI.");
+
+    // --- START FUNCTION CALL / STANDARD ACTION LOGIC ---
+    const parsedResponse = parseAgentResponseFormat(raw); // Assumes api.ts exports this
+    if (!parsedResponse) throw new Error("Invalid response structure from AI.");
+
+    const { current_state, action } = parsedResponse;
+    let potentialFunctionCall: FunctionCall | undefined;
+
+    // Check for nested function call in action array (as per user prompt)
+    if (Array.isArray(action)) {
+      potentialFunctionCall = action[0].functionCall as FunctionCall;
+    }
+
+    // --- If Function Call Detected ---
+    if (
+      potentialFunctionCall?.name &&
+      typeof potentialFunctionCall?.args === "object"
+    ) {
+      console.log(
+        `%c[bg][Tab ${tabId}] Function Call Path: ${potentialFunctionCall.name}`,
+        "color: green; font-weight: bold;"
+      );
+      const functionName = potentialFunctionCall.name;
+      const functionArgs = potentialFunctionCall.args;
+      let functionResultPayload: any,
+        functionStatus: "OK" | "ERROR" = "OK",
+        errorMessage: string | undefined;
+      try {
+        functionResultPayload = {
+          status: "success",
+          data: await executeAppsScriptFunction(functionName, functionArgs),
+        };
+      } catch (error: any) {
+        functionStatus = "ERROR";
+        errorMessage = error.message;
+        functionResultPayload = { status: "error", message: errorMessage };
+      }
+
+      // Prepare Context for NEXT AI call, embedding the result
+      const contextForNextCall = `Function ${functionName} executed. Status: ${functionStatus}. ${
+        errorMessage
+          ? "Error: " + errorMessage + "."
+          : "Result: " + JSON.stringify(functionResultPayload.data) + "."
+      } Based on outcome, what's next?`;
+
+      // Call processCommand again with NEW CONTEXT (api.ts handles history)
+      console.log(
+        `[bg][Tab ${tabId}] Re-calling processCommand after func exec.`
+      );
+      await processCommand(
+        tabId,
+        contextForNextCall,
+        initialCommand,
+        actionHistory,
+        model
+      );
+      return; // Stop this instance
+    } else if (current_state && action) {
+      // --- Standard Action Path ---
+      console.log(
+        `%c[bg][Tab ${tabId}] Standard Action Path`,
+        "color: orange;"
+      );
+      current_state.user_command = initialCommand; // Add original command to state
+      const {
+        evaluation_previous_goal: evaluation,
+        memory,
+        user_command,
+      } = current_state;
+      if (memory)
+        chrome.runtime.sendMessage({ type: "MEMORY_UPDATE", response: memory });
+      if (!action.length) {
+        console.log(`[bg][Tab ${tabId}] No actions.`);
+        resetExecutionState(tabId);
+        activeAutomationTabs.delete(tabId);
+        chrome.runtime.sendMessage({
+          type: "FINISH_PROCESS_COMMAND",
+          response: evaluation || "Task complete.",
+        });
+        return;
+      }
+
+      const localActions = action.map(mapAiItemToLocalAction); // Use map function defined below
+      if (localActions.some((la: LocalAction) => !la.type))
+        throw new Error("Action mapping failed.");
+      console.log(
+        `[bg][Tab ${tabId}] Mapped Actions:`,
+        localActions.map((a: LocalAction) => a.type)
+      );
+      const executedActions: string[] = [];
+      const tabIdRef = { value: tabId };
+
+      // Execute actions (NO history passed)
+      const executionResult = await executeLocalActions(
+        localActions,
+        0,
+        tabIdRef,
+        contextMessage,
+        current_state,
+        uncompressedPageState,
+        executedActions,
+        model
+      );
+      tabId = tabIdRef.value; // Update tabId if changed
+
+      // Handle execution result
+      if (
+        ["DONE", "ASK_PAUSED", "RE FETCH_TRIGGERED", "STOPPED"].includes(
+          executionResult
+        )
+      ) {
+        console.log(`[bg][Tab ${tabId}] Action loop ended: ${executionResult}`);
+        if (executionResult !== "RE FETCH_TRIGGERED") {
+          resetExecutionState(tabId);
+          activeAutomationTabs.delete(tabId);
+        }
+        return;
+      }
+      if (executionResult === "ACTIONS_COMPLETED") {
+        console.log(`[bg][Tab ${tabId}] Action sequence completed.`);
+        recentActionsMap[tabId] = [
+          ...(recentActionsMap[tabId] || []),
+          ...executedActions,
+        ].slice(-5);
+        if (localActions.length > 0)
+          await waitForPotentialNavigation(
+            tabId,
+            localActions[localActions.length - 1].type
+          );
+        const promptNext = `Evaluation: ${
+          evaluation || "PENDING"
+        }. Objective: ${user_command || initialCommand}. Next actions?`;
+        if (!automationStopped) {
+          console.log(`[bg][Tab ${tabId}] Continuing cycle...`);
+          await processCommand(
+            tabId,
+            promptNext,
+            initialCommand,
+            recentActionsMap[tabId],
+            model
+          );
+        } else {
+          console.log(`[bg][Tab ${tabId}] Automation stopped.`);
+          chrome.runtime.sendMessage({
+            type: "FINISH_PROCESS_COMMAND",
+            response: "Stopped.",
+          });
+          resetExecutionState(tabId);
+          activeAutomationTabs.delete(tabId);
+        }
+      } else {
+        console.error(
+          `[bg][Tab ${tabId}] Unexpected exec result: ${executionResult}`
+        );
+        chrome.runtime.sendMessage({
+          type: "FINISH_PROCESS_COMMAND",
+          response: `Exec Err: ${executionResult}`,
+        });
+        resetExecutionState(tabId);
+        activeAutomationTabs.delete(tabId);
+      }
+    } else {
+      throw new Error(
+        "Invalid response structure (no function call or state/action)."
+      );
+    }
+    // --- END FUNCTION CALL / STANDARD ACTION LOGIC ---
+  } catch (err: any) {
+    console.error(
+      `[bg][Tab ${tabId}] ProcessCommand Err:`,
+      err.message,
+      err.stack
+    );
+    await handleError(
+      err,
+      tabId,
+      contextMessage,
+      initialCommand,
+      actionHistory,
+      model
+    );
+    activeAutomationTabs.delete(tabId);
+    resetExecutionState(tabId); // Clean up on error
+  }
+}
+
+// --- Action Execution Helpers ---
+
+// ****************************************************************************
+// mapAiItemToLocalAction - Converts AI action structure to LocalAction
+// ****************************************************************************
+function mapAiItemToLocalAction(item: AgentActionItem): LocalAction {
+  if (
+    typeof item !== "object" ||
+    item === null ||
+    Object.keys(item).length !== 1
+  ) {
+    console.error("[bg] Invalid AI action structure:", item);
+    return {
+      id: Date.now().toString(),
+      type: "wait",
+      data: {},
+      description: "Invalid AI Action",
+    };
+  }
+  const actionName = Object.keys(item)[0];
+  const params = (item as any)[actionName] || {};
+  let type: LocalActionType | null = null;
+  const data: LocalAction["data"] = {};
+  data.index = typeof params.index === "number" ? params.index : undefined;
+  data.selector =
+    typeof params.selector === "string" ? params.selector : undefined;
+  switch (actionName.toLowerCase()) {
+    case "click_element":
+    case "click":
+      type = "click";
+      if (typeof data.index !== "number")
+        console.warn(`[map] Missing index click:`, params);
+      break;
+    case "input_text":
+      type = "input_text";
+      data.text = typeof params.text === "string" ? params.text : "";
+      if (typeof data.index !== "number")
+        console.warn(`[map] Missing index input:`, params);
+      break;
+    case "open_tab":
+      type = "open_tab";
+      data.url = params.url;
+      break;
+    case "go_to_url":
+    case "navigate":
+      type = "navigate";
+      data.url = params.url;
+      break;
+    case "extract_content":
+    case "extract":
+      type = "extract";
+      if (typeof data.index !== "number")
+        console.warn(`[map] Missing index extract:`, params);
+      break;
+    case "submit_form":
+      type = "submit_form";
+      if (typeof data.index !== "number")
+        console.warn(`[map] Missing index submit:`, params);
+      break;
+    case "key_press":
+      type = "key_press";
+      data.key = typeof params.key === "string" ? params.key : "Enter";
+      if (typeof data.index !== "number")
+        console.warn(`[map] Missing index keypress:`, params);
+      break;
+    case "scroll":
+      type = "scroll";
+      data.direction = ["up", "down"].includes(params.direction)
+        ? params.direction
+        : "down";
+      data.offset =
+        typeof params.offset === "number" ? params.offset : undefined;
+      break;
+    case "verify":
+      type = "verify";
+      data.url = params.url;
+      break;
+    case "ask":
+      type = "ask";
+      data.question = params.question;
+      break;
+    case "refetch":
+      type = "refetch";
+      break;
+    case "done":
+      type = "done";
+      data.text = params.text;
+      data.output = params.output;
+      break;
+    case "wait":
+      type = "wait";
+      data.duration = params.duration;
+      break;
+    default:
+      console.warn("[bg] Unknown AI action:", actionName, params);
+      type = "wait";
+      data.duration = 500;
+  }
+  if (!type) {
+    console.error("[bg] Could not map AI action:", item);
+    type = "wait";
+  }
+  if (type === "navigate" && !data.url)
+    console.error(`[map] Missing URL navigate.`);
+  if (type === "ask" && !data.question)
+    console.error(`[map] Missing question ask.`);
+  return {
+    id: Date.now().toString() + Math.random().toString(16).substring(2, 8),
+    type,
+    data,
+    description: actionName,
+  };
+}
+
+// ****************************************************************************
+// getActionDescription - Creates description string for action history map
+// ****************************************************************************
+function getActionDescription(action: LocalAction, result?: any): string {
+  const dataStr = action.data ? JSON.stringify(action.data) : "{}";
+  const shortData =
+    dataStr.length > 50 ? dataStr.substring(0, 50) + "..." : dataStr;
+  const resultStr =
+    result && result !== "SUCCESS"
+      ? ` (Result: ${String(result).substring(0, 30)}...)`
+      : "";
+  switch (action.type) {
+    case "click":
+      return `Clicked [<span class="math-inline">\{action\.data\.index\}\]</span>{resultStr}`;
+    case "input_text":
+      return `Input into [<span class="math-inline">\{action\.data\.index\}\]</span>{resultStr}`;
+    case "navigate":
+      return `Nav to <span class="math-inline">\{action\.data\.url\}</span>{resultStr}`;
+    case "extract":
+      return `Extracted from [<span class="math-inline">\{action\.data\.index\}\]</span>{resultStr}`;
+    case "submit_form":
+      return `Submitted via [<span class="math-inline">\{action\.data\.index\}\]</span>{resultStr}`;
+    case "key_press":
+      return `Key "<span class="math-inline">\{action\.data\.key\}" on \[</span>{action.data.index}]${resultStr}`;
+    case "scroll":
+      return `Scrolled <span class="math-inline">\{action\.data\.direction \|\| 'down'\}</span>{resultStr}`;
+    case "verify":
+      return `Verified/Opened "<span class="math-inline">\{action\.data\.url\}"</span>{resultStr}`;
+    case "open_tab":
+      return `Opened tab: <span class="math-inline">\{action\.data\.url\}</span>{resultStr}`;
+    case "wait":
+      return `Waited <span class="math-inline">\{action\.data\.duration \|\| 'default'\}ms</span>{resultStr}`;
+    case "ask":
+      return `Asked: "${action.data.question?.substring(0, 30)}..."`;
+    case "done":
+      return `Finished: ${action.data.text || "Completed"}`;
+    case "refetch":
+      return `Refetched elements`;
+    default:
+      return `Performed ${action.type} <span class="math-inline">\{shortData\}</span>{resultStr}`;
+  }
+}
+
+// ****************************************************************************
+// waitForPotentialNavigation - Waits if the last action might cause navigation
+// ****************************************************************************
+async function waitForPotentialNavigation(
+  tabId: number,
+  lastActionType: string
+): Promise<void> {
+  const navigationActions = [
+    "navigate",
+    "go_to_url",
+    "open_tab",
+    "click",
+    "submit_form",
+  ];
+  if (!navigationActions.includes(lastActionType)) return;
+  console.log(
+    `[bg][Tab <span class="math-inline">\{tabId\}\] Waiting after '</span>{lastActionType}' for potential navigation...`
+  );
+  let initialUrl: string | undefined;
+  try {
+    initialUrl = await getTabUrl(tabId);
+  } catch {
+    console.warn(`[bg][Tab ${tabId}] Get initial URL failed.`);
+    return;
+  }
+  const waitMs = ["navigate", "go_to_url", "open_tab"].includes(lastActionType)
+    ? 5000
+    : 2500; // Longer for explicit nav
+  await new Promise((res) => setTimeout(res, waitMs));
+  try {
+    const currentUrl = await getTabUrl(tabId);
+    if (currentUrl !== initialUrl) {
+      console.log(`[bg][Tab ${tabId}] URL changed. Waiting load.`);
+      await waitForTabLoad(tabId);
+    }
+  } catch {
+    console.warn(`[bg][Tab ${tabId}] Get current URL failed.`);
+  }
+  await ensureContentScriptInjected(tabId); // Ensure script ready
+  console.log(`[bg][Tab ${tabId}] Finished nav wait for ${lastActionType}.`);
+}
+
+async function executeLocalActions(
+  actions: LocalAction[],
+  index: number,
+  tabIdRef: { value: number },
+  contextMessage: string,
+  currentState: AIResponseFormat,
+  uncompressedPageElements: UncompressedPageElement[],
+  executedActions: string[],
+  model: string
+  // *** NO conversationHistory parameter ***
+): Promise<string> {
+  // Return type signals outcome string
+  const logPrefix = `[bg][Tab ${tabIdRef.value}]`;
+  if (index >= actions.length) {
+    console.log(`${logPrefix} All ${actions.length} actions completed.`);
+    return "ACTIONS_COMPLETED";
+  }
+  if (automationStopped) {
+    console.log(`${logPrefix} Automation stopped before action ${index + 1}.`);
+    return "STOPPED";
+  }
+  const action = actions[index];
+  if (!action?.type) throw new Error(`Invalid action index ${index}.`);
+  let retryCount = 0;
+  const maxRetries = 2;
+
+  while (retryCount <= maxRetries) {
+    if (automationStopped) {
+      console.log(`${logPrefix} Automation stopped.`);
+      return "STOPPED";
+    }
+    try {
+      console.log(
+        `${logPrefix} Executing action <span class="math-inline">\{index \+ 1\}/</span>{actions.length}: ${action.type}`,
+        JSON.stringify(action.data)
+      );
+      // *** performLocalAction call WITHOUT history ***
+      const output = await performLocalAction(action, tabIdRef, model); // Pass only needed params
+
+      // Use getActionDescription defined above
+      if (output !== "RE FETCH_TRIGGERED") {
+        executedActions.push(
+          getActionDescription(
+            action,
+            output === "SUCCESS" ? undefined : output
+          )
+        );
+      }
+      if (["ASK_PAUSED", "DONE", "RE FETCH_TRIGGERED"].includes(output)) {
+        console.log(`${logPrefix} Action ${action.type} signal: ${output}.`);
+        return output;
+      }
+      if (automationStopped) {
+        console.log(`${logPrefix} Automation stopped after ${action.type}`);
+        return "STOPPED";
+      }
+      console.log(`${logPrefix} Action ${action.type} OK.`);
+      await new Promise((res) => setTimeout(res, 250)); // Short delay
+      // *** Recursive call WITHOUT history ***
+      return await executeLocalActions(
+        actions,
+        index + 1,
+        tabIdRef,
+        contextMessage,
+        currentState,
+        uncompressedPageElements,
+        executedActions,
+        model
+      );
+    } catch (err: any) {
+      console.error(
+        `${logPrefix} Action ${action.type} (idx ${index}) failed attempt ${
+          retryCount + 1
+        }:`,
+        err.message
+      );
+      retryCount++;
+      if (!automationStopped && retryCount <= maxRetries) {
+        console.log(
+          `${logPrefix} Retrying <span class="math-inline">\{action\.type\} \(</span>{retryCount}/${maxRetries})`
+        );
+        await new Promise((res) => setTimeout(res, 1000 * retryCount));
+      } else if (automationStopped) {
+        console.log(`${logPrefix} Automation stopped, not retrying.`);
+        return "STOPPED";
+      } else {
+        console.error(
+          `${logPrefix} Action ${action.type} failed after retries.`
+        );
+        chrome.runtime.sendMessage({
+          type: "FINISH_PROCESS_COMMAND",
+          response: `Action '${action.type}' failed: ${err.message}`,
+        });
+        throw err;
+      } // Re-throw after retries
+    }
+  }
+  return "ERROR_UNEXPECTED_RETRY_EXIT"; // Should not be reached
+}
+
+async function performLocalAction(
+  a: LocalAction,
+  tabIdRef: { value: number },
+  model: string
+  // *** NO conversationHistory parameter ***
+): Promise<string> {
+  // Returns signal string or extracted data as string
+  const logPrefix = `[bg][Tab ${tabIdRef.value}][Act: ${a.type}]`;
+  switch (a.type) {
+    case "navigate":
+    case "go_to_url":
+      if (!a.data?.url) throw new Error("No URL for navigation");
+      console.log(`${logPrefix} Navigating to ${a.data.url}`);
+      await navigateTab(tabIdRef.value, a.data.url);
+      break;
+    case "open_tab":
+      if (!a.data?.url) throw new Error("No URL for open_tab");
+      console.log(`${logPrefix} Opening tab ${a.data.url}`);
+      const nt = await createTab(a.data.url);
+      if (nt?.id) {
+        console.log(`${logPrefix} New tab ${nt.id}. Update ctx.`);
+        tabIdRef.value = nt.id;
+        resetExecutionState(nt.id);
+        activeAutomationTabs.add(nt.id);
+      } else throw new Error("Failed create tab.");
+      break;
+    case "verify":
+      if (!a.data?.url) throw new Error("No URL for verify");
+      console.log(`${logPrefix} Verifying URL: ${a.data.url}`);
+      await verifyOrOpenTab(a.data.url, tabIdRef);
+      break;
+    case "click":
+    case "input_text":
+    case "submit_form":
+    case "key_press":
+    case "scroll":
+      console.log(`${logPrefix} Sending action to content script.`);
+      await sendActionToTab(a, tabIdRef.value);
+      return "SUCCESS";
+    case "extract":
+      console.log(`${logPrefix} Sending extract action.`);
+      const ed = await sendActionToTab(a, tabIdRef.value);
+      return String(ed ?? "[EXTRACT_FAIL]");
+    case "done":
+      console.log(`${logPrefix} Task 'done'.`);
+      chrome.runtime.sendMessage({
+        type: "COMMAND_RESPONSE",
+        response: {
+          message: a.data?.text || "Task completed.",
+          output: a.data?.output,
+        },
+      });
+      automationStopped = true;
+      return "DONE";
+    case "wait":
+      const wd = typeof a.data?.duration === "number" ? a.data.duration : 1500;
+      console.log(`${logPrefix} Waiting ${wd}ms`);
+      await new Promise((res) => setTimeout(res, wd));
+      break;
+    case "refetch":
+      console.log(`${logPrefix} Executing 'refetch'. Triggering next cycle.`);
+      chrome.runtime.sendMessage({
+        type: "DISPLAY_MESSAGE",
+        response: { message: "Refetching page..." },
+      });
+      // *** Refetch now calls processCommand WITHOUT history ***
+      const originalCommand =
+        currentTasks[tabIdRef.value] || "Unknown objective"; // Get original goal
+      const latestActionHistory = recentActionsMap[tabIdRef.value] || []; // Get latest action descriptions
+      await processCommand(
+        tabIdRef.value,
+        `Refetched. Objective: ${originalCommand}. Next actions?`,
+        originalCommand,
+        latestActionHistory,
+        model // NO history param
+      );
+      return "RE FETCH_TRIGGERED"; // Signal restart
+    case "ask":
+      const q = a.data?.question || "Provide instructions.";
+      console.log(`${logPrefix} Asking: ${q}`);
+      automationStopped = true;
+      chrome.runtime.sendMessage({
+        type: "COMMAND_RESPONSE",
+        response: { message: q, needsInput: true },
+      });
+      return "ASK_PAUSED";
+    default:
+      console.error(`${logPrefix} Unknown action: ${a.type}`);
+      throw new Error(`Unknown action type: ${a.type}`);
+  }
+  return "SUCCESS"; // Reached for actions that break (nav, open, verify, wait)
+}
+
+async function verifyOrOpenTab(urlPart: string, tabIdRef: { value: number }) {
+  const logPrefix = `[bg][verifyOrOpenTab]`;
+  const tabs = await chrome.tabs.query({});
+  const cleanUrlPart = urlPart.replace(/^(https?:\/\/)?(www\.)?/, "");
+  const found = tabs.find(
+    (t) =>
+      t.url &&
+      t.url.replace(/^(https?:\/\/)?(www\.)?/, "").includes(cleanUrlPart)
+  );
+  const currentTabId = tabIdRef.value;
+  if (found?.id && found.id !== currentTabId) {
+    console.log(`${logPrefix} Found tab ${found.id}. Activating.`);
+    await chrome.tabs.update(found.id, { active: true });
+    await ensureContentScriptInjected(found.id);
+    await waitForTabLoad(found.id);
+    activeAutomationTabs.add(found.id);
+    tabIdRef.value = found.id;
+    console.log(`${logPrefix} Switched ctx to ${found.id}`);
+  } else if (!found) {
+    console.log(
+      `<span class="math-inline">\{logPrefix\} No match "</span>{cleanUrlPart}". Opening new tab.`
+    );
+    const url = urlPart.startsWith("http") ? urlPart : `https://${urlPart}`;
+    const nt = await createTab(url);
+    if (nt?.id) {
+      console.log(`${logPrefix} New tab ${nt.id}. Update ctx.`);
+      tabIdRef.value = nt.id;
+      activeAutomationTabs.add(nt.id);
+    } else throw new Error("Verify failed create tab.");
+  } else {
+    console.log(`${logPrefix} Already on tab ${currentTabId}. Ensure script.`);
+    await ensureContentScriptInjected(currentTabId);
+  }
+}
+
+async function sendActionToTab(
+  action: LocalAction,
+  tabId: number
+): Promise<any> {
+  console.log(`[bg] Sending action ${action.type} to tab ${tabId}`);
+  const injected = await ensureContentScriptInjected(tabId);
+  if (!injected) throw new Error(`Content script unavailable tab ${tabId}.`);
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error(`Timeout action '${action.type}' tab ${tabId}.`)),
+      15000
+    ); // 15s timeout
+    chrome.tabs.sendMessage(
+      tabId,
+      { type: "PERFORM_ACTION", action },
+      (response) => {
+        clearTimeout(timeout);
+        if (chrome.runtime.lastError) {
+          if (
+            chrome.runtime.lastError.message?.includes(
+              "Receiving end does not exist"
+            )
+          )
+            reject(new Error(`Tab ${tabId} disconnected.`));
+          else
+            reject(
+              new Error(
+                `Msg Err tab ${tabId}: ${chrome.runtime.lastError.message}`
+              )
+            );
+        } else if (response?.success) resolve(response.result);
+        else
+          reject(
+            new Error(
+              response?.error ||
+                `Action ${action.type} fail content script tab ${tabId}`
+            )
+          );
+      }
+    );
+  });
+}
+
+// --- Message Listener ---
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // *** CORRECTED: Declare messageType HERE ***
+  const messageType = msg?.type;
+  const senderTabId = sender.tab?.id;
+
+  (async () => {
+    // Async logic inside IIFE
+    console.log(
+      `[bg] Msg: ${messageType} from ${
+        senderTabId ? `tab ${senderTabId}` : sender.id || "unk"
+      }`
+    );
+    try {
+      switch (
+        messageType // Use declared messageType
+      ) {
+        case "PROCESS_COMMAND":
+          automationStopped = false;
+          let targetTabId: number | undefined = senderTabId;
+          if (!targetTabId) {
+            const [at] = await chrome.tabs.query({
+              active: true,
+              currentWindow: true,
+            });
+            targetTabId = at?.id;
+          }
+          if (!targetTabId) {
+            console.error("[bg] No target tab PROCESS_COMMAND.");
+            chrome.runtime.sendMessage({
+              type: "FINISH_PROCESS_COMMAND",
+              response: "No target tab.",
+            });
+            sendResponse({ success: false, error: "No target tab" });
+            return;
+          }
+          console.log(
+            `[bg] Processing cmd "${msg.command}" tab ${targetTabId}`
+          );
+          resetExecutionState(targetTabId);
+          // *** Start with empty action history and NO conversation history param ***
+          await processCommand(
+            targetTabId,
+            msg.command,
+            msg.command,
+            [],
+            msg.model || "gemini"
+          );
+          sendResponse({ success: true, message: "Processing started." });
+          break; // Added break
+        case "NEW_CHAT":
+          console.log("[bg] NEW_CHAT clear history.");
+          await chrome.storage.local.remove("conversationHistory"); // Use remove instead of set
+          if (senderTabId) {
+            console.log(`[bg] Stop automation tab ${senderTabId} (NEW_CHAT).`);
+            automationStopped = true;
+            activeAutomationTabs.delete(senderTabId);
+            resetExecutionState(senderTabId);
+          }
+          sendResponse({ success: true });
+          break; // Added break
+        case "STOP_AUTOMATION":
+          console.log("[bg] STOP_AUTOMATION received.");
+          automationStopped = true;
+          activeAutomationTabs.forEach((tid) => {
+            console.log(`[bg] Clear state stopped tab ${tid}`);
+            resetExecutionState(tid);
+          });
+          activeAutomationTabs.clear();
+          sendResponse({ success: true });
+          break; // Added break
+        case "GET_TAB_ID":
+          if (senderTabId) sendResponse({ success: true, tabId: senderTabId });
+          else {
+            console.error("[bg] GET_TAB_ID missing sender ID.");
+            sendResponse({ success: false, error: "Sender tab ID missing" });
+          }
+          break; // Added break
+        default:
+          console.warn(`[bg] Unknown msg type: ${messageType}`);
+          if (typeof sendResponse === "function")
+            sendResponse({
+              success: false,
+              error: `Unknown type: ${messageType}`,
+            });
+      }
+    } catch (error: any) {
+      console.error(`[bg] Err handling msg ${messageType}:`, error);
+      if (typeof sendResponse === "function")
+        try {
+          sendResponse({
+            success: false,
+            error: `Background error: ${error.message}`,
+          });
+        } catch {}
+    }
+  })(); // End IIFE
+
+  // *** CORRECTED: Return based on messageType declared OUTSIDE IIFE ***
+  return messageType === "PROCESS_COMMAND";
+});
+
+// --- Port Connection Handling ---
+chrome.runtime.onConnect.addListener((port) => {
+  const match = port.name.match(/^content-script-(\d+)$/);
+  const tabId = match ? parseInt(match[1], 10) : NaN;
+  if (isNaN(tabId)) {
+    console.error("[bg] Port invalid name:", port.name);
+    return;
+  }
+  console.log(`[bg] Port connected tab ${tabId}`);
+  activePorts[tabId] = port;
+  port.onMessage.addListener((m) => {
+    if (m.type !== "KEEP_ALIVE")
+      console.warn(`[bg] Unexpected port msg tab ${tabId}:`, m);
+  });
+  port.onDisconnect.addListener(() => {
+    // Use optional chaining for port.error
+    console.warn(`[bg] Port disconnected tab ${tabId}. Err:`, "N/A");
+    if (activePorts[tabId] === port) {
+      delete activePorts[tabId];
+      console.log(`[bg] Removed port ref tab ${tabId}`);
+    }
+    if (activeAutomationTabs.has(tabId)) {
+      console.warn(`[bg] Port disconnect active tab ${tabId}. Stopping.`);
+      automationStopped = true;
+      activeAutomationTabs.delete(tabId);
+      resetExecutionState(tabId);
+      chrome.runtime.sendMessage({
+        type: "FINISH_PROCESS_COMMAND",
+        response: "Connection lost.",
+      });
+    }
+  });
+});
+
+// --- Utility Functions ---
+function resetExecutionState(tabId: number) {
+  console.log(`[bg] Reset state tab ${tabId}`);
+  recentActionsMap[tabId] = [];
+  delete currentTasks[tabId];
+}
+
+function waitForTabLoad(tabId: number): Promise<void> {
+  console.log(`[bg] Wait tab ${tabId} 'complete'...`);
+  return new Promise((resolve) => {
+    let listener:
+      | ((
+          updatedTabId: number,
+          changeInfo: chrome.tabs.TabChangeInfo,
+          tab: chrome.tabs.Tab
+        ) => void)
+      | null = null;
+    let timeoutId: NodeJS.Timeout | null = null;
+    const cleanup = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (listener) chrome.tabs.onUpdated.removeListener(listener);
+    };
+    timeoutId = setTimeout(() => {
+      console.warn(`[bg] Timeout wait tab ${tabId}`);
+      cleanup();
+      resolve();
+    }, 20000); // 20s timeout
+    listener = (upId, chg, tab) => {
+      if (upId === tabId && chg.status === "complete") {
+        // Additional check for non-restricted URLs ensures readiness
+        if (
+          tab.url &&
+          !tab.url.startsWith("chrome://") &&
+          !tab.url.startsWith("about:")
+        ) {
+          console.log(`[bg] Tab ${tabId} complete: ${tab.url}`);
+          cleanup();
+          setTimeout(resolve, 350); // Short delay after complete
+        } else if (tab.url) {
+          console.log(
+            `[bg] Tab ${tabId} internal/restricted URL: ${tab.url}. Resolving.`
+          );
+          cleanup();
+          resolve(); // Resolve for internal pages too
+        }
+      }
+    };
+    chrome.tabs.get(tabId, (init) => {
+      if (chrome.runtime.lastError || !init) {
+        console.error(
+          `[bg] Err get tab ${tabId}:`,
+          chrome.runtime.lastError?.message
+        );
+        cleanup();
+        resolve();
+        return;
+      }
+      // Check if already complete (and not restricted) before adding listener
+      if (
+        init.status === "complete" &&
+        init.url &&
+        !init.url.startsWith("chrome://") &&
+        !init.url.startsWith("about:")
+      ) {
+        console.log(`[bg] Tab ${tabId} already complete.`);
+        cleanup();
+        resolve();
+      } else {
+        chrome.tabs.onUpdated.addListener(listener);
+      }
+    });
+  });
+}
+
+async function navigateTab(tabId: number, url: string): Promise<void> {
+  console.log(`[bg] Navigating tab ${tabId} to ${url}`);
+  try {
+    await chrome.tabs.update(tabId, { url });
+    activeAutomationTabs.add(tabId);
+    await waitForTabLoad(tabId);
+    await ensureContentScriptInjected(tabId);
+    console.log(`[bg] Nav/inject complete tab ${tabId}`);
+  } catch (e: any) {
+    console.error(`[bg] Nav tab ${tabId} err:`, e.message);
+    throw e;
+  }
+}
+async function createTab(url: string): Promise<chrome.tabs.Tab> {
+  console.log(`[bg] Creating tab: ${url}`);
+  try {
+    const tab = await chrome.tabs.create({ url, active: true });
+    if (!tab?.id) throw new Error("Create tab fail.");
+    console.log(`[bg] Tab ${tab.id} created. Wait load...`);
+    await waitForTabLoad(tab.id);
+    activeAutomationTabs.add(tab.id);
+    await ensureContentScriptInjected(tab.id);
+    console.log(`[bg] New tab ${tab.id} ready.`);
+    return tab;
+  } catch (e: any) {
+    console.error("[bg] Create tab err:", e);
+    throw e;
+  }
+}
+
+// --- Error Handling ---
+async function handleError(
+  err: any,
+  tabId: number,
+  context: string,
+  initialCmd: string,
+  history: string[],
+  model: string
+) {
+  console.error(`[bg][Tab ${tabId}] Handling error:`, err.message, err.stack);
+  automationStopped = true;
+  activeAutomationTabs.delete(tabId);
+  resetExecutionState(tabId);
+  let userMsg = `Error: ${err.message}`;
+  // Customize message based on error type
+  if (
+    err.message?.includes("quota") ||
+    err.message?.includes("Quota") ||
+    err.message?.includes("429")
+  )
+    userMsg =
+      err.message.includes("quota") || err.message?.includes("Quota")
+        ? "API Quota Exceeded."
+        : "API Rate limit hit.";
+  else if (err.message?.includes("Apps Script"))
+    userMsg = `Workspace Error: ${err.message}`;
+  else if (
+    err.message?.includes("Content script") ||
+    err.message?.includes("tab disconnected") ||
+    err.message?.includes("Receiving end does not exist")
+  )
+    userMsg = `Page Comm Error: ${err.message}`;
+  chrome.runtime.sendMessage({
+    type: "FINISH_PROCESS_COMMAND",
+    response: userMsg,
+  });
+}
+
+// --- Initialization ---
+console.log(
+  "[background.ts] Background script fully loaded & listeners attached."
+);
