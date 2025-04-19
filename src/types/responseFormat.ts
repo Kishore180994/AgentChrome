@@ -1,6 +1,4 @@
 // responseFormat.ts
-import { AgentActionItem } from "./actionType";
-
 /**
  * The AI must always return JSON of this shape:
  *
@@ -33,16 +31,23 @@ export interface StepState {
     | "in_progress"
     | "in progress";
 }
+
 export interface MemoryState {
-  steps: Array<StepState>;
+  steps: Array<{
+    step_number: string;
+    description: string;
+    status: string;
+  }>;
 }
 
+export interface AgentResponseFormat {
+  current_state: AIResponseFormat;
+  action: Array<{ [key: string]: any }>;
+}
 /**
  * The `current_state` portion
  */
 export interface AIResponseFormat {
-  action?: AgentActionItem[];
-
   user_command?: string;
   /**
    * Quick detailed summary of new info from the current page
@@ -70,24 +75,4 @@ export interface AIResponseFormat {
   memory: MemoryState;
 
   current_goal: string;
-}
-
-/**
- * The entire required structure that AI must return
- */
-export interface AgentResponseFormat {
-  /**
-   * The "current_state" object with the mandatory fields
-   */
-  current_state: AIResponseFormat;
-
-  /**
-   * The "action" list. Each item in the list:
-   *   { action_name: { ...params } }
-   * must match one of your `AgentActionItem` union types
-   * (e.g. input_text, click_element, open_tab, etc.)
-   */
-  action: AgentActionItem[];
-
-  functionCall?: any;
 }

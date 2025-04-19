@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Do4Me.ai",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "An AI assistant that can help with browsing tasks through voice commands and screen analysis",
+  "key":"MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzhFerz0eiWzmPufS8SXo0XZWm/CpQSbPIdzp5Of8Aff+pVLQldS5s2yBO82hB9VFiMuxD6vt/h1880AIvFV4pJ16Ze3t9HTPuH2lp8unQEtO26Vjr/HN5j+cg22ASNPkmHsi8vn7JBSxCl1ayGzviImZfbWQ48LLZxw4JEkZ1b+wLqIAYaT3vrHJwnR+LPUvSKLoX97Lh+aBykUEnmaIXmR5qul2FrDZnJRM0R9XSs5iL6/AGAhsIaWZu1Cb+NWJr1K1Dw60jrlEtDsuO5YBX17Cxcyn7F0t1xVWeFlrKb79UywOSNBDSN2Glya4Cea+tctYL6Re9WgQUxYI/IYubQIDAQAB",
   "permissions": [
-    "microphone",
     "storage",
     "tabs",
     "activeTab",
@@ -15,8 +15,8 @@
     "identity"
   ],
   "host_permissions": ["<all_urls>"],
-  "content_security_policy": {
-    "extension_pages": "script-src 'self'; img-src 'self' https://doforme.s3.us-east-1.amazonaws.com; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://api.openai.com https://*.openai.com https://generativelanguage.googleapis.com https://doforme.s3.us-east-1.amazonaws.com https://api.anthropic.com/v1/messages wss://api.deepgram.com https://api.anthropic.com/*; object-src 'none';"
+"content_security_policy": {
+    "extension_pages": "script-src 'self'; img-src 'self' https://doforme.s3.us-east-1.amazonaws.com; connect-src 'self' https://www.googleapis.com https://script.google.com https://script.googleusercontent.com https://api.openai.com https://*.openai.com https://generativelanguage.googleapis.com https://doforme.s3.us-east-1.amazonaws.com https://api.anthropic.com/v1/messages wss://api.deepgram.com https://api.anthropic.com/*; object-src 'none';"
   },
   "action": {
     "default_icon": {
@@ -57,7 +57,7 @@
     "matches": ["*://*/*"]
   }],
   "oauth2": {
-  "client_id": "429423689983-70unnfvua48h78u3lkagkdgtagn2s40t.apps.googleusercontent.com",
+  "client_id": "429423689983-infv1hpmh76b1iotqk2i7laloej3mmve.apps.googleusercontent.com",
   "scopes": [
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/script.external_request",

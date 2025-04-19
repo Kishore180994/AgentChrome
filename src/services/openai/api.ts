@@ -1,11 +1,10 @@
-// api.ts
 /// <reference types="@types/chrome" />
-import { AgentResponseFormat, MemoryState } from "../../types/responseFormat";
 import {
-  ClaudeChatContent,
   ClaudeChatMessage,
+  ClaudeChatContent,
   ConversationHistory,
   GeminiChatMessage,
+  GeminiResponse,
 } from "../ai/interfaces";
 import { AIProvider, callAI } from "../ai/providers";
 
@@ -13,14 +12,14 @@ const MAX_RETRIES = 3;
 let currentProvider: AIProvider = "gemini"; // Default provider, can be overridden
 
 /**
- * Communicates with the AI to process a user message and returns a structured response.
+ * Communicates with the AI to process a user message and returns the raw GeminiResponse.
  *
  * @param userMessage - The message from the user to be sent to the AI.
  * @param sessionId - The unique identifier for the current session.
  * @param currentState - The current state of the conversation.
  * @param screenShotDataUrl - An optional data URL of a screenshot to be sent to the AI.
  * @param provider - The AI provider to use (defaults to currentProvider).
- * @returns A promise that resolves to an `AgentResponseFormat` object containing the AI's response.
+ * @returns A promise that resolves to a `GeminiResponse` containing the AI's response.
  */
 export async function chatWithAI(
   userMessage: string,
@@ -28,17 +27,7 @@ export async function chatWithAI(
   currentState: Record<string, any> = {},
   screenShotDataUrl?: string,
   provider: AIProvider = currentProvider
-): Promise<AgentResponseFormat> {
-  const fallback: AgentResponseFormat = {
-    current_state: {
-      page_summary: "",
-      evaluation_previous_goal: "Unknown",
-      memory: {} as MemoryState,
-      current_goal: "",
-    },
-    action: [],
-  };
-
+): Promise<GeminiResponse | null> {
   try {
     // Capture screenshot if none provided and provider supports vision
     let finalScreenShotDataUrl = screenShotDataUrl;
@@ -63,19 +52,26 @@ export async function chatWithAI(
     console.log("[chatWithAI] response", response);
 
     if (!response) throw new Error("No response from AI");
-    const parsed = parseAgentResponseFormat(response);
+
+    // Validate that reportCurrentState is present (mandatory)
+    const hasReportCurrentState = response.some(
+      (part) => part.functionCall.name === "reportCurrentState"
+    );
+    if (!hasReportCurrentState) {
+      throw new Error("Missing mandatory reportCurrentState function call");
+    }
 
     // Convert conversation to ConversationHistory format for storage
     const historyConversation = convertToConversationHistory(conversation);
     await updateConversationHistory(
       historyConversation,
-      JSON.stringify(parsed)
+      JSON.stringify(response)
     );
 
-    return parsed;
+    return response;
   } catch (err) {
-    console.error("[chatWithAI] Fatal error => fallback", err);
-    return fallback;
+    console.error("[chatWithAI] Fatal error => null", err);
+    return null;
   }
 }
 
@@ -136,7 +132,7 @@ async function sendWithRetry(
   sessionId: string,
   screenShotDataUrl?: string,
   retries = MAX_RETRIES
-): Promise<AgentResponseFormat | null> {
+): Promise<GeminiResponse | null> {
   try {
     console.debug(`[sendWithRetry][${sessionId}] requesting AI...`);
     const resp = await callAI(
@@ -144,6 +140,7 @@ async function sendWithRetry(
       conversation,
       screenShotDataUrl || ""
     );
+    console.log("[sendWithRetry] AI response", resp);
     if (!resp) throw new Error("Null response from AI");
     return resp;
   } catch (err) {
@@ -162,41 +159,6 @@ async function sendWithRetry(
       );
     }
     throw err;
-  }
-}
-
-/**
- * Parses the API response to match the AgentResponseFormat.
- */
-export function parseAgentResponseFormat(
-  apiResponse: any
-): AgentResponseFormat {
-  const fallback: AgentResponseFormat = {
-    current_state: {
-      page_summary: "",
-      evaluation_previous_goal: "Unknown",
-      memory: {} as MemoryState,
-      current_goal: "",
-    },
-    action: [],
-  };
-
-  if (!apiResponse) {
-    console.warn("[parseAgentResponseFormat] no AI content => fallback empty");
-    return fallback;
-  }
-
-  try {
-    if (!apiResponse.current_state || !Array.isArray(apiResponse.action)) {
-      console.warn(
-        "[parseAgentResponseFormat] missing current_state/action => fallback"
-      );
-      return fallback;
-    }
-    return apiResponse as AgentResponseFormat;
-  } catch (err) {
-    console.error("[parseAgentResponseFormat] parse error => fallback", err);
-    return fallback;
   }
 }
 
