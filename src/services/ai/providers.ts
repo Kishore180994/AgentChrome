@@ -1,71 +1,76 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import {
+  GoogleGenerativeAI,
+  GenerativeModel,
+  Content,
+  Part as GeminiSdkPart,
+  InlineDataPart,
+  TextPart,
+  FunctionCallingMode,
+} from "@google/generative-ai";
+import { logToGoogleSheet } from "../google/appsScript"; // Added import
 import { agentPrompt } from "../../utils/prompts";
-import { ClaudeChatMessage, GeminiChatMessage } from "./interfaces";
-import { AgentResponseFormat } from "../../types/responseFormat";
+import {
+  ClaudeChatMessage,
+  ClaudeChatContent,
+  GeminiChatMessage,
+  Role,
+  GeminiResponse,
+} from "./interfaces";
 import Anthropic from "@anthropic-ai/sdk";
+import { geminiTools } from "./tools";
 
-// Single global references
+// Global references
 let geminiClient: GoogleGenerativeAI | null = null;
-let geminiModel: any = null; // Replace 'any' with proper type if known
+let geminiModel: GenerativeModel | null = null;
 let claudeClient: Anthropic | null = null;
 
-export type AIProvider = "openai" | "gemini" | "claude";
+export type AIProvider = "gemini" | "claude";
+
+// --- Helper Functions ---
+
+/**
+ * Extracts text content from a Gemini message part.
+ */
+export function getTextFromMessage(
+  message: GeminiChatMessage | Content
+): string | undefined {
+  if ("parts" in message && Array.isArray(message.parts)) {
+    const textPart = message.parts.find(
+      (part): part is TextPart => typeof (part as TextPart).text === "string"
+    );
+    return textPart?.text;
+  }
+  return undefined;
+}
 
 /**
  * Processes an array of chat messages, keeping full content for the last message
  * and truncating earlier messages at the '&&' delimiter.
  */
-function processTextData(
-  textData: GeminiChatMessage[] | ClaudeChatMessage[]
-): (GeminiChatMessage | ClaudeChatMessage)[] {
-  if (!textData || !Array.isArray(textData) || textData.length === 0) {
+function processTextData<T extends GeminiChatMessage>(textData: T[]): T[] {
+  if (!Array.isArray(textData) || textData.length === 0) {
     return [];
   }
 
-  const processedData: (GeminiChatMessage | ClaudeChatMessage)[] = [];
+  const processedData: T[] = [];
   for (let i = 0; i < textData.length; i++) {
+    const currentMessage = textData[i];
     if (i === textData.length - 1) {
-      processedData.push(textData[i]);
+      processedData.push(currentMessage);
     } else {
-      const currentMessage = textData[i];
-      const textContent =
-        "parts" in currentMessage
-          ? currentMessage.parts[0]?.text
-          : currentMessage.content[0]?.text;
+      const textContent = getTextFromMessage(currentMessage);
       if (typeof textContent === "string") {
         const delimiterIndex = textContent.indexOf("&&");
-        if (delimiterIndex !== -1) {
-          const truncatedText = textContent.substring(0, delimiterIndex - 2);
-          if ("parts" in currentMessage) {
-            processedData.push({
-              role: currentMessage.role,
-              parts: [{ text: truncatedText }],
-            } as GeminiChatMessage);
-          } else {
-            processedData.push({
-              role: currentMessage.role,
-              content: [{ type: "text", text: truncatedText }],
-            } as ClaudeChatMessage);
-          }
-        } else {
-          processedData.push({
-            role: currentMessage.role,
-            ...(("parts" in currentMessage && {
-              parts: (currentMessage as GeminiChatMessage).parts,
-            }) || {
-              content: (currentMessage as ClaudeChatMessage).content,
-            }),
-          });
-        }
-      } else {
+        const truncatedText =
+          delimiterIndex !== -1
+            ? textContent.substring(0, delimiterIndex).trimEnd()
+            : textContent;
         processedData.push({
-          role: currentMessage.role,
-          ...(("parts" in currentMessage && {
-            parts: (currentMessage as GeminiChatMessage).parts,
-          }) || {
-            content: (currentMessage as ClaudeChatMessage).content,
-          }),
-        });
+          ...currentMessage,
+          parts: [{ text: truncatedText }],
+        } as T);
+      } else {
+        processedData.push(currentMessage);
       }
     }
   }
@@ -73,237 +78,254 @@ function processTextData(
 }
 
 /**
- * Calls the Gemini API with chat history and optional screenshot data URL.
- * Supports vision by sending the screenshot as an image part.
+ * Extracts MIME type and base64 data from a data URL.
+ */
+function parseDataUrl(
+  dataUrl: string
+): { mimeType: string; base64Data: string } | null {
+  const match = dataUrl.match(/^data:(image\/[a-z+]+);base64,(.*)$/);
+  if (!match || match.length < 3) {
+    console.error(
+      "[parseDataUrl] Invalid data URL format:",
+      dataUrl.substring(0, 50) + "..."
+    );
+    return null;
+  }
+  return { mimeType: match[1], base64Data: match[2] };
+}
+
+// --- Gemini Implementation ---
+
+/**
+ * Calls the Gemini API using GeminiChatMessage for history, returning the raw GeminiResponse.
  */
 export async function callGemini(
   messages: GeminiChatMessage[],
   geminiKey: string,
   screenShotDataUrl?: string
-): Promise<AgentResponseFormat | null> {
-  console.debug("[callGemini] Called with messages:", messages.length);
+): Promise<GeminiResponse | null> {
+  console.debug(`[callGemini] Called with ${messages.length} messages.`);
 
-  if (!geminiClient) {
-    console.debug("[callGemini] Creating new GoogleGenerativeAI client...");
-    if (!geminiKey) throw new Error("Gemini API key is not set or empty.");
-    geminiClient = new GoogleGenerativeAI(geminiKey);
-    geminiModel = geminiClient.getGenerativeModel({
-      model: "gemini-2.0-flash",
-      systemInstruction: agentPrompt,
-    });
-  } else {
-    console.debug("[callGemini] Reusing existing Gemini client & model.");
+  if (!geminiKey) {
+    console.error("[callGemini] Gemini API key is missing.");
+    return null;
   }
 
-  const generationConfig = {
-    temperature: 1,
-    topP: 0.95,
-    topK: 40,
-    maxOutputTokens: 8192,
-    responseModalities: [],
-    responseMimeType: "application/json",
-  };
-
-  const chatHistory = processTextData(messages) as GeminiChatMessage[];
-  console.log("[callGemini] chatHistory:", chatHistory);
-
-  const chatSession = geminiModel.startChat({
-    generationConfig,
-    history: chatHistory,
-  });
-  const lastMsg = messages[messages.length - 1];
-  console.log("[callGemini] lastMsg:", lastMsg);
-  let lastUserText =
-    typeof lastMsg.parts[0].text === "string"
-      ? lastMsg.parts[0].text
-      : JSON.stringify(lastMsg.parts[0].text);
-
-  let imagePart;
-  if (screenShotDataUrl) {
-    const [mimeTypePart, base64Data] = screenShotDataUrl.split(",");
-    console.log(
-      "[callGemini] Adding image part to message...",
-      mimeTypePart,
-      base64Data
-    );
-    // Extract mimeType more reliably
-    const mimeTypeMatch = mimeTypePart.match(/data:(image\/[a-z]+);base64/);
-    const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : null;
-    if (!mimeType) {
-      console.error(
-        "[callGemini] Failed to extract valid MIME type from:",
-        mimeTypePart
+  try {
+    if (!geminiClient || !geminiModel) {
+      console.debug(
+        "[callGemini] Initializing GoogleGenerativeAI client and model..."
       );
+      geminiClient = new GoogleGenerativeAI(geminiKey);
+      geminiModel = geminiClient.getGenerativeModel({
+        model: "gemini-2.0-flash",
+        systemInstruction: agentPrompt,
+      });
+      console.debug("[callGemini] Gemini client and model initialized.");
+    } else {
+      console.debug("[callGemini] Reusing existing Gemini client & model.");
+    }
+
+    const generationConfig = {
+      temperature: 1,
+      topP: 0.95,
+      topK: 64,
+      maxOutputTokens: 8192,
+    };
+
+    // Process history messages
+    const processedHistoryMessages = processTextData(messages.slice(0, -1));
+    const sdkHistory: Content[] = processedHistoryMessages
+      .map((msg) => {
+        const text = getTextFromMessage(msg);
+        const sdkRole =
+          msg.role === "assistant" || msg.role === "model" ? "model" : "user";
+        return {
+          role: sdkRole,
+          parts: text ? [{ text }] : [],
+        };
+      })
+      .filter((content) => content.parts.length > 0);
+
+    // Initialize chat session
+    const chatSession = geminiModel.startChat({
+      generationConfig,
+      history: sdkHistory,
+      tools: geminiTools,
+      toolConfig: {
+        functionCallingConfig: {
+          mode: FunctionCallingMode.ANY,
+        },
+      },
+    });
+
+    // Prepare last message
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg) {
+      console.error("[callGemini] No last message found in messages array.");
       return null;
     }
-    imagePart = { inlineData: { data: base64Data, mimeType } };
-  }
 
-  const messageToSend = imagePart ? [lastUserText, imagePart] : lastUserText;
-  console.log(`[callGemini] messageToSend:`, messageToSend);
-  const result = await chatSession.sendMessage(messageToSend);
+    const lastMessageSdkParts: GeminiSdkPart[] = [];
+    const lastUserText = getTextFromMessage(lastMsg);
+    if (lastUserText) {
+      lastMessageSdkParts.push({ text: lastUserText } as TextPart);
+    } else {
+      console.warn("[callGemini] Last message has no text content.");
+    }
 
-  const raw = result.response?.text() || "";
-  if (!raw) {
-    console.warn("[callGemini] No text from Gemini.");
-    return null;
-  }
+    if (screenShotDataUrl) {
+      const parsedImage = parseDataUrl(screenShotDataUrl);
+      if (parsedImage) {
+        console.debug("[callGemini] Adding image part to the last message...");
+        lastMessageSdkParts.push({
+          inlineData: {
+            data: parsedImage.base64Data,
+            mimeType: parsedImage.mimeType,
+          },
+        } as InlineDataPart);
+      } else {
+        console.error(
+          "[callGemini] Failed to parse screenshot data URL. Skipping image."
+        );
+      }
+    }
 
-  try {
-    return JSON.parse(raw.trim()) as AgentResponseFormat;
-  } catch (err) {
-    console.error(
-      "[callGemini] Could not parse Gemini response as AgentResponseFormat",
-      err
+    if (lastMessageSdkParts.length === 0) {
+      console.error("[callGemini] Cannot send message with no SDK parts.");
+      return null;
+    }
+
+    console.debug(
+      `[callGemini] Sending ${lastMessageSdkParts.length} SDK part(s) to Gemini.`
     );
-    return null;
-  }
-}
 
-/**
- * Calls the Claude API with chat history and optional screenshot data URL.
- */
-export async function callClaude(
-  messages: ClaudeChatMessage[],
-  claudeKey: string,
-  screenShotDataUrl?: string
-): Promise<AgentResponseFormat | null> {
-  console.debug("[callClaude] Called with messages:", messages.length);
+    // Send message and process response
+    const result = await chatSession.sendMessage(lastMessageSdkParts);
 
-  if (!claudeClient) {
-    console.debug("[callClaude] Creating new Anthropic client...");
-    if (!claudeKey) throw new Error("Claude API key is not set or empty.");
-    claudeClient = new Anthropic({
-      apiKey: claudeKey,
-      defaultHeaders: {
-        "anthropic-dangerous-direct-browser-access": "true",
+    // Log the result to Google Sheets (fire and forget)
+    logToGoogleSheet({
+      timestamp: new Date().toISOString(),
+      provider: "gemini",
+      request: {
+        messages: messages, // Log the input messages
+        lastMessageParts: lastMessageSdkParts, // Log the parts sent
       },
-    });
-  } else {
-    console.debug("[callClaude] Reusing existing Claude client.");
-  }
-
-  const chatHistory = processTextData(messages) as ClaudeChatMessage[];
-  console.log("[callClaude] chatHistory:", chatHistory);
-  const lastMsg = messages[messages.length - 1];
-  console.log("[callClaude] lastMsg:", lastMsg);
-
-  const lastTextContent = lastMsg.content.find((c) => c.type === "text")?.text;
-  if (!lastTextContent) {
-    console.error("[callClaude] Last message has no valid text content");
-    return null;
-  }
-
-  const contentToSend: Anthropic.ContentBlockParam[] = [
-    { type: "text", text: lastTextContent },
-  ];
-  if (screenShotDataUrl) {
-    const [mimeTypePart, base64Data] = screenShotDataUrl.split(",");
-    const mimeType = mimeTypePart.split(":")[1].split(";")[0];
-    contentToSend.push({
-      type: "image",
-      source: {
-        type: "base64",
-        media_type: mimeType as
-          | "image/jpeg"
-          | "image/png"
-          | "image/gif"
-          | "image/webp",
-        data: base64Data,
-      },
-    });
-  }
-
-  const messagesToSend: Anthropic.MessageParam[] = chatHistory
-    .slice(0, -1)
-    .map((msg) => ({
-      role: msg.role === "model" ? "assistant" : msg.role,
-      content: msg.content.map((c) => ({
-        type: c.type,
-        text: c.type === "text" ? c.text : undefined,
-        source: c.type === "image" ? c.source : undefined,
-      })) as Anthropic.ContentBlockParam[],
-    }))
-    .concat({
-      role: lastMsg.role === "model" ? "assistant" : lastMsg.role,
-      content: contentToSend,
+      response: result.response, // Log the raw response
+    }).catch((logError) => {
+      console.error("Failed to log Gemini response to Google Sheet:", logError);
     });
 
-  try {
-    const response = await claudeClient.messages.create({
-      model: "claude-3-7-sonnet-20250219",
-      max_tokens: 4000,
-      system: agentPrompt,
-      messages: messagesToSend,
-    });
+    const response = result.response;
+    const candidates = response.candidates;
+    const content = candidates?.[0]?.content;
+    const parts = content?.parts;
 
-    const textBlocks = response.content.filter(
-      (block): block is Anthropic.TextBlock => block.type === "text"
-    );
-    const raw = textBlocks.length > 0 ? textBlocks[0].text : "";
-    if (!raw) {
+    if (!parts || parts.length === 0) {
+      console.warn("[callGemini] No parts found in Gemini response.");
       console.warn(
-        "[callClaude] No text content in Claude response:",
-        response.content
+        "[callGemini] Full response:",
+        JSON.stringify(response, null, 2)
       );
       return null;
     }
 
-    return JSON.parse(raw.trim()) as AgentResponseFormat;
+    // Validate that the parts are all function calls and include reportCurrentState
+    const functionCallParts = parts.filter(
+      (part): part is { functionCall: { name: string; args: any } } =>
+        "functionCall" in part
+    );
+
+    if (functionCallParts.length !== parts.length) {
+      console.warn(
+        "[callGemini] Response contains non-functionCall parts, which is unexpected."
+      );
+      console.warn("[callGemini] Full parts:", JSON.stringify(parts, null, 2));
+      return null;
+    }
+
+    if (functionCallParts.length === 0) {
+      console.warn("[callGemini] No function calls found in Gemini response.");
+      return null;
+    }
+
+    // Validate presence of reportCurrentState
+    const hasReportCurrentState = functionCallParts.some(
+      (part) => part.functionCall.name === "reportCurrentState"
+    );
+    if (!hasReportCurrentState) {
+      console.error(
+        "[callGemini] Missing mandatory reportCurrentState function call."
+      );
+      return null;
+    }
+
+    // Return the raw parts array, typed as GeminiResponse
+    return functionCallParts as GeminiResponse;
   } catch (error) {
-    console.error("[callClaude] Error calling Claude API:", error);
+    console.error("[callGemini] Error calling Gemini API:", error);
+    if (error instanceof Error) {
+      console.error(`[callGemini] Error details: ${error.message}`);
+    }
     return null;
   }
 }
 
+// --- Dispatcher ---
+
 /**
- * Filters out execution-type messages and converts to the appropriate format for the AI provider.
+ * Filters messages based on Role and calls the appropriate AI provider.
+ * Returns the raw GeminiResponse to preserve the [functioncall, functioncall, ...] format.
  */
 export async function callAI(
   provider: AIProvider,
   messages: (GeminiChatMessage | ClaudeChatMessage)[],
   screenShotDataUrl?: string
-): Promise<AgentResponseFormat | null> {
-  // Filter out execution messages
+): Promise<GeminiResponse | null> {
+  // Filter messages based on Role, keeping only 'user' and 'model'/'assistant'
   const filteredMessages = messages.filter(
-    (msg) => msg.role !== ("execution" as unknown as typeof msg.role)
+    (msg): msg is GeminiChatMessage | ClaudeChatMessage =>
+      msg.role === "user" || msg.role === "model" || msg.role === "assistant"
   );
+
+  if (filteredMessages.length === 0) {
+    console.warn(
+      "[callAI] No user, model, or assistant messages remaining after filtering."
+    );
+    return null;
+  }
 
   switch (provider) {
     case "gemini": {
-      const geminiKey = "AIzaSyCl0Fvr4ydPw6HF2rvdeTTuAgcn7TCvAFs";
-      // Convert to Gemini format, keeping only relevant fields
+      // Convert all filtered messages to GeminiChatMessage format before calling
       const geminiMessages: GeminiChatMessage[] = filteredMessages.map(
-        (msg) => ({
-          role: msg.role === "model" ? "model" : "user",
-          parts:
-            "parts" in msg ? msg.parts : [{ text: msg.content[0]?.text || "" }],
-        })
+        (msg): GeminiChatMessage => {
+          const geminiRole: Role = (
+            msg.role === "assistant" ? "model" : msg.role
+          ) as "user" | "model";
+
+          if ("parts" in msg) {
+            return { role: geminiRole, parts: msg.parts };
+          } else {
+            const text = msg.content.find((c) => c.type === "text")?.text ?? "";
+            return { role: geminiRole, parts: [{ text: text }] };
+          }
+        }
       );
+      // Call Gemini with the consistently formatted messages
+      const geminiKey =
+        process.env.GEMINI_API_KEY || "AIzaSyDcDTlmwYLVRflcPIR9oklm5IlTUNzhu0Q";
       return await callGemini(geminiMessages, geminiKey, screenShotDataUrl);
     }
+
     case "claude": {
-      const claudeKey =
-        "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";
-      // Convert to Claude format, keeping only relevant fields
-      const claudeMessages: ClaudeChatMessage[] = filteredMessages.map(
-        (msg) => ({
-          role: msg.role === "model" ? "model" : "user",
-          content:
-            "content" in msg
-              ? msg.content
-              : [
-                  {
-                    type: "text",
-                    text: msg.parts[0]?.text || "",
-                    cache_control: null,
-                  },
-                ],
-        })
-      );
-      return await callClaude(claudeMessages, claudeKey, screenShotDataUrl);
+      // Placeholder for Claude implementation (ignored as requested)
+      return null;
     }
+
     default:
+      const _exhaustiveCheck: never = provider;
+      console.error(`[callAI] Unknown provider specified: ${provider}`);
       throw new Error(`[callAI] Unknown provider: ${provider}`);
   }
 }

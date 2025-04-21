@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Settings, X } from "lucide-react";
+import { Settings, X, LogOut, LogIn, User } from "lucide-react";
 import { storage } from "../utils/storage";
 import { AccentColor, themeStyles } from "../utils/themes";
+import { useAuth } from "../contexts/AuthContext";
 
 interface AppSettings {
   geminiKey: string;
@@ -30,6 +31,7 @@ export function SettingsModal({
   accentColor,
   mode,
 }: SettingsModalProps) {
+  const { user, loginWithGoogle, logout, isLoading } = useAuth();
   const [geminiKey, setGeminiKey] = useState("");
   const [openaiKey, setOpenaiKey] = useState("");
   const [aiProvider, setAiProvider] =
@@ -131,6 +133,106 @@ export function SettingsModal({
           </button>
         </div>
         <div className="d4m-space-y-3 d4m-text-sm">
+          {/* Authentication Section */}
+          <div className="d4m-border-b d4m-border-gray-700 d4m-pb-3 d4m-mb-3">
+            <div className="d4m-flex d4m-items-center d4m-justify-between d4m-mb-2">
+              <h3
+                className={`d4m-font-medium d4m-text-${accentColor}-400 d4m-flex d4m-items-center d4m-gap-1`}
+              >
+                <User className="d4m-w-4 d4m-h-4" />
+                Account
+              </h3>
+              {user && "isGuest" in user ? (
+                <span
+                  className={`d4m-text-xs d4m-px-2 d4m-py-1 d4m-rounded-full d4m-bg-gray-700 ${textColor}`}
+                >
+                  Guest Mode
+                </span>
+              ) : user ? (
+                <span
+                  className={`d4m-text-xs d4m-px-2 d4m-py-1 d4m-rounded-full d4m-bg-${accentColor}-900/30 d4m-text-${accentColor}-400`}
+                >
+                  Signed In
+                </span>
+              ) : null}
+            </div>
+
+            {user && !("isGuest" in user) && (
+              <div className="d4m-flex d4m-items-center d4m-gap-3 d4m-mb-3">
+                {user.picture && (
+                  <img
+                    src={user.picture}
+                    alt={user.name}
+                    className="d4m-w-10 d4m-h-10 d4m-rounded-full d4m-border d4m-border-gray-700"
+                  />
+                )}
+                <div className="d4m-flex-1 d4m-min-w-0">
+                  <p className={`d4m-font-medium ${textColor} d4m-truncate`}>
+                    {user.name}
+                  </p>
+                  <p className="d4m-text-gray-500 d4m-text-xs d4m-truncate">
+                    {user.email}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="d4m-flex d4m-justify-end">
+              {user && "isGuest" in user ? (
+                <button
+                  onClick={() => {
+                    // First close the modal
+                    onClose();
+                    // Then logout to return to login page
+                    logout();
+                  }}
+                  disabled={isLoading}
+                  className={`d4m-text-white d4m-py-1.5 d4m-px-3 d4m-rounded-full d4m-text-xs d4m-flex d4m-items-center d4m-gap-1.5 ${
+                    isLoading ? "d4m-opacity-70 d4m-cursor-not-allowed" : ""
+                  } d4m-bg-blue-600 d4m-hover:bg-blue-700 d4m-transition-colors`}
+                >
+                  {isLoading ? (
+                    <>
+                      <svg
+                        className="d4m-animate-spin d4m-w-3 d4m-h-3"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="d4m-opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        ></circle>
+                        <path
+                          className="d4m-opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        ></path>
+                      </svg>
+                      Signing in...
+                    </>
+                  ) : (
+                    <>
+                      <LogIn className="d4m-w-3 d4m-h-3" />
+                      Sign in with Google
+                    </>
+                  )}
+                </button>
+              ) : (
+                <button
+                  onClick={logout}
+                  className={`d4m-text-white d4m-py-1.5 d4m-px-3 d4m-rounded-full d4m-text-xs d4m-flex d4m-items-center d4m-gap-1.5 d4m-bg-red-600 d4m-hover:bg-red-700 d4m-transition-colors`}
+                >
+                  <LogOut className="d4m-w-3 d4m-h-3" />
+                  Sign Out
+                </button>
+              )}
+            </div>
+          </div>
           <div className="d4m-flex d4m-items-center d4m-gap-2">
             <label
               className={`d4m-font-medium d4m-text-${accentColor}-400 d4m-w-24`}

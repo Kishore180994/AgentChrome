@@ -1,18 +1,24 @@
-import { PageElement, UncompressedPageElement } from "./services/ai/interfaces";
-import { chatWithAI } from "./services/openai/api";
 import {
-  AgentActionItem,
-  AskAction,
-  LocalAction,
-  LocalActionType,
-} from "./types/actionType";
-import { AIResponseFormat } from "./types/responseFormat";
+  GeminiFunctionCall,
+  GeminiFunctionCallWrapper,
+  PageElement,
+  ReportCurrentStateArgs,
+  UncompressedPageElement,
+} from "./services/ai/interfaces";
+import { executeAppsScriptFunction } from "./services/google/appsScript";
+import { chatWithAI } from "./services/openai/api";
+import { LocalAction } from "./types/actionType";
+import { getGoogleDocUrlFromId } from "./utils/helpers";
 
 let automationStopped: boolean = false;
 const activeAutomationTabs: Set<number> = new Set();
 const recentActionsMap: Record<number, string[]> = {};
 const currentTasks: Record<number, string> = {};
 const activePorts: Record<number, chrome.runtime.Port> = {};
+
+// Constants for logging AI responses - REMOVED
+// const LOG_SHEET_ID = "1tE_DOOyTp19XgHJd2esdOdQZEQMhEE0cDmr_731mhAA";
+// const LOG_SHEET_NAME = "Sheet1"; // Assuming the first sheet is named Sheet1
 
 chrome.action.onClicked.addListener(async (tab) => {
   console.log("[background.ts] Extension action clicked, tab:", tab);
@@ -27,28 +33,90 @@ chrome.action.onClicked.addListener(async (tab) => {
   activeAutomationTabs.delete(tab.id);
 });
 
+// Listener for when a tab is removed
 chrome.tabs.onRemoved.addListener((tabId) => {
+  console.log(`[background.ts] Tab removed: ${tabId}`);
   activeAutomationTabs.delete(tabId);
+  delete activePorts[tabId];
+  resetExecutionState(tabId); // Clean up state for removed tab
 });
 
+// Listener for when the active tab changes
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  console.log(`[background.ts] Tab activated: ${activeInfo.tabId}`);
+  // Attempt to inject content script directly, ignoring errors if already present
+  await ensureContentScriptInjected(activeInfo.tabId);
+});
+
+// Listener for when a tab is updated (e.g., URL change, page reload)
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  // Inject after the page is complete and it's a valid URL
+  if (
+    changeInfo.status === "complete" &&
+    tab.url &&
+    !tab.url.startsWith("chrome://") &&
+    !tab.url.startsWith("about:")
+  ) {
+    console.log(
+      `[background.ts] Tab updated and complete: ${tabId}, URL: ${tab.url}`
+    );
+    // Attempt to inject content script directly, ignoring errors if already present
+    await ensureContentScriptInjected(tabId);
+  }
+});
+
+// Simplified injection function - attempts injection and ignores common errors.
 async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
-  console.log("[background.ts] Ensuring content script for tab", tabId);
-  return new Promise((resolve) => {
-    chrome.tabs.sendMessage(tabId, { type: "PING" }, (res) => {
-      if (chrome.runtime.lastError || !res) {
-        console.log("[background.ts] Injecting content script on tab", tabId);
-        chrome.scripting
-          .executeScript({ target: { tabId }, files: ["content.js"] })
-          .then(() => setTimeout(() => resolve(true), 500))
-          .catch((err) => {
-            console.error("[background.ts] Injection error:", err);
-            resolve(false);
-          });
-      } else {
-        resolve(true);
-      }
+  console.log(
+    `[background.ts] Attempting to inject content script into tab ${tabId} (ignoring if already present)`
+  );
+  try {
+    // Check if tab exists and has a valid URL before attempting injection
+    const tab = await chrome.tabs.get(tabId);
+    if (
+      !tab ||
+      !tab.url ||
+      tab.url.startsWith("chrome://") ||
+      tab.url.startsWith("about:")
+    ) {
+      console.warn(
+        `[background.ts] Skipping injection for invalid tab or URL: ${tabId}, URL: ${tab?.url}`
+      );
+      return false;
+    }
+
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content.js"],
     });
-  });
+    console.log(
+      `[background.ts] Content script injection attempt finished for tab ${tabId}`
+    );
+    return true; // Assume success (either injected or was already there and executeScript didn't throw)
+  } catch (err: any) {
+    // Log common non-critical errors, but don't treat them as failures for this function's purpose
+    if (
+      err.message?.includes("Cannot access a chrome:// URL") ||
+      err.message?.includes("No tab with id") ||
+      err.message?.includes("The tab was closed") ||
+      err.message?.includes("Cannot access contents of the page") || // Often means script already injected or page denied access
+      err.message?.includes("Missing host permission for the tab") ||
+      err.message?.includes("Receiving end does not exist") || // Can indicate script already there or context issues
+      err.message?.includes("Could not establish connection") // Similar to receiving end does not exist
+    ) {
+      console.warn(
+        `[background.ts] Content script injection skipped/ignored for tab ${tabId}: ${err.message}`
+      );
+      return false; // Indicate injection didn't happen or wasn't needed
+    } else {
+      // Log unexpected errors
+      console.error(
+        `[background.ts] Unexpected injection error for tab ${tabId}:`,
+        err
+      );
+      return false; // Indicate failure
+    }
+  }
 }
 
 async function fetchPageElements(tabId: number): Promise<{
@@ -68,7 +136,7 @@ async function fetchPageElements(tabId: number): Promise<{
           (resp) => {
             if (chrome.runtime.lastError) {
               reject(chrome.runtime.lastError);
-            } else {
+            } else if (resp && resp.compressed && resp.uncompressed) {
               console.log(
                 "[background.ts] Fetched",
                 resp.compressed.length,
@@ -78,6 +146,12 @@ async function fetchPageElements(tabId: number): Promise<{
                 compressed: resp.compressed,
                 uncompressed: resp.uncompressed,
               });
+            } else {
+              reject(
+                new Error(
+                  "Invalid response received from content script for GET_PAGE_ELEMENTS"
+                )
+              );
             }
           }
         );
@@ -130,7 +204,7 @@ async function waitForPotentialNavigation(
     await waitForTabLoad(tabId);
   } else if (lastActionType === "click" || lastActionType === "submit_form") {
     const initialUrl = await getTabUrl(tabId);
-    await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait 2 seconds for potential navigation
+    await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait 2 seconds
     const currentUrl = await getTabUrl(tabId);
     if (currentUrl !== initialUrl) {
       await waitForTabLoad(tabId);
@@ -155,223 +229,508 @@ async function processCommand(
 
   let pageState: PageElement[] = [];
   let uncompressedPageState: UncompressedPageElement[] = [];
-  try {
-    const result = await fetchPageElements(tabId);
-    pageState = result.compressed;
-    uncompressedPageState = result.uncompressed;
-  } catch (err) {
-    console.error("[background.ts] Failed to fetch page elements:", err);
-    await chrome.runtime.sendMessage({
-      type: "FINISH_PROCESS_COMMAND",
-      response:
-        "Failed to fetch page elements: " +
-        (err instanceof Error ? err.message : String(err)),
-    });
-    return;
-  }
-
   let screenshotDataUrl: string | null = null;
+  let tabUrl: string = "";
+  let allTabs: string[] = [];
 
-  await new Promise<void>(async (resolve) => {
+  try {
+    // --- Fetch initial state ---
+    console.log(
+      `[background.ts processCommand ${tabId}] Attempting to fetch page elements...`
+    );
+    const fetchStart = Date.now();
     try {
-      const targetTab = await chrome.tabs.get(tabId);
-      if (!targetTab || typeof targetTab.windowId !== "number") {
-        console.error("[background.ts] No valid tab or window");
-        resolve();
-        return;
-      }
-
-      chrome.tabs.captureVisibleTab(
-        targetTab.windowId,
-        { format: "jpeg", quality: 60 },
-        (dataUrl) => {
-          if (chrome.runtime.lastError || !dataUrl) {
-            console.error(
-              "[background.ts] Failed to capture screenshot:",
-              chrome.runtime.lastError?.message || "No data URL returned"
-            );
-            resolve();
-            return;
-          }
-
-          chrome.tabs.sendMessage(
-            tabId,
-            { type: "RESIZE_SCREENSHOT", dataUrl },
-            (response) => {
-              if (response?.resizedDataUrl) {
-                screenshotDataUrl = response.resizedDataUrl;
-                console.log(
-                  "[background.ts] Screenshot resized via content.js"
-                );
-              } else {
-                console.warn(
-                  "[background.ts] Failed to compress screenshot in content.js"
-                );
-                screenshotDataUrl = dataUrl; // fallback
-              }
-              resolve();
-            }
-          );
-        }
+      const pageElementsResult = await fetchPageElements(tabId);
+      pageState = pageElementsResult.compressed;
+      uncompressedPageState = pageElementsResult.uncompressed;
+      console.log(
+        `[background.ts processCommand ${tabId}] Page elements fetched in ${
+          Date.now() - fetchStart
+        }ms`
       );
     } catch (err) {
-      console.error("[background.ts] Error getting tab info:", err);
-      resolve();
+      console.error(
+        `[background.ts processCommand ${tabId}] Failed to fetch page elements after ${
+          Date.now() - fetchStart
+        }ms:`,
+        err
+      );
+      await chrome.runtime.sendMessage({
+        type: "FINISH_PROCESS_COMMAND",
+        response:
+          "Failed to fetch page elements: " +
+          (err instanceof Error ? err.message : String(err)),
+      });
+      return; // Stop processing if page elements fail
     }
-  });
 
-  const allTabs = await getAllTabs();
-  let tabUrl: string;
-  try {
-    tabUrl = await getTabUrl(tabId);
-  } catch (error) {
-    console.error("[background.ts] Tab URL error:", error);
-    await chrome.runtime.sendMessage({
-      type: "FINISH_PROCESS_COMMAND",
-      response:
-        "Failed to get tab URL: " +
-        (error instanceof Error ? error.message : String(error)),
+    await new Promise<void>(async (resolve) => {
+      try {
+        const targetTab = await chrome.tabs.get(tabId);
+        if (!targetTab || typeof targetTab.windowId !== "number") {
+          console.error("[background.ts] No valid tab or window");
+          resolve();
+          return;
+        }
+        chrome.tabs.captureVisibleTab(
+          targetTab.windowId,
+          { format: "jpeg", quality: 60 },
+          (dataUrl) => {
+            if (chrome.runtime.lastError || !dataUrl) {
+              console.error(
+                "[background.ts] Failed to capture screenshot:",
+                chrome.runtime.lastError?.message || "No data URL returned"
+              );
+              resolve(); // Resolve even if screenshot fails
+              return;
+            }
+            chrome.tabs.sendMessage(
+              tabId,
+              { type: "RESIZE_SCREENSHOT", dataUrl },
+              (response) => {
+                if (response?.resizedDataUrl) {
+                  screenshotDataUrl = response.resizedDataUrl;
+                  console.log(
+                    "[background.ts] Screenshot resized via content.js"
+                  );
+                } else {
+                  console.warn(
+                    "[background.ts] Failed to compress screenshot in content.js"
+                  );
+                  screenshotDataUrl = dataUrl; // Use original if resize fails
+                }
+                resolve();
+              }
+            );
+          }
+        );
+      } catch (err) {
+        console.error("[background.ts] Error getting tab info:", err);
+        resolve(); // Resolve even if screenshot fails
+      }
     });
-    return;
-  }
 
-  if (!pageState.length) {
-    console.warn("[background.ts] No elements found, aborting");
-    await chrome.runtime.sendMessage({
-      type: "FINISH_PROCESS_COMMAND",
-      response: "No page elements found, aborting command processing.",
-    });
-    return;
-  }
+    try {
+      allTabs = await getAllTabs();
+      tabUrl = await getTabUrl(tabId);
+    } catch (error) {
+      console.error("[background.ts] Tab URL/List error:", error);
+      await chrome.runtime.sendMessage({
+        type: "FINISH_PROCESS_COMMAND",
+        response:
+          "Failed to get tab URL/List: " +
+          (error instanceof Error ? error.message : String(error)),
+      });
+      return; // Stop processing if tab info fails
+    }
 
-  const currentState = {
-    elements: pageState,
-    tabs: allTabs,
-    currentTabUrl: tabUrl,
-    actionHistory: actionHistory.slice(-3),
-    screenshot: screenshotDataUrl,
-  };
-  console.log({ pageState });
+    if (!pageState.length) {
+      console.warn("[background.ts] No elements found, aborting");
+      await chrome.runtime.sendMessage({
+        type: "FINISH_PROCESS_COMMAND",
+        response: "No page elements found, aborting command processing.",
+      });
+      return;
+    }
 
-  try {
+    // --- Call AI ---
+    const aiCurrentState = {
+      elements: pageState,
+      tabs: allTabs,
+      currentTabUrl: tabUrl,
+      actionHistory: actionHistory.slice(-3),
+      screenshot: screenshotDataUrl,
+    };
+    console.log({ aiCurrentState }); // Log the state being sent
+
     const recentActionsStr = actionHistory.length
       ? `Recent actions: ${actionHistory.slice(-3).join(", ")}.`
       : "";
     const fullContextMessage = `${contextMessage}. ${recentActionsStr}`;
+    console.log(
+      "[background.ts] Sending context message to AI:",
+      fullContextMessage
+    );
 
     const raw = await chatWithAI(
       fullContextMessage,
-      "session-id",
-      currentState,
+      "session-id", // Consider making this dynamic if needed
+      aiCurrentState,
       screenshotDataUrl || undefined,
       model as "gemini" | "claude"
     );
-    const { current_state } = raw;
-    let { action } = raw || (current_state.action ? current_state : {});
+    console.log("[background.ts] Raw response from AI:", raw);
 
-    if (!current_state || !action) {
-      console.warn("[background.ts] No valid state or action, stopping");
+    if (!raw) {
+      console.error("[background.ts] Received null response from chatWithAI.");
+      chrome.runtime.sendMessage({
+        type: "FINISH_PROCESS_COMMAND",
+        response: "AI provider returned no response.",
+      });
+      activeAutomationTabs.delete(tabId);
+      return;
+    }
+
+    // --- Process AI Response ---
+    const reportStateCall = raw.find(
+      (callWrapper: GeminiFunctionCallWrapper) =>
+        callWrapper.functionCall.name === "reportCurrentState"
+    );
+
+    if (!reportStateCall) {
+      console.error(
+        "[background.ts] Mandatory 'reportCurrentState' function call missing in AI response."
+      );
+      chrome.runtime.sendMessage({
+        type: "FINISH_PROCESS_COMMAND",
+        response: "AI response missing mandatory state report. Aborting.",
+      });
+      activeAutomationTabs.delete(tabId);
+      return;
+    }
+
+    const reportArgs = reportStateCall.functionCall
+      .args as ReportCurrentStateArgs;
+    const current_state = reportArgs.current_state; // Define current_state here
+    console.log(
+      "[background.ts] Extracted current_state from reportCurrentState args:",
+      current_state
+    );
+
+    if (!current_state) {
+      console.warn("[background.ts] No valid current_state found, stopping");
       await chrome.runtime.sendMessage({
         type: "FINISH_PROCESS_COMMAND",
-        response: "No valid state or action returned from AI, aborting.",
+        response: "No valid state returned from AI, aborting.",
       });
       return;
     }
 
+    // Filter out reportCurrentState to get action calls
+    const actionCalls = raw.filter(
+      (callWrapper: GeminiFunctionCallWrapper) =>
+        callWrapper.functionCall.name !== "reportCurrentState"
+    );
+    console.log("[background.ts] Extracted action calls:", actionCalls);
+
+    // Add initial command to state
     current_state.user_command = initialCommand;
+
     const {
       evaluation_previous_goal: evaluation,
       memory,
-      next_goal,
       user_command,
     } = current_state;
 
-    currentTasks[tabId] = next_goal || "Processing...";
     const tabIdRef = { value: tabId };
 
-    chrome.runtime.sendMessage({ type: "MEMORY_UPDATE", response: memory });
-    chrome.tabs.sendMessage(tabIdRef.value, {
-      type: "MEMORY_UPDATE",
-      response: memory,
-    });
+    // Update memory if available
+    if (memory) {
+      chrome.runtime.sendMessage({ type: "MEMORY_UPDATE", response: memory });
+      chrome.tabs.sendMessage(tabIdRef.value, {
+        type: "MEMORY_UPDATE",
+        response: memory,
+      });
+    } else {
+      console.warn("[background.ts] No memory object found in current_state");
+    }
 
-    if (!action.length) {
-      console.log("[background.ts] No actions, process complete");
+    // If no action calls, finish processing
+    if (!actionCalls.length) {
+      console.log(
+        "[background.ts] No actions besides reportCurrentState, process complete"
+      );
+      chrome.runtime.sendMessage({
+        type: "FINISH_PROCESS_COMMAND",
+        response: evaluation || "Task likely completed (no further actions).",
+      });
       resetExecutionState(tabId);
       activeAutomationTabs.clear();
       return;
     }
 
-    const localActions: LocalAction[] = action.map(mapAiItemToLocalAction);
+    // Execute function calls in sequence
     const executedActions: string[] = [];
-    const result = await executeLocalActions(
-      localActions,
-      0,
-      tabIdRef,
-      contextMessage,
-      current_state,
-      uncompressedPageState,
-      executedActions,
-      model
-    );
+    let result: any = null;
+    let lastActionType: string | null = null;
 
-    if (result === "DONE" || result === "ASK_PAUSED") {
-      console.log(`[background.ts] Execution stopped with ${result}`);
-      resetExecutionState(tabId);
-      activeAutomationTabs.clear();
-      return;
+    // Process each function call in order
+    for (let i = 0; i < actionCalls.length; i++) {
+      const functionCall = actionCalls[i].functionCall;
+      const functionName = functionCall.name;
+      const args = functionCall.args;
+
+      console.log(
+        `[background.ts] Executing function call ${i + 1}/${
+          actionCalls.length
+        }: ${functionName}`,
+        args
+      );
+
+      try {
+        // Handle Google Workspace functions
+        if (
+          [
+            "createNewGoogleDoc",
+            "callWorkspaceAppsScript",
+            "insertStructuredDocContent",
+          ].includes(functionName)
+        ) {
+          try {
+            const result = await executeAppsScriptFunction(functionName, args);
+            console.log(
+              "[background.ts] Google Workspace function call executed successfully:",
+              result
+            );
+            // Stop automation after successful Apps Script execution
+            automationStopped = true;
+            console.log(
+              "[background.ts] Automation stopped due to successful Apps Script execution."
+            );
+            await chrome.runtime.sendMessage({
+              type: "COMMAND_RESPONSE",
+              response: {
+                message: result.status,
+                output: `url: ${getGoogleDocUrlFromId(result.fileId)}`,
+              },
+            });
+            executedActions.push(
+              `Executed Google Workspace function: ${functionName}`
+            );
+            continue;
+          } catch (error) {
+            console.error(
+              "[background.ts] Google Workspace function call failed:",
+              error
+            );
+            await chrome.runtime.sendMessage({
+              type: "COMMAND_RESPONSE",
+              response: {
+                message:
+                  "Google Workspace function execution failed: " +
+                  (error as Error).message,
+              },
+            });
+            throw error; // Re-throw to be caught by the outer try-catch
+          }
+        }
+
+        // Handle DOM interaction functions
+        else if (["click_element", "clickElement"].includes(functionName)) {
+          const index = (args as any).index;
+          if (typeof index !== "number") {
+            throw new Error(`Invalid index for ${functionName}: ${index}`);
+          }
+          await sendActionToTab(
+            {
+              id: Date.now().toString(),
+              type: "click_element", // Map to valid LocalActionType
+              data: { index },
+              description: functionName, // Keep original name here
+            },
+            tabIdRef.value
+          );
+          executedActions.push(`Clicked on element at index ${index}`);
+          lastActionType = "click"; // Keep simplified type for navigation check
+        } else if (["input_text", "inputText"].includes(functionName)) {
+          const index = (args as any).index;
+          const text = (args as any).text ?? ""; // Ensure text is string
+          if (typeof index !== "number") {
+            throw new Error(`Invalid index for ${functionName}: ${index}`);
+          }
+          await sendActionToTab(
+            {
+              id: Date.now().toString(),
+              type: "input_text", // Map to valid LocalActionType
+              data: { index, text },
+              description: functionName, // Keep original name here
+            },
+            tabIdRef.value
+          );
+          executedActions.push(`Entered text "${text}" at index ${index}`);
+        } else if (["submit_form", "submitForm"].includes(functionName)) {
+          const index = (args as any).index;
+          if (typeof index !== "number") {
+            throw new Error(`Invalid index for ${functionName}: ${index}`);
+          }
+          await sendActionToTab(
+            {
+              id: Date.now().toString(),
+              type: "submit_form", // Map to valid LocalActionType
+              data: { index },
+              description: functionName, // Keep original name here
+            },
+            tabIdRef.value
+          );
+          executedActions.push(`Submitted form at index ${index}`);
+          lastActionType = "submit_form"; // Keep simplified type for navigation check
+        } else if (["key_press", "keyPress"].includes(functionName)) {
+          const index = (args as any).index;
+          const key = (args as any).key;
+          if (typeof index !== "number") {
+            throw new Error(`Invalid index for ${functionName}: ${index}`);
+          }
+          if (typeof key !== "string") {
+            throw new Error(`Invalid key for ${functionName}: ${key}`);
+          }
+          await sendActionToTab(
+            {
+              id: Date.now().toString(),
+              type: "key_press", // Map to valid LocalActionType
+              data: { index, key },
+              description: functionName, // Keep original name here
+            },
+            tabIdRef.value
+          );
+          executedActions.push(`Pressed key "${key}" at index ${index}`);
+        } else if (
+          ["extract_content", "extractContent"].includes(functionName)
+        ) {
+          const index = (args as any).index;
+          if (typeof index !== "number") {
+            throw new Error(`Invalid index for ${functionName}: ${index}`);
+          }
+          result = await sendActionToTab(
+            {
+              id: Date.now().toString(),
+              type: "extract", // Map to valid LocalActionType
+              data: { index },
+              description: functionName, // Keep original name here
+            },
+            tabIdRef.value
+          );
+          executedActions.push(
+            `Extracted content from element at index ${index}: "${result}"`
+          );
+        } else if (
+          ["go_to_url", "goToUrl", "navigate"].includes(functionName)
+        ) {
+          const url = (args as any).url;
+          if (!url) {
+            throw new Error(`No URL provided for ${functionName}`);
+          }
+          await navigateTab(tabIdRef.value, url);
+          executedActions.push(`Navigated to ${url}`);
+          lastActionType = "navigate"; // Keep simplified type for navigation check
+        } else if (["open_tab", "openTab"].includes(functionName)) {
+          const url = (args as any).url;
+          if (!url) {
+            throw new Error(`No URL provided for ${functionName}`);
+          }
+          const newTab = await createTab(url);
+          if (newTab.id) tabIdRef.value = newTab.id;
+          executedActions.push(`Opened new tab with URL ${url}`);
+          lastActionType = "open_tab"; // Keep simplified type for navigation check
+        } else if (functionName === "scroll") {
+          const direction = (args as any).direction;
+          const offset = (args as any).offset;
+          if (direction !== "up" && direction !== "down") {
+            throw new Error(`Invalid direction for scroll: ${direction}`);
+          }
+          if (typeof offset !== "number") {
+            throw new Error(`Invalid offset for scroll: ${offset}`);
+          }
+          await sendActionToTab(
+            {
+              id: Date.now().toString(),
+              type: "scroll", // Map to valid LocalActionType
+              data: { direction, offset },
+              description: functionName, // Keep original name here
+            },
+            tabIdRef.value
+          );
+          executedActions.push(`Scrolled ${direction} by ${offset} pixels`);
+        } else if (functionName === "verify") {
+          const url = (args as any).url;
+          if (!url) {
+            throw new Error(`No URL provided for ${functionName}`);
+          }
+          await verifyOrOpenTab(url, tabIdRef);
+          executedActions.push(`Verified URL contains ${url}`);
+        } else if (functionName === "ask") {
+          const question =
+            (args as any).question || "Please provide instructions.";
+          console.log(`[background.ts] Asking: ${question}`);
+          automationStopped = true; // Pause automation
+          chrome.runtime.sendMessage({
+            type: "UPDATE_SIDEPANEL",
+            question: question,
+          });
+          executedActions.push(`Asked question: "${question}"`);
+          return "ASK_PAUSED"; // Signal that execution is paused
+        } else if (functionName === "done") {
+          console.log(`[background.ts] Tasks completed`);
+          const message = (args as any).message || "Task completed.";
+          const output = (args as any).output;
+          const response = { message, output };
+          chrome.runtime.sendMessage({
+            type: "COMMAND_RESPONSE",
+            response,
+          });
+          automationStopped = true;
+          executedActions.push(`Completed task: ${message}`);
+          return "DONE";
+        } else if (functionName === "refetch") {
+          console.log("[background.ts] Refetch action detected, will loop...");
+          executedActions.push("Re-fetched page elements");
+        } else {
+          console.warn(
+            `[background.ts] Unknown function call: ${functionName}`,
+            args
+          );
+          executedActions.push(`Unknown function: ${functionName}`);
+        }
+
+        // Check if navigation might have occurred and wait if needed
+        if (lastActionType) {
+          await waitForPotentialNavigation(tabIdRef.value, lastActionType);
+          lastActionType = null;
+        }
+      } catch (error) {
+        console.error(
+          `[background.ts] Error executing function ${functionName}:`,
+          error
+        );
+        const errorMessage = `Function ${functionName} failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`;
+        chrome.runtime.sendMessage({
+          type: "DISPLAY_MESSAGE",
+          response: { message: errorMessage },
+        });
+
+        // For critical errors, stop automation
+        if (["navigate", "open_tab", "verify"].includes(functionName)) {
+          automationStopped = true;
+          await chrome.runtime.sendMessage({
+            type: "FINISH_PROCESS_COMMAND",
+            response: errorMessage,
+          });
+          resetExecutionState(tabId);
+          activeAutomationTabs.delete(tabId);
+          return;
+        }
+      }
     }
 
-    // Check if the last action was potentially DOM-changing and wait if necessary
-    if (localActions.length > 0) {
-      const lastAction = localActions[localActions.length - 1];
-      await waitForPotentialNavigation(tabIdRef.value, lastAction.type);
-    }
-
-    const doneAction = localActions.find((a) => a.type === "done");
-    if (doneAction) {
-      automationStopped = true;
-      chrome.tabs.sendMessage(tabIdRef.value, {
-        type: "DISPLAY_MESSAGE",
-        response: doneAction,
-      });
-      resetExecutionState(tabId);
-      activeAutomationTabs.clear();
-      return;
-    }
-
-    const refetchAction = localActions.find((a) => a.type === "refetch");
-    if (refetchAction) {
-      chrome.tabs.sendMessage(tabIdRef.value, {
-        type: "DISPLAY_MESSAGE",
-        response: {
-          ...refetchAction,
-          data: { ...refetchAction.data, text: "Refetching page elements" },
-        },
-      });
-    }
-
+    // Update recent actions
     recentActionsMap[tabId] = [
       ...recentActionsMap[tabId],
       ...executedActions,
     ].slice(-5);
 
+    // Prepare prompt for next iteration
     const promptParts = [
       evaluation ? `Evaluation: ${evaluation}` : "",
-      memory ? `Previous actions: ${memory}` : "",
-      next_goal ? `Next step: ${next_goal}` : "",
+      memory ? `Memory: ${JSON.stringify(memory)}` : "",
       user_command ? `Objective: ${user_command}` : "",
-      result &&
-      typeof result === "string" &&
-      result !== "ASK_PAUSED" &&
-      result !== "ACTIONS_COMPLETED"
-        ? `Extracted: ${result}`
-        : "",
+      result && typeof result === "string" ? `Extracted: ${result}` : "",
       "Provide next actions to achieve the goal.",
     ]
       .filter(Boolean)
       .join(". ");
 
+    // Continue processing if not stopped
     if (!automationStopped) {
       await processCommand(
         tabIdRef.value,
@@ -431,7 +790,9 @@ async function handleError(
       );
     }
   } else {
-    const errorMessage = `Command processing failed: ${err.message}`;
+    const errorMessage = `Command processing failed: ${
+      err instanceof Error ? err.message : String(err)
+    }`;
     chrome.tabs.sendMessage(tabIdRef.value, {
       type: "DISPLAY_MESSAGE",
       response: { message: errorMessage },
@@ -442,6 +803,8 @@ async function handleError(
     });
     automationStopped = true;
   }
+  resetExecutionState(tabId);
+  activeAutomationTabs.delete(tabId);
 }
 
 function resetExecutionState(tabId: number) {
@@ -449,316 +812,7 @@ function resetExecutionState(tabId: number) {
   delete currentTasks[tabId];
 }
 
-function mapAiItemToLocalAction(item: AgentActionItem): LocalAction {
-  const actionName = Object.keys(item)[0];
-  const params = (item as any)[actionName] || {};
-
-  let type: LocalActionType;
-  // --- Focus on extracting the direct index ---
-  const index = typeof params.index === "number" ? params.index : undefined;
-  let data: LocalAction["data"] = {}; // Initialize data
-
-  switch (actionName.toLowerCase()) {
-    case "click_element":
-      type = "click";
-      // Only pass the index, as per the new prompt/DOM structure
-      data = { index };
-      // Optional: keep selector for logging/debugging if AI still provides it
-      // if (params.selector) data.selector = params.selector;
-      break;
-    case "input_text":
-      type = "input_text";
-      // Pass index and text
-      data = { index, text: params.text };
-      // if (params.selector) data.selector = params.selector; // Optional logging
-      break;
-    case "open_tab":
-    case "go_to_url":
-    case "navigate":
-      type = "navigate";
-      data = { url: params.url };
-      break;
-    case "extract_content":
-      type = "extract";
-      // Pass index
-      data = { index };
-      // if (params.selector) data.selector = params.selector; // Optional logging
-      break;
-    case "submit_form":
-      type = "submit_form";
-      // Pass index (targeting the submit button/element directly)
-      data = { index };
-      // if (params.selector) data.selector = params.selector; // Optional logging
-      break;
-    case "key_press":
-      type = "key_press";
-      // Pass index and key
-      data = { key: params.key, index };
-      // if (params.selector) data.selector = params.selector; // Optional logging
-      break;
-    case "scroll":
-      type = "scroll";
-      // Scroll doesn't usually target an index, pass direction/offset
-      data = { direction: params.direction, offset: params.offset };
-      break;
-    case "verify":
-      // This action seems browser-level, not element specific
-      type = "verify";
-      data = { url: params.url };
-      break;
-    case "ask":
-      type = "ask";
-      // Ensure correct type casting if using AskAction type
-      data = {
-        question: (item as AskAction).ask?.question || "Missing question",
-      };
-      break;
-    case "refetch":
-      type = "refetch";
-      data = {};
-      break;
-    case "done":
-      type = "done";
-      data = {
-        text: params.text || "Task completed.",
-        output: params.output,
-      };
-      break;
-    default:
-      console.warn(
-        "[background.ts] Unknown action from AI:",
-        actionName,
-        params
-      );
-      // Default to 'wait' or handle as an error appropriately
-      type = "wait"; // Or potentially throw an error
-      data = {};
-  }
-
-  // Ensure index is valid number for actions that require it
-  if (
-    ["click", "input_text", "extract", "submit_form", "key_press"].includes(
-      type
-    ) &&
-    typeof index !== "number"
-  ) {
-    console.error(
-      `[background.ts] Invalid or missing index for action type ${type}:`,
-      params
-    );
-    // Handle error - maybe default to a 'fail' state or throw?
-    // For now, let's map it but ActionExecutor will likely fail it.
-    // Alternatively, map to a different action type like 'wait' or 'fail'.
-    // type = 'wait'; // Example: Change type if index is invalid
-  }
-
-  return { id: Date.now().toString(), type, data, description: actionName };
-}
-
-async function executeLocalActions(
-  actions: LocalAction[],
-  index: number,
-  tabIdRef: { value: number },
-  contextMessage: string,
-  currentState: AIResponseFormat,
-  uncompressedPageElements: UncompressedPageElement[],
-  executedActions: string[] = [],
-  model: string
-): Promise<any> {
-  const logPrefix = `[background.ts] Tab ${tabIdRef.value}`;
-  if (index >= actions.length) {
-    console.log(`${logPrefix} All actions completed`);
-    return "ACTIONS_COMPLETED";
-  }
-
-  const action = actions[index];
-  let retryCount = 0;
-  const maxRetries = 3;
-
-  while (retryCount <= maxRetries) {
-    try {
-      console.log(
-        `${logPrefix} Executing action ${index + 1}/${actions.length}:`,
-        action
-      );
-      const output = await performLocalAction(action, tabIdRef, model);
-      const actionDesc = getActionDescription(action);
-      executedActions.push(actionDesc);
-
-      if (output === "ASK_PAUSED" || output === "DONE") {
-        console.log(`${logPrefix} Paused with ${output}`);
-        return output;
-      }
-      if (action.type === "extract") return output;
-
-      return await executeLocalActions(
-        actions,
-        index + 1,
-        tabIdRef,
-        contextMessage,
-        currentState,
-        uncompressedPageElements,
-        executedActions,
-        model
-      );
-    } catch (err) {
-      console.error(`${logPrefix} Action failed:`, action, "Error:", err);
-      retryCount++;
-      if (retryCount <= maxRetries) {
-        console.log(`${logPrefix} Retrying (${retryCount}/${maxRetries})`);
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      } else {
-        const prompt = `Action "${action.type}" failed after ${maxRetries} attempts: ${err}. Suggest alternatives for: '${currentState.user_command}'.`;
-        await processCommand(
-          tabIdRef.value,
-          prompt,
-          currentState.user_command || "",
-          recentActionsMap[tabIdRef.value],
-          model
-        );
-        return;
-      }
-    }
-  }
-}
-
-function getActionDescription(action: LocalAction): string {
-  switch (action.type) {
-    case "click":
-      return `Clicked on element at index ${action.data.index}`;
-    case "navigate":
-      return `Navigated to ${action.data.url}`;
-    case "extract":
-      return `Extracted from element at index ${action.data.index}`;
-    case "refetch":
-      return "Re-fetched page elements";
-    default:
-      return action.type;
-  }
-}
-
-async function performLocalAction(
-  a: LocalAction,
-  tabIdRef: { value: number },
-  model: string
-): Promise<any> {
-  const logPrefix = `[background.ts] Tab ${tabIdRef.value}`;
-
-  switch (a.type) {
-    case "go_to_url":
-    case "navigate":
-      if (!a.data.url) {
-        const errorMessage = `${logPrefix} No URL provided`;
-        await chrome.runtime.sendMessage({
-          type: "FINISH_PROCESS_COMMAND",
-          response: errorMessage,
-        });
-        throw new Error(errorMessage);
-      }
-      console.log(`${logPrefix} Navigating to ${a.data.url}`);
-      await navigateTab(tabIdRef.value, a.data.url);
-      break;
-
-    case "open_tab":
-      if (!a.data.url) {
-        const errorMessage = `${logPrefix} No URL provided`;
-        await chrome.runtime.sendMessage({
-          type: "FINISH_PROCESS_COMMAND",
-          response: errorMessage,
-        });
-        throw new Error(errorMessage);
-      }
-      console.log(`${logPrefix} Opening tab with ${a.data.url}`);
-      const newTab = await createTab(a.data.url);
-      if (newTab.id) tabIdRef.value = newTab.id;
-      break;
-
-    case "verify":
-      if (!a.data.url) {
-        const errorMessage = `${logPrefix} No URL provided`;
-        await chrome.runtime.sendMessage({
-          type: "FINISH_PROCESS_COMMAND",
-          response: errorMessage,
-        });
-        throw new Error(errorMessage);
-      }
-      console.log(`${logPrefix} Verifying URL: ${a.data.url}`);
-      await verifyOrOpenTab(a.data.url, tabIdRef);
-      break;
-
-    case "click":
-    case "input_text":
-    case "submit_form":
-    case "key_press":
-    case "extract":
-      {
-        try {
-          return await sendActionToTab(a, tabIdRef.value);
-        } catch (err) {
-          const errorMessage = `Failed to perform action ${a.type}: ${
-            err instanceof Error ? err.message : "Unknown error"
-          }`;
-          console.log(`${logPrefix} ${errorMessage}`);
-        }
-      }
-      break;
-
-    case "scroll":
-      console.log(`${logPrefix} Scrolling`, a.data);
-      await sendActionToTab(a, tabIdRef.value);
-      break;
-
-    case "done":
-      console.log(`${logPrefix} Tasks completed`);
-      const response = {
-        message: a.data.text || "Task completed.",
-        output: a.data.output,
-      };
-      chrome.runtime.sendMessage({
-        type: "COMMAND_RESPONSE",
-        response,
-      });
-      automationStopped = true;
-      return "DONE";
-
-    case "wait":
-      console.log(`${logPrefix} Waiting 2s`);
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      break;
-
-    case "refetch":
-      console.log(`${logPrefix} Refetching page elements`);
-      const refetchPrompt = `Page elements refetched. Current goal: ${
-        currentTasks[tabIdRef.value] || "unknown"
-      }. Provide next actions based on the updated page state.`;
-      await processCommand(
-        tabIdRef.value,
-        refetchPrompt,
-        currentTasks[tabIdRef.value] || "",
-        recentActionsMap[tabIdRef.value],
-        model
-      );
-      break;
-
-    case "ask":
-      const question = a.data.question || "Please provide instructions.";
-      console.log(`${logPrefix} Asking: ${question}`);
-      automationStopped = true;
-      chrome.tabs.sendMessage(tabIdRef.value, {
-        type: "DISPLAY_MESSAGE",
-        response: { message: question },
-      });
-      return "ASK_PAUSED";
-
-    default:
-      const errorMessage = `${logPrefix} Unknown action: ${a.type}`;
-      await chrome.runtime.sendMessage({
-        type: "FINISH_PROCESS_COMMAND",
-        response: errorMessage,
-      });
-      throw new Error(errorMessage);
-  }
-}
+// No replacement needed - removing these functions
 
 async function verifyOrOpenTab(urlPart: string, tabIdRef: { value: number }) {
   const tabs = await chrome.tabs.query({});
@@ -777,29 +831,54 @@ async function verifyOrOpenTab(urlPart: string, tabIdRef: { value: number }) {
   }
 }
 
+/**
+ * Sends an action to the content script for execution.
+ * This function creates a GeminiFunctionCall object and sends it to the content script.
+ *
+ * @param action The action to execute
+ * @param tabId The ID of the tab to send the action to
+ * @returns A promise that resolves with the result of the action
+ */
 async function sendActionToTab(
   action: LocalAction,
   tabId: number
 ): Promise<any> {
   await ensureContentScriptInjected(tabId);
+
+  // Create a GeminiFunctionCall object from the LocalAction
+  // Use action.description (original AI function name) for the name sent to content script
+  // Cast action.data to any to avoid TypeScript errors with optional properties
+  const functionCall: GeminiFunctionCall = {
+    name: action.description || action.type, // Prioritize original name from description
+    args: action.data as any,
+  };
+
+  // Add logging to verify the name being sent
+  console.log(
+    `[background.ts sendActionToTab] Sending function call with name: ${functionCall.name}`,
+    functionCall
+  );
+
   return new Promise((resolve, reject) => {
     chrome.tabs.sendMessage(
       tabId,
-      { type: "PERFORM_ACTION", action },
+      { type: "PERFORM_ACTION", functionCall },
       (response) => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
         } else if (response?.success) {
           resolve(response.result);
         } else {
-          reject(new Error(response?.error || "Action failed"));
+          reject(
+            new Error(response?.error || "Action failed in content script")
+          );
         }
       }
     );
   });
 }
 
-chrome.runtime.onMessage.addListener(async (msg, _sender, resp) => {
+chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
   if (msg.type === "PROCESS_COMMAND") {
     automationStopped = false;
     const [activeTab] = await chrome.tabs.query({
@@ -811,51 +890,185 @@ chrome.runtime.onMessage.addListener(async (msg, _sender, resp) => {
         type: "FINISH_PROCESS_COMMAND",
         response: "No active tab found, aborting command processing.",
       });
-      resp({ success: false, error: "No active tab" });
-      return;
+      sendResponse({ success: false, error: "No active tab" });
+      return true; // Indicate async response
     }
     recentActionsMap[activeTab.id] = [];
-    currentTasks[activeTab.id] = "Processing...";
-    await processCommand(
+    currentTasks[activeTab.id] = msg.command; // Store the initial command as the task
+    processCommand(
       activeTab.id,
       msg.command,
       msg.command,
       [],
       msg.model || "gemini"
-    );
-    resp({ success: true });
+    )
+      .then(() => sendResponse({ success: true }))
+      .catch((err) => {
+        console.error("Error starting processCommand:", err);
+        sendResponse({ success: false, error: err.message });
+      });
+    return true; // Indicate async response
   } else if (msg.type === "NEW_CHAT") {
-    await chrome.storage.local.set({ conversationHistory: [] });
-    resp({ success: true });
+    chrome.storage.local.set({ conversationHistory: [] }, () => {
+      sendResponse({ success: true });
+    });
+    return true; // Indicate async response
   } else if (msg.type === "STOP_AUTOMATION") {
     automationStopped = true;
-    resp({ success: true });
+    activeAutomationTabs.clear(); // Clear all active tabs on stop
+    // Optionally reset state for all tabs if needed
+    // Object.keys(recentActionsMap).forEach(tabIdStr => {
+    //   resetExecutionState(parseInt(tabIdStr));
+    // });
+    console.log("[background.ts] Automation stopped by user.");
+    sendResponse({ success: true });
+  } else if (msg.type === "GET_TAB_ID") {
+    if (sender.tab?.id) {
+      console.log(
+        `[background.ts] Responding to GET_TAB_ID from tab: ${sender.tab.id}`
+      );
+      sendResponse({ success: true, tabId: sender.tab.id });
+    } else {
+      console.error(
+        "[background.ts] GET_TAB_ID received, but sender tab ID is missing."
+      );
+      sendResponse({ success: false, error: "Sender tab ID not found" });
+    }
+    // No return true needed here as it's synchronous
   }
+  // Return true for other async listeners if any, otherwise false/undefined is fine
+  return false;
 });
 
 chrome.runtime.onConnect.addListener((port) => {
-  port.onMessage.addListener((m) => {
-    if (m.type === "KEEP_ALIVE") {
-      activePorts[m.tabId] = port;
-    }
-  });
-  port.onDisconnect.addListener(() => {
-    delete activePorts[parseInt(port.name, 10)];
-  });
+  console.log(`[background.ts] Port connected: ${port.name}`);
+  // Extract tabId correctly from names like "content-script-12345" or "sidepanel-12345"
+  const nameParts = port.name.split("-");
+  const tabIdStr = nameParts[nameParts.length - 1];
+  const tabId = parseInt(tabIdStr, 10);
+
+  if (!isNaN(tabId)) {
+    console.log(
+      `[background.ts] Parsed tabId ${tabId} from port name ${port.name}`
+    );
+    activePorts[tabId] = port;
+    port.onDisconnect.addListener(() => {
+      console.log(`[background.ts] Port disconnected: ${port.name}`);
+      delete activePorts[tabId];
+      // Optionally stop automation if the sidepanel disconnects?
+      // if (activeAutomationTabs.has(tabId)) {
+      //   console.log(`[background.ts] Stopping automation for disconnected tab ${tabId}`);
+      //   automationStopped = true;
+      //   activeAutomationTabs.delete(tabId);
+      //   resetExecutionState(tabId);
+      // }
+    });
+  } else {
+    console.error(
+      `[background.ts] Invalid port name (not a number): ${port.name}`
+    );
+  }
+
+  // Note: Keep_Alive listener removed as it's not standard practice
+  // and might prevent the background script from becoming inactive.
 });
 
 function waitForTabLoad(tabId: number): Promise<void> {
-  return new Promise((resolve) => {
-    const listener = (
+  return new Promise(async (resolve) => {
+    let observer: MutationObserver | null = null as MutationObserver | null;
+    let contentScriptChecked = false;
+    const startTime = Date.now();
+    const MAX_WAIT = 5000; // Reduced to 5 seconds max
+    const POLL_INTERVAL = 500;
+    console.log(
+      `[background.ts waitForTabLoad ${tabId}] Starting wait (max ${MAX_WAIT}ms)`
+    );
+
+    const checkDOMReady = async () => {
+      try {
+        // First ensure content script is injected
+        if (!contentScriptChecked) {
+          await ensureContentScriptInjected(tabId);
+          contentScriptChecked = true;
+        }
+
+        // Check via content script if DOM is interactive
+        const isReady = await new Promise<boolean>((resolve) => {
+          chrome.tabs.sendMessage(
+            tabId,
+            { type: "CHECK_DOM_READY" },
+            (response) => {
+              resolve(response?.ready === true);
+            }
+          );
+        });
+
+        if (isReady) {
+          console.log(
+            `[background.ts] Tab ${tabId} DOM ready in ${
+              Date.now() - startTime
+            }ms`
+          );
+          cleanup();
+          resolve();
+          return true;
+        }
+      } catch (error) {
+        console.warn(`[background.ts] DOM check error:`, error);
+      }
+      return false;
+    };
+
+    const cleanup = () => {
+      if (observer) {
+        observer.disconnect();
+      }
+      clearTimeout(timeoutId);
+      chrome.tabs.onUpdated.removeListener(urlChangeListener);
+    };
+
+    const urlChangeListener = (
       updatedTabId: number,
-      changeInfo: chrome.tabs.TabChangeInfo
+      changeInfo: chrome.tabs.TabChangeInfo,
+      tab: chrome.tabs.Tab
     ) => {
-      if (updatedTabId === tabId && changeInfo.status === "complete") {
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve();
+      if (updatedTabId === tabId && changeInfo.status === "loading") {
+        // Reset checks if navigation starts again
+        contentScriptChecked = false;
       }
     };
-    chrome.tabs.onUpdated.addListener(listener);
+
+    // Track URL changes
+    chrome.tabs.onUpdated.addListener(urlChangeListener);
+
+    // Progressive checking
+    const checkInterval = setInterval(async () => {
+      if ((await checkDOMReady()) || Date.now() - startTime > MAX_WAIT) {
+        clearInterval(checkInterval);
+        cleanup();
+        resolve();
+      }
+    }, POLL_INTERVAL);
+
+    // Initial check
+    if (await checkDOMReady()) {
+      clearInterval(checkInterval);
+      cleanup();
+      resolve();
+      return;
+    }
+
+    // Fallback timeout
+    const timeoutId = setTimeout(() => {
+      console.warn(
+        `[background.ts] Tab ${tabId} load timeout after ${MAX_WAIT}ms`
+      );
+      console.warn(
+        `[background.ts waitForTabLoad ${tabId}] Timeout after ${MAX_WAIT}ms`
+      );
+      cleanup();
+      resolve(); // Resolve even on timeout
+    }, MAX_WAIT);
   });
 }
 
@@ -867,20 +1080,12 @@ async function navigateTab(tabId: number, url: string): Promise<void> {
 }
 
 async function createTab(url: string): Promise<chrome.tabs.Tab> {
-  return new Promise((resolve) => {
-    chrome.tabs.create({ url }, (tab) => {
-      const listener = async (
-        tabId: number,
-        changeInfo: chrome.tabs.TabChangeInfo
-      ) => {
-        if (tabId === tab.id && changeInfo.status === "complete") {
-          activeAutomationTabs.add(tab.id);
-          chrome.tabs.onUpdated.removeListener(listener);
-          await ensureContentScriptInjected(tab.id);
-          resolve(tab);
-        }
-      };
-      chrome.tabs.onUpdated.addListener(listener);
-    });
-  });
+  const tab = await chrome.tabs.create({ url });
+  if (!tab.id) {
+    throw new Error("Failed to create tab or tab ID is missing.");
+  }
+  await waitForTabLoad(tab.id);
+  await ensureContentScriptInjected(tab.id);
+  activeAutomationTabs.add(tab.id); // Ensure new tab is marked active
+  return tab;
 }

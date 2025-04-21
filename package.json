@@ -4,10 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:css": "npx postcss src/sidebar.css -o dist/sidebar.css",
+    "watch:css": "npx postcss src/sidebar.css -o dist/sidebar.css --watch",
+    "dev": "concurrently \"npm run build\" \"npm run build:css\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
@@ -38,11 +40,13 @@
     "@typescript-eslint/parser": "^6.21.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.21",
+    "concurrently": "^9.1.2",
     "eslint": "^8.56.0",
     "eslint-plugin-react-hooks": "^4.2.0",
     "eslint-plugin-react-refresh": "^0.4.11",
     "globals": "^13.24.0",
     "postcss": "^8.5.3",
+    "postcss-cli": "^11.0.1",
     "rollup-plugin-polyfill-node": "^0.13.0",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.2.2",

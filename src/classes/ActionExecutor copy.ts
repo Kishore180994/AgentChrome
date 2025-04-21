@@ -1,13 +1,5 @@
 // ActionExecutor.ts
-import {
-  ClickElementArgs,
-  ExtractContentArgs,
-  GeminiFunctionCall,
-  InputTextArgs,
-  KeyPressArgs,
-  ScrollArgs,
-  SubmitFormArgs,
-} from "../services/ai/interfaces";
+import { LocalAction } from "../types/actionType"; // Defines the structure of actions
 import { DOMManager } from "./DOMManager";
 
 export class ActionExecutor {
@@ -22,187 +14,88 @@ export class ActionExecutor {
   }
 
   /**
-   * Executes a given function call on the DOM.
-   * @param functionCall The function call to execute.
+   * Executes a given local action on the DOM.
+   * @param action The action to execute.
    * @returns The result of the action if applicable (e.g., extracted text), otherwise void.
    */
-  async execute(functionCall: GeminiFunctionCall): Promise<any> {
+  async execute(action: LocalAction): Promise<any> {
     console.log(
-      `[ActionExecutor] Attempting action: ${functionCall.name}`,
-      functionCall.args
+      `[ActionExecutor] Attempting action: ${action.type}`,
+      action.data
     );
-    let { name, args } = functionCall;
-    console.log(`[ActionExecutor] Action name: ${name}`);
-    console.log(`[ActionExecutor] Action args:`, args);
+    const { type, data } = action;
+
     // Validate input for actions that require an index
     const requiresIndex = [
-      "click_element",
+      "click",
       "input_text",
       "submit_form",
-      "extract_content",
+      "extract",
       "key_press",
-    ].includes(name);
+    ].includes(type);
 
-    if (requiresIndex && typeof (args as any).index !== "number") {
-      const errorMsg = `[ActionExecutor] Action type "${name}" requires a valid numeric 'index' in args, received: ${
-        (args as any).index
-      }`;
+    if (requiresIndex && typeof data?.index !== "number") {
+      const errorMsg = `[ActionExecutor] Action type "${type}" requires a valid numeric 'index' in data, received: ${data?.index}`;
       console.error(errorMsg);
-      throw new Error(errorMsg);
+      throw new Error(errorMsg); // Fail fast if index is missing/invalid
     }
-    if (
-      name === "input_text" &&
-      typeof (args as InputTextArgs).text !== "string"
-    ) {
+    if (type === "input_text" && typeof data?.text !== "string") {
       console.warn(
-        `[ActionExecutor] inputText received non-string text:`,
-        (args as InputTextArgs).text,
+        `[ActionExecutor] input_text received non-string text:`,
+        data?.text,
         `- Using empty string.`
       );
     }
 
     try {
-      let result: any = undefined;
+      let result: any = undefined; // To store potential return value
 
-      // List of Google Workspace actions
-      const googleWorkspaceActions = [
-        "createNewGoogleDoc",
-        "insertStructuredDocContent",
-        "updateDocText",
-        "appendDocText",
-        "deleteDocText",
-        "getDocContent",
-        "getDocFileName",
-        "createNewGoogleSheet",
-        "appendSheetRow",
-        "updateSheetCell",
-        "getSheetData",
-        "deleteSheetRow",
-      ];
-
-      // List of actions handled directly in background.ts
-      const backgroundHandledActions = [
-        "goToUrl",
-        "openTab",
-        "verify",
-        "done",
-        "ask",
-        "reportCurrentState",
-        ...googleWorkspaceActions,
-      ];
-
-      if (backgroundHandledActions.includes(name)) {
-        // Log that this action is handled by background, do nothing here
-        console.log(
-          `[ActionExecutor] Action '${name}' is handled by background.ts. Skipping in content script.`
-        );
-        return; // Return early
-      } else {
-        // Handle actions meant for the content script (DOM interactions)
-        switch (name) {
-          case "clickElement": // Added camelCase
-          case "click_element":
-            args = args as ClickElementArgs;
-            await this.handleClick(args.index as number);
-            break;
-          case "inputText": // Added camelCase
-          case "input_text":
-            args = args as InputTextArgs;
-            await this.handleInputText(
-              (args as InputTextArgs).text ?? "",
-              args.index as number
-            );
-            break;
-          case "scroll":
-            args = args as ScrollArgs;
-            await this.handleScroll(args.offset, args.direction);
-            break;
-          case "submitForm": // Added camelCase
-          case "submit_form":
-            args = args as SubmitFormArgs;
-            await this.handleSubmitForm(args.index as number);
-            break;
-          case "extractContent": // Added camelCase
-          case "extract_content":
-            args = args as ExtractContentArgs;
-            result = await this.handleExtract(args.index as number);
-            break;
-          case "keyPress": // Added camelCase
-          case "key_press":
-            args = args as KeyPressArgs;
-            await this.handleKeyPress(
-              args.index as number,
-              (args as KeyPressArgs).key
-            );
-            break;
-          case "wait": // Keep wait here if needed for content-script specific pauses
-            const waitDuration =
-              typeof (args as any).duration === "number"
-                ? (args as any).duration
-                : 1000;
-            console.log(`[ActionExecutor] Waiting ${waitDuration}ms`);
-            await new Promise((resolve) => setTimeout(resolve, waitDuration));
-            break;
-          // Removed cases for goToUrl, openTab, verify, done, ask as they are handled in background.ts
-          default:
-            console.warn(
-              `[ActionExecutor] Received unknown or unhandled action type: ${name}`
-            );
-        }
+      switch (type) {
+        case "click":
+          await this.handleClick(data.index as number);
+          break;
+        case "input_text":
+          await this.handleInputText(
+            data.text ?? "", // Use empty string if text is null/undefined
+            data.index as number
+          );
+          break;
+        case "scroll":
+          await this.handleScroll(data?.offset, data?.direction);
+          break;
+        case "submit_form":
+          await this.handleSubmitForm(data.index as number);
+          break;
+        case "extract":
+          result = await this.handleExtract(data.index as number);
+          break;
+        case "key_press":
+          await this.handleKeyPress(data.index as number, data.key);
+          break;
+        case "wait":
+          const waitDuration =
+            typeof data?.duration === "number" ? data.duration : 1000; // Default wait
+          console.log(`[ActionExecutor] Waiting ${waitDuration}ms`);
+          await new Promise((resolve) => setTimeout(resolve, waitDuration));
+          break;
+        default:
+          console.warn(
+            `[ActionExecutor] Received unknown or unhandled action type: ${
+              type as string
+            }`
+          );
       }
-      console.log(`[ActionExecutor] Successfully executed action: ${name}`);
-      return result;
+      console.log(`[ActionExecutor] Successfully executed action: ${type}`);
+      return result; // Return result if any (e.g., from extract)
     } catch (error: any) {
-      // Ensure the error is properly logged and re-thrown to reject the promise
-      const errorMessage = `[ActionExecutor] Failed action "${name}" on index "${
-        (args as any).index ?? "N/A" // Handle cases where index might not be present in args
-      }": ${error.message}`;
-      console.error(errorMessage, error.stack);
-      // Re-throw the original error object to preserve stack trace if possible
-      throw error instanceof Error ? error : new Error(errorMessage);
-    }
-  }
-
-  /**
-   * Handles Google Workspace actions by sending them to background.ts for execution.
-   * @param functionName The name of the Google Workspace function to execute.
-   * @param args The arguments for the function call.
-   * @returns The result of the Google Workspace action.
-   */
-  private async handleGoogleWorkspaceAction(
-    functionName: string,
-    args: any
-  ): Promise<any> {
-    return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(
-        {
-          type: "EXECUTE_APPS_SCRIPT",
-          functionName,
-          args,
-        },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            reject(chrome.runtime.lastError);
-            return;
-          }
-          if (response?.success) {
-            console.log(
-              `[ActionExecutor] Successfully executed Google Workspace action ${functionName}:`,
-              response.result
-            );
-            resolve(response.result);
-          } else {
-            const errorMsg =
-              response?.error || "Failed to execute Google Workspace action";
-            console.error(
-              `[ActionExecutor] Failed Google Workspace action ${functionName}:`,
-              errorMsg
-            );
-            reject(new Error(errorMsg));
-          }
-        }
+      console.error(
+        `[ActionExecutor] Failed action "${type}" on index "${data?.index}":`,
+        error.message,
+        error.stack
       );
-    });
+      // Re-throw the error so the caller (message listener in content.js) can send failure back
+      throw error;
+    }
   }
 
   /**
@@ -241,25 +134,13 @@ export class ActionExecutor {
     }
 
     const ownerDoc = element.ownerDocument;
-    if (!ownerDoc) {
-      // This case is less likely if isConnected passed, but good to check
-      throw new Error(
-        `[ActionExecutor] Element at index ${index} has no ownerDocument.`
-      );
-    }
+    const contextWindow = ownerDoc?.defaultView;
 
-    const contextWindow = ownerDoc.defaultView;
     if (!contextWindow) {
       throw new Error(
-        `[ActionExecutor] Could not determine context window (ownerDocument.defaultView) for element at index: ${index}. This might happen in detached iframes.`
+        `[ActionExecutor] Could not determine context window (ownerDocument.defaultView) for element at index: ${index}`
       );
     }
-
-    // Add a log to confirm context was found
-    console.log(
-      `[ActionExecutor getElementContext] Context window found for index ${index}:`,
-      contextWindow.location.href
-    );
 
     return { element, contextWindow };
   }
@@ -300,17 +181,9 @@ export class ActionExecutor {
       contextWindow.requestAnimationFrame(() => {
         // Use rAF for better timing
         try {
-          console.log(
-            `[ActionExecutor handleClick] Attempting focus on index: ${index}`
-          );
           element.focus(); // Focusing first can improve reliability
-          console.log(
-            `[ActionExecutor handleClick] Focused index: ${index}. Attempting click.`
-          );
           element.click(); // Trigger the click
-          console.log(
-            `[ActionExecutor handleClick] Click dispatched for index: ${index}`
-          );
+          console.log(`[ActionExecutor] Clicked index: ${index}`);
           resolve();
         } catch (err: any) {
           console.error(
@@ -326,11 +199,7 @@ export class ActionExecutor {
   /** Inputs text into the element specified by index. Handles input, textarea, and contentEditable. */
   private async handleInputText(text: string, index: number): Promise<void> {
     const { element, contextWindow } = this.getElementContext(index);
-    console.log(
-      `[ActionExecutor handleInputText] Element:`,
-      element,
-      contextWindow
-    );
+
     // --- Use tagName checks instead of instanceof ---
     const tagNameLower = element.tagName.toLowerCase();
     const isInputElementTag = tagNameLower === "input";
@@ -399,18 +268,12 @@ export class ActionExecutor {
       contextWindow.requestAnimationFrame(() => {
         // Use rAF
         try {
-          console.log(
-            `[ActionExecutor handleInputText] Simulating input for index: ${index}`
-          );
           // --- Use tag checks again for routing simulation ---
           if (isInputElementTag || isTextAreaElementTag) {
             simulateInput(element, text);
           } else if (isContentEditable) {
             simulateContentEditableInput(element, text);
           }
-          console.log(
-            `[ActionExecutor handleInputText] Input simulation complete for index: ${index}`
-          );
           // --- End Change ---
           resolve();
         } catch (err: any) {

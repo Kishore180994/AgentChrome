@@ -43,4 +43,58 @@ const StarfallCascadeAnimation: React.FC<StarfallCascadeAnimationProps> = ({
   );
 };
 
+/**
+ * Finds URLs in a string and replaces them with clickable anchor tags.
+ * @param text The input string.
+ * @returns An array of React nodes (strings and <a> elements).
+ */
+export const linkifyUrls = (text: string): React.ReactNode[] => {
+  // Regular expression to find URLs (handles http, https, ftp, www)
+  const urlRegex =
+    /(\b(https?|ftp):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])|(\bwww\.[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/gi;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = urlRegex.exec(text)) !== null) {
+    const index = match.index;
+    const url = match[0];
+    const urlWithProto = url.startsWith("www.") ? `http://${url}` : url; // Add http:// if missing for www. links
+
+    // Add the text before the URL
+    if (index > lastIndex) {
+      parts.push(text.substring(lastIndex, index));
+    }
+
+    // Add the link
+    parts.push(
+      <a
+        key={index}
+        href={urlWithProto}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="d4m-text-blue-400 hover:d4m-underline d4m-break-all" // Added break-all for long URLs
+      >
+        {url}
+      </a>
+    );
+
+    lastIndex = index + url.length;
+  }
+
+  // Add any remaining text after the last URL
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+
+  return parts;
+};
+
 export default StarfallCascadeAnimation;
+
+export const getGoogleDocUrlFromId = (fileId: string) => {
+  return `https://docs.google.com/document/d/${fileId}`;
+};
+export const getGoogleSheetUrlFromId = (fileId: string) => {
+  return `https://docs.google.com/spreadsheets/d/${fileId}`;
+};

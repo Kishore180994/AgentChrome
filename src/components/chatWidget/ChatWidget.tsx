@@ -11,6 +11,7 @@ import {
   HelpCircle,
   Settings,
   Mic,
+  List, // Import List icon
 } from "lucide-react";
 import MarkdownWrapper from "../MarkDownWrapper";
 import { StepState } from "../../types/responseFormat";
@@ -18,12 +19,10 @@ import { storage } from "../../utils/storage";
 import { SettingsModal } from "../SettingsModal";
 import { AccentColor, themeStyles } from "../../utils/themes";
 import { ToastNotification } from "../ToastNotifications";
-import { useSiriBorder } from "../../hooks/useSiriBorder";
 import {
   handleSubmit,
   handleStop,
   handleNewChat,
-  handleKeyDown,
   handlePopupSelect,
   toggleExecutionGroup,
   handleChipClick,
@@ -32,9 +31,12 @@ import {
   handleBlur,
 } from "./chatHandlers";
 import { Message, ProcessedMessage } from "./chatInterface";
+import api, { Chat } from "../../services/api"; // Import api and Chat
+import ChatListModal from "./ChatListModal"; // Default import
 import { RecordingMic } from "./RecordingMic";
-import StarfallCascadeAnimation from "../../utils/helpers";
+import StarfallCascadeAnimation, { linkifyUrls } from "../../utils/helpers"; // Import linkifyUrls
 import { TranscriptLine, useDeepgramLive } from "../../hooks/useDeepgramLive";
+import { useSiriBorderWithRef } from "../../hooks/useSiriBorder";
 
 export function ChatWidget() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -61,6 +63,7 @@ export function ChatWidget() {
   const [accentColor, setAccentColor] = useState<AccentColor>("rose");
   const [mode, setMode] = useState<"light" | "dark">("dark");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isChatListOpen, setIsChatListOpen] = useState(false); // Add state for ChatListModal
   const [currentAnimation, setCurrentAnimation] =
     useState<"starfallCascade">("starfallCascade");
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
@@ -74,12 +77,13 @@ export function ChatWidget() {
   } | null>(null);
   const [liveTranscript, setLiveTranscript] = useState<TranscriptLine[]>([]);
 
-  const { startRecording, stopRecording, isRecording } = useDeepgramLive({
+  const { startRecording, stopRecording } = useDeepgramLive({
     apiKey: "0f7e30b6546822958e971a12c1a4215bccceabb5",
     onTranscript: (line) => {
       setLiveTranscript((prev) => [...prev, line]);
     },
   });
+  const widgetContainerRef = useRef<HTMLDivElement>(null);
   const suggestions = [
     "Open a new tab with Google",
     "Summarize this page",
@@ -259,8 +263,6 @@ export function ChatWidget() {
     setProcessedMessages(processed.reverse());
   };
 
-  useSiriBorder(isLoading);
-
   useEffect(() => {
     const handleBackgroundMessage = (
       message: any,
@@ -347,6 +349,8 @@ export function ChatWidget() {
     processMessages(messages);
   }, [messages]);
 
+  useSiriBorderWithRef(isLoading, "16px");
+
   useEffect(() => {
     if (selectedCommandRef.current) {
       selectedCommandRef.current.scrollIntoView({ block: "nearest" });
@@ -360,8 +364,9 @@ export function ChatWidget() {
     mode === "light" ? "d4m-border-gray-300" : "d4m-border-gray-700";
 
   return (
-    <>
+    <React.Fragment>
       <div
+        ref={widgetContainerRef}
         className={`d4m-w-full d4m-h-full d4m-flex d4m-flex-col ${currentTheme.container} d4m-relative`}
       >
         {isTextareaFocused && (
@@ -420,10 +425,26 @@ export function ChatWidget() {
               >
                 <Settings className="d4m-w-4 d4m-h-4" />
               </button>
+              {/* Added Chat List Button */}
+              <button
+                onClick={() => setIsChatListOpen(true)}
+                className={`d4m-p-1 d4m-rounded-full d4m-bg-${accentColor}-400 d4m-text-white ${currentTheme.button} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
+                title="View Chat History"
+              >
+                <List className="d4m-w-4 d4m-h-4" /> {/* Use List icon */}
+              </button>
             </div>
           </div>
         </div>
-
+        {toast && (
+          <ToastNotification
+            message={toast.message}
+            type={toast.type}
+            onClose={() => setToast(null)}
+            duration={1000}
+            animationDuration={300}
+          />
+        )}
         <div
           ref={messagesContainerRef}
           className={`d4m-flex-1 d4m-overflow-y-auto d4m-space-y-4 d4m-px-3 d4m-py-2 d4m-bg-transparent d4m-scrollbar-thin d4m-relative ${
@@ -434,6 +455,52 @@ export function ChatWidget() {
               : "d4m-scrollbar-thumb-gray-600"
           } d4m-flex d4m-flex-col-reverse`}
         >
+          {processedMessages.length === 0 &&
+            !isLoading &&
+            !isRecordingClicked && (
+              <div className="d4m-flex d4m-flex-col d4m-items-center d4m-justify-center d4m-text-center d4m-p-6 d4m-animate-fade-in d4m-h-full">
+                {" "}
+                {/* Ensure it can fill height */}
+                {/* Logo from public folder - ADJUST PATH/FILENAME IF NEEDED */}
+                <img
+                  src="/icons/icon128.png"
+                  alt="Agent Logo"
+                  className="d4m-w-16 d4m-h-16 d4m-mb-4 d4m-opacity-80"
+                />
+                <h2
+                  className={`d4m-text-lg d4m-font-semibold ${textColor} d4m-mb-2`}
+                >
+                  Welcome!
+                </h2>
+                <p className={`d4m-text-sm ${accentColor} d4m-mb-6`}>
+                  How can I assist you today?
+                </p>
+                <p
+                  className={`d4m-text-xs d4m-font-medium ${accentColor} d4m-mb-3`}
+                >
+                  Try an example:
+                </p>
+                <div className="d4m-flex d4m-flex-wrap d4m-gap-2 d4m-justify-center d4m-max-w-xs">
+                  {/* Map over your suggestions array */}
+                  {suggestions.slice(0, 4).map(
+                    (
+                      suggestion // Show first 4 suggestions
+                    ) => (
+                      <button
+                        key={suggestion}
+                        onClick={() =>
+                          handleChipClick(suggestion, setInput, textareaRef)
+                        }
+                        // Apply theme styles for consistency
+                        className={`d4m-text-xs ${currentTheme.suggestion} d4m-px-3 d4m-py-1 hover:d4m-opacity-80 d4m-transition-opacity d4m-rounded-full`}
+                      >
+                        {suggestion}
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+            )}
           {isRecordingClicked ? (
             <RecordingMic
               accentColor={accentColor}
@@ -463,7 +530,8 @@ export function ChatWidget() {
                             content={message.content as string}
                           />
                         ) : (
-                          <span>{message.content as string}</span>
+                          // Use linkifyUrls for user messages
+                          <span>{linkifyUrls(message.content as string)}</span>
                         )}
                       </div>
                     </div>
@@ -668,12 +736,7 @@ export function ChatWidget() {
                         key={suggestion}
                         type="button"
                         onClick={() =>
-                          handleChipClick(
-                            suggestion,
-                            setInput,
-                            setIsTextareaFocused,
-                            textareaRef
-                          )
+                          handleChipClick(suggestion, setInput, textareaRef)
                         }
                         className={`d4m-px-2 d4m-py-1 d4m-text-${accentColor}-400 d4m-text-xs ${currentTheme.suggestion} d4m-transition-transform d4m-duration-200 d4m-active:scale-95 d4m-rounded-md`}
                       >
@@ -724,13 +787,13 @@ export function ChatWidget() {
                   setError,
                   setIsLoading,
                   setShowCommandPopup,
-                  setIsTextareaFocused,
                   setCurrentAnimation,
                   setCommandHistory,
                   setHistoryIndex,
                   setMessages,
                   selectedModel,
-                  setToast
+                  setToast,
+                  setIsTextareaFocused
                 )
               }
             >
@@ -739,24 +802,36 @@ export function ChatWidget() {
                   ref={textareaRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) =>
-                    handleKeyDown(
-                      e,
-                      commandHistory,
-                      historyIndex,
-                      setUserTypedInput,
-                      setHistoryIndex,
-                      setInput,
-                      setShowCommandPopup,
-                      userTypedInput
-                    )
-                  }
-                  onFocus={() =>
-                    handleFocus(setIsTextareaFocused, setShowCommandPopup)
-                  }
-                  onBlur={() =>
-                    handleBlur(setIsTextareaFocused, setShowCommandPopup)
-                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSubmit(
+                        e,
+                        input,
+                        isLoading,
+                        setInput,
+                        setError,
+                        setIsLoading,
+                        setShowCommandPopup,
+                        setCurrentAnimation,
+                        setCommandHistory,
+                        setHistoryIndex,
+                        setMessages,
+                        selectedModel,
+                        setToast,
+                        setIsTextareaFocused
+                      );
+                    }
+                  }}
+                  onFocus={() => {
+                    console.log("[ChatWidget] Textarea onFocus triggered!"); // <-- ADD THIS LOG
+                    // Make sure to call the function returned by handleFocus
+                    handleFocus(setIsTextareaFocused, setShowCommandPopup)();
+                  }}
+                  onBlur={() => {
+                    console.log("[ChatWidget] Textarea onBlur triggered!"); // <-- ADD THIS LOG
+                    handleBlur(setIsTextareaFocused, setShowCommandPopup)();
+                  }}
                   placeholder="Enter command..."
                   className={`d4m-flex-1 d4m-px-3 d4m-py-2 ${textColor} d4m-text-sm d4m-rounded-xl d4m-border-none ${
                     currentTheme.textarea
@@ -846,13 +921,51 @@ export function ChatWidget() {
         accentColor={accentColor}
         mode={mode}
       />
-      {toast && (
-        <ToastNotification
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
-    </>
+      {/* Added ChatListModal */}
+      <ChatListModal
+        isOpen={isChatListOpen}
+        onClose={() => setIsChatListOpen(false)}
+        onChatSelect={async (chat: Chat) => {
+          console.log("Selected chat:", chat._id, chat.title);
+          setIsLoading(true); // Show loading indicator
+          setError(null);
+          try {
+            // Fetch the full chat details, including messages
+            const fullChat = await api.chats.getChatById(chat._id);
+            if (fullChat && fullChat.messages) {
+              // Map API messages to local Message type
+              const localMessages: Message[] = fullChat.messages.map(
+                (apiMsg) => ({
+                  id: apiMsg._id, // Map _id to id
+                  role: apiMsg.sender === "ai" ? "model" : apiMsg.sender, // Map sender to role ('ai' -> 'model')
+                  content: apiMsg.content,
+                  // Add other fields if necessary, or ensure they are optional in local Message type
+                })
+              );
+              // Format messages using the existing function (which expects local Message type)
+              const formatted = formatMessages(localMessages);
+              setMessages(formatted);
+              // Optionally save to storage as the current conversation
+              await chrome.storage.local.set({
+                conversationHistory: formatted,
+              });
+              setToast({ message: `Loaded chat: ${chat.title}`, type: "info" });
+            } else {
+              throw new Error("Chat messages not found.");
+            }
+          } catch (err) {
+            console.error("Failed to load selected chat:", err);
+            setError("Failed to load the selected chat.");
+            setToast({ message: "Error loading chat.", type: "error" });
+          } finally {
+            setIsLoading(false);
+            setIsChatListOpen(false); // Close modal regardless of success/failure
+          }
+        }}
+        theme={theme}
+        accentColor={accentColor}
+        mode={mode}
+      />
+    </React.Fragment>
   );
 }
