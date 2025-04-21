@@ -34,7 +34,7 @@ import { Message, ProcessedMessage } from "./chatInterface";
 import api, { Chat } from "../../services/api"; // Import api and Chat
 import ChatListModal from "./ChatListModal"; // Default import
 import { RecordingMic } from "./RecordingMic";
-import StarfallCascadeAnimation from "../../utils/helpers";
+import StarfallCascadeAnimation, { linkifyUrls } from "../../utils/helpers"; // Import linkifyUrls
 import { TranscriptLine, useDeepgramLive } from "../../hooks/useDeepgramLive";
 import { useSiriBorderWithRef } from "../../hooks/useSiriBorder";
 
@@ -530,7 +530,8 @@ export function ChatWidget() {
                             content={message.content as string}
                           />
                         ) : (
-                          <span>{message.content as string}</span>
+                          // Use linkifyUrls for user messages
+                          <span>{linkifyUrls(message.content as string)}</span>
                         )}
                       </div>
                     </div>

@@ -43,64 +43,58 @@ const StarfallCascadeAnimation: React.FC<StarfallCascadeAnimationProps> = ({
   );
 };
 
+/**
+ * Finds URLs in a string and replaces them with clickable anchor tags.
+ * @param text The input string.
+ * @returns An array of React nodes (strings and <a> elements).
+ */
+export const linkifyUrls = (text: string): React.ReactNode[] => {
+  // Regular expression to find URLs (handles http, https, ftp, www)
+  const urlRegex =
+    /(\b(https?|ftp):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])|(\bwww\.[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/gi;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = urlRegex.exec(text)) !== null) {
+    const index = match.index;
+    const url = match[0];
+    const urlWithProto = url.startsWith("www.") ? `http://${url}` : url; // Add http:// if missing for www. links
+
+    // Add the text before the URL
+    if (index > lastIndex) {
+      parts.push(text.substring(lastIndex, index));
+    }
+
+    // Add the link
+    parts.push(
+      <a
+        key={index}
+        href={urlWithProto}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="d4m-text-blue-400 hover:d4m-underline d4m-break-all" // Added break-all for long URLs
+      >
+        {url}
+      </a>
+    );
+
+    lastIndex = index + url.length;
+  }
+
+  // Add any remaining text after the last URL
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+
+  return parts;
+};
+
 export default StarfallCascadeAnimation;
 
-export const geminiFunctionDeclarations = [
-  // Function to create a new Google Doc
-  {
-    name: "createNewGoogleDoc",
-    description:
-      "Creates a new Google Document in the user's Drive, optionally inserting initial text content. Use this when the user asks to create or draft something in a new Google Doc and is not currently viewing a specific Doc.",
-    parameters: {
-      type: "OBJECT",
-      properties: {
-        fileName: {
-          type: "STRING",
-          description:
-            "The desired file name for the new Google Doc. Generate a descriptive name if not specified by the user (e.g., 'Draft Email to Dad').",
-        },
-        initialText: {
-          type: "STRING",
-          description:
-            "Optional. The initial text content (e.g., drafted email, notes) to insert into the newly created document.",
-        },
-      },
-      required: ["fileName"], // Filename is essential
-    },
-  },
-  // Function to interact with an existing Doc/Sheet or perform other Apps Script actions
-  {
-    name: "callWorkspaceAppsScript",
-    description:
-      "Executes a specific function via a secure Google Apps Script backend to interact with Google Workspace files (Docs, Sheets, etc.) identified by their fileId. Use this for reading, writing, modifying content, or performing other actions within a specific Google Doc or Sheet.",
-    parameters: {
-      type: "OBJECT",
-      properties: {
-        scriptFunction: {
-          type: "STRING",
-          description:
-            "The exact name of the function to execute within the deployed Google Apps Script (e.g., 'updateSheetCell', 'insertDocText', 'readSheetRange', 'appendSheetRow', 'getDocContent', 'getFileName').",
-        },
-        fileId: {
-          type: "STRING",
-          description:
-            "The unique ID of the target Google Doc or Sheet file. This MUST be obtained from the user's current context (e.g., extracted from the active tab URL if they are viewing a Doc/Sheet) or from the result of creating a new document.",
-        },
-        functionArgs: {
-          type: "OBJECT",
-          description:
-            "An object containing the specific named arguments required by the target 'scriptFunction' in Apps Script. Structure depends on the function being called (e.g., for 'updateSheetCell', required args are sheetName, cellNotation, value; for 'insertDocText', required args are text, insertionPoint).",
-        },
-      },
-      required: ["scriptFunction", "fileId", "functionArgs"],
-    },
-  },
-  // TODO: You might later add a function declaration for your ActionExecutor
-  // if you want Gemini to explicitly request simple DOM actions too, e.g.:
-  // { "name": "executeSimpleDomAction", "description": "Performs simple DOM actions...", "parameters": {...}}
-];
-
-// You'll also need to define the 'Tool' structure Gemini expects
-export const geminiTools = [
-  { functionDeclarations: geminiFunctionDeclarations },
-];
+export const getGoogleDocUrlFromId = (fileId: string) => {
+  return `https://docs.google.com/document/d/${fileId}`;
+};
+export const getGoogleSheetUrlFromId = (fileId: string) => {
+  return `https://docs.google.com/spreadsheets/d/${fileId}`;
+};

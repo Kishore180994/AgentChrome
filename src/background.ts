@@ -8,6 +8,7 @@ import {
 import { executeAppsScriptFunction } from "./services/google/appsScript";
 import { chatWithAI } from "./services/openai/api";
 import { LocalAction } from "./types/actionType";
+import { getGoogleDocUrlFromId } from "./utils/helpers";
 
 let automationStopped: boolean = false;
 const activeAutomationTabs: Set<number> = new Set();
@@ -481,11 +482,16 @@ async function processCommand(
               "[background.ts] Google Workspace function call executed successfully:",
               result
             );
+            // Stop automation after successful Apps Script execution
+            automationStopped = true;
+            console.log(
+              "[background.ts] Automation stopped due to successful Apps Script execution."
+            );
             await chrome.runtime.sendMessage({
               type: "COMMAND_RESPONSE",
               response: {
-                message: "Google Workspace function executed successfully",
-                output: result,
+                message: result.status,
+                output: `url: ${getGoogleDocUrlFromId(result.fileId)}`,
               },
             });
             executedActions.push(
