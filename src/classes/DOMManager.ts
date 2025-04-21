@@ -496,6 +496,8 @@ export class DOMManager {
             this.elementMap.set(elementIndex, el as HTMLElement);
 
             // --- Call drawDebugHighlight directly with context info ---
+            // Temporarily disabled for performance testing
+
             this.drawDebugHighlight(
               el,
               elementIndex,

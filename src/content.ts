@@ -239,6 +239,14 @@ if (!window[AGENT_KEY]) {
           img.src = message.dataUrl;
           return true;
 
+        case "CHECK_DOM_READY":
+          const isReady =
+            document.readyState === "complete" &&
+            document.body &&
+            document.body.children.length > 0;
+          sendResponse({ ready: isReady });
+          return true;
+
         case "PING":
           sendResponse({ success: true, tabId: currentTabId });
           return true;

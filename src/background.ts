@@ -31,28 +31,90 @@ chrome.action.onClicked.addListener(async (tab) => {
   activeAutomationTabs.delete(tab.id);
 });
 
+// Listener for when a tab is removed
 chrome.tabs.onRemoved.addListener((tabId) => {
+  console.log(`[background.ts] Tab removed: ${tabId}`);
   activeAutomationTabs.delete(tabId);
+  delete activePorts[tabId];
+  resetExecutionState(tabId); // Clean up state for removed tab
 });
 
+// Listener for when the active tab changes
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  console.log(`[background.ts] Tab activated: ${activeInfo.tabId}`);
+  // Attempt to inject content script directly, ignoring errors if already present
+  await ensureContentScriptInjected(activeInfo.tabId);
+});
+
+// Listener for when a tab is updated (e.g., URL change, page reload)
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  // Inject after the page is complete and it's a valid URL
+  if (
+    changeInfo.status === "complete" &&
+    tab.url &&
+    !tab.url.startsWith("chrome://") &&
+    !tab.url.startsWith("about:")
+  ) {
+    console.log(
+      `[background.ts] Tab updated and complete: ${tabId}, URL: ${tab.url}`
+    );
+    // Attempt to inject content script directly, ignoring errors if already present
+    await ensureContentScriptInjected(tabId);
+  }
+});
+
+// Simplified injection function - attempts injection and ignores common errors.
 async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
-  console.log("[background.ts] Ensuring content script for tab", tabId);
-  return new Promise((resolve) => {
-    chrome.tabs.sendMessage(tabId, { type: "PING" }, (res) => {
-      if (chrome.runtime.lastError || !res) {
-        console.log("[background.ts] Injecting content script on tab", tabId);
-        chrome.scripting
-          .executeScript({ target: { tabId }, files: ["content.js"] })
-          .then(() => setTimeout(() => resolve(true), 500))
-          .catch((err) => {
-            console.error("[background.ts] Injection error:", err);
-            resolve(false);
-          });
-      } else {
-        resolve(true);
-      }
+  console.log(
+    `[background.ts] Attempting to inject content script into tab ${tabId} (ignoring if already present)`
+  );
+  try {
+    // Check if tab exists and has a valid URL before attempting injection
+    const tab = await chrome.tabs.get(tabId);
+    if (
+      !tab ||
+      !tab.url ||
+      tab.url.startsWith("chrome://") ||
+      tab.url.startsWith("about:")
+    ) {
+      console.warn(
+        `[background.ts] Skipping injection for invalid tab or URL: ${tabId}, URL: ${tab?.url}`
+      );
+      return false;
+    }
+
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content.js"],
     });
-  });
+    console.log(
+      `[background.ts] Content script injection attempt finished for tab ${tabId}`
+    );
+    return true; // Assume success (either injected or was already there and executeScript didn't throw)
+  } catch (err: any) {
+    // Log common non-critical errors, but don't treat them as failures for this function's purpose
+    if (
+      err.message?.includes("Cannot access a chrome:// URL") ||
+      err.message?.includes("No tab with id") ||
+      err.message?.includes("The tab was closed") ||
+      err.message?.includes("Cannot access contents of the page") || // Often means script already injected or page denied access
+      err.message?.includes("Missing host permission for the tab") ||
+      err.message?.includes("Receiving end does not exist") || // Can indicate script already there or context issues
+      err.message?.includes("Could not establish connection") // Similar to receiving end does not exist
+    ) {
+      console.warn(
+        `[background.ts] Content script injection skipped/ignored for tab ${tabId}: ${err.message}`
+      );
+      return false; // Indicate injection didn't happen or wasn't needed
+    } else {
+      // Log unexpected errors
+      console.error(
+        `[background.ts] Unexpected injection error for tab ${tabId}:`,
+        err
+      );
+      return false; // Indicate failure
+    }
+  }
 }
 
 async function executeAppsScriptFunction(
@@ -309,12 +371,26 @@ async function processCommand(
 
   try {
     // --- Fetch initial state ---
+    console.log(
+      `[background.ts processCommand ${tabId}] Attempting to fetch page elements...`
+    );
+    const fetchStart = Date.now();
     try {
       const pageElementsResult = await fetchPageElements(tabId);
       pageState = pageElementsResult.compressed;
       uncompressedPageState = pageElementsResult.uncompressed;
+      console.log(
+        `[background.ts processCommand ${tabId}] Page elements fetched in ${
+          Date.now() - fetchStart
+        }ms`
+      );
     } catch (err) {
-      console.error("[background.ts] Failed to fetch page elements:", err);
+      console.error(
+        `[background.ts processCommand ${tabId}] Failed to fetch page elements after ${
+          Date.now() - fetchStart
+        }ms:`,
+        err
+      );
       await chrome.runtime.sendMessage({
         type: "FINISH_PROCESS_COMMAND",
         response:
@@ -1029,40 +1105,101 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 function waitForTabLoad(tabId: number): Promise<void> {
-  return new Promise((resolve) => {
-    const listener = (
+  return new Promise(async (resolve) => {
+    let observer: MutationObserver | null = null as MutationObserver | null;
+    let contentScriptChecked = false;
+    const startTime = Date.now();
+    const MAX_WAIT = 5000; // Reduced to 5 seconds max
+    const POLL_INTERVAL = 500;
+    console.log(
+      `[background.ts waitForTabLoad ${tabId}] Starting wait (max ${MAX_WAIT}ms)`
+    );
+
+    const checkDOMReady = async () => {
+      try {
+        // First ensure content script is injected
+        if (!contentScriptChecked) {
+          await ensureContentScriptInjected(tabId);
+          contentScriptChecked = true;
+        }
+
+        // Check via content script if DOM is interactive
+        const isReady = await new Promise<boolean>((resolve) => {
+          chrome.tabs.sendMessage(
+            tabId,
+            { type: "CHECK_DOM_READY" },
+            (response) => {
+              resolve(response?.ready === true);
+            }
+          );
+        });
+
+        if (isReady) {
+          console.log(
+            `[background.ts] Tab ${tabId} DOM ready in ${
+              Date.now() - startTime
+            }ms`
+          );
+          cleanup();
+          resolve();
+          return true;
+        }
+      } catch (error) {
+        console.warn(`[background.ts] DOM check error:`, error);
+      }
+      return false;
+    };
+
+    const cleanup = () => {
+      if (observer) {
+        observer.disconnect();
+      }
+      clearTimeout(timeoutId);
+      chrome.tabs.onUpdated.removeListener(urlChangeListener);
+    };
+
+    const urlChangeListener = (
       updatedTabId: number,
       changeInfo: chrome.tabs.TabChangeInfo,
-      tab: chrome.tabs.Tab // Added tab parameter
+      tab: chrome.tabs.Tab
     ) => {
-      // Check status and also ensure URL is not 'chrome://newtab/' etc.
-      if (
-        updatedTabId === tabId &&
-        changeInfo.status === "complete" &&
-        tab.url &&
-        !tab.url.startsWith("chrome://")
-      ) {
-        console.log(`[background.ts] Tab ${tabId} loaded: ${tab.url}`);
-        chrome.tabs.onUpdated.removeListener(listener);
-        // Add a small delay after load complete to allow scripts to potentially finish loading
-        setTimeout(resolve, 300);
+      if (updatedTabId === tabId && changeInfo.status === "loading") {
+        // Reset checks if navigation starts again
+        contentScriptChecked = false;
       }
     };
-    chrome.tabs.onUpdated.addListener(listener);
 
-    // Timeout mechanism in case 'complete' never fires for some reason
+    // Track URL changes
+    chrome.tabs.onUpdated.addListener(urlChangeListener);
+
+    // Progressive checking
+    const checkInterval = setInterval(async () => {
+      if ((await checkDOMReady()) || Date.now() - startTime > MAX_WAIT) {
+        clearInterval(checkInterval);
+        cleanup();
+        resolve();
+      }
+    }, POLL_INTERVAL);
+
+    // Initial check
+    if (await checkDOMReady()) {
+      clearInterval(checkInterval);
+      cleanup();
+      resolve();
+      return;
+    }
+
+    // Fallback timeout
     const timeoutId = setTimeout(() => {
-      console.warn(`[background.ts] Timeout waiting for tab ${tabId} load.`);
-      chrome.tabs.onUpdated.removeListener(listener);
-      resolve(); // Resolve anyway after timeout
-    }, 15000); // 15 second timeout
-
-    // Clear timeout if resolved normally
-    const originalResolve = resolve;
-    resolve = () => {
-      clearTimeout(timeoutId);
-      originalResolve();
-    };
+      console.warn(
+        `[background.ts] Tab ${tabId} load timeout after ${MAX_WAIT}ms`
+      );
+      console.warn(
+        `[background.ts waitForTabLoad ${tabId}] Timeout after ${MAX_WAIT}ms`
+      );
+      cleanup();
+      resolve(); // Resolve even on timeout
+    }, MAX_WAIT);
   });
 }
 
