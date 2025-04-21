@@ -66,12 +66,17 @@ async function fetchWithAuth(
 ): Promise<Response> {
   const url = `${API_BASE_URL}${endpoint}`;
 
-  // Ensure credentials are included for session cookies
+  // Get the token from storage
+  const authData = await chrome.storage.local.get("agentchrome_token");
+  const token = authData.agentchrome_token;
+
+  // Ensure credentials are included for session cookies and add token if available
   const fetchOptions: RequestInit = {
     ...options,
     credentials: "include", // Important for sending cookies
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
   };
@@ -79,8 +84,16 @@ async function fetchWithAuth(
   try {
     const response = await fetch(url, fetchOptions);
 
-    // Handle unauthorized responses (redirect to login)
+    // Handle unauthorized responses (clear token and redirect to login)
     if (response.status === 401) {
+      console.error("Authentication failed with 401 status");
+
+      // Clear the invalid token and user data
+      await chrome.storage.local.remove([
+        "agentchrome_token",
+        "agentchrome_user",
+      ]);
+
       // Redirect to Google auth
       window.location.href = `${API_BASE_URL}/auth/google`;
       throw new Error("Authentication required");

@@ -80,14 +80,32 @@ export class ActionExecutor {
         "deleteSheetRow",
       ];
 
-      if (googleWorkspaceActions.includes(name)) {
-        result = await this.handleGoogleWorkspaceAction(name, args);
+      // List of actions handled directly in background.ts
+      const backgroundHandledActions = [
+        "goToUrl",
+        "openTab",
+        "verify",
+        "done",
+        "ask",
+        "reportCurrentState",
+        ...googleWorkspaceActions,
+      ];
+
+      if (backgroundHandledActions.includes(name)) {
+        // Log that this action is handled by background, do nothing here
+        console.log(
+          `[ActionExecutor] Action '${name}' is handled by background.ts. Skipping in content script.`
+        );
+        return; // Return early
       } else {
+        // Handle actions meant for the content script (DOM interactions)
         switch (name) {
+          case "clickElement": // Added camelCase
           case "click_element":
             args = args as ClickElementArgs;
             await this.handleClick(args.index as number);
             break;
+          case "inputText": // Added camelCase
           case "input_text":
             args = args as InputTextArgs;
             await this.handleInputText(
@@ -99,14 +117,17 @@ export class ActionExecutor {
             args = args as ScrollArgs;
             await this.handleScroll(args.offset, args.direction);
             break;
+          case "submitForm": // Added camelCase
           case "submit_form":
             args = args as SubmitFormArgs;
             await this.handleSubmitForm(args.index as number);
             break;
+          case "extractContent": // Added camelCase
           case "extract_content":
             args = args as ExtractContentArgs;
             result = await this.handleExtract(args.index as number);
             break;
+          case "keyPress": // Added camelCase
           case "key_press":
             args = args as KeyPressArgs;
             await this.handleKeyPress(
@@ -114,7 +135,7 @@ export class ActionExecutor {
               (args as KeyPressArgs).key
             );
             break;
-          case "wait":
+          case "wait": // Keep wait here if needed for content-script specific pauses
             const waitDuration =
               typeof (args as any).duration === "number"
                 ? (args as any).duration
@@ -122,6 +143,7 @@ export class ActionExecutor {
             console.log(`[ActionExecutor] Waiting ${waitDuration}ms`);
             await new Promise((resolve) => setTimeout(resolve, waitDuration));
             break;
+          // Removed cases for goToUrl, openTab, verify, done, ask as they are handled in background.ts
           default:
             console.warn(
               `[ActionExecutor] Received unknown or unhandled action type: ${name}`
@@ -131,14 +153,13 @@ export class ActionExecutor {
       console.log(`[ActionExecutor] Successfully executed action: ${name}`);
       return result;
     } catch (error: any) {
-      console.error(
-        `[ActionExecutor] Failed action "${name}" on index "${
-          (args as any).index
-        }":`,
-        error.message,
-        error.stack
-      );
-      throw error;
+      // Ensure the error is properly logged and re-thrown to reject the promise
+      const errorMessage = `[ActionExecutor] Failed action "${name}" on index "${
+        (args as any).index ?? "N/A" // Handle cases where index might not be present in args
+      }": ${error.message}`;
+      console.error(errorMessage, error.stack);
+      // Re-throw the original error object to preserve stack trace if possible
+      throw error instanceof Error ? error : new Error(errorMessage);
     }
   }
 
@@ -220,13 +241,25 @@ export class ActionExecutor {
     }
 
     const ownerDoc = element.ownerDocument;
-    const contextWindow = ownerDoc?.defaultView;
-
-    if (!contextWindow) {
+    if (!ownerDoc) {
+      // This case is less likely if isConnected passed, but good to check
       throw new Error(
-        `[ActionExecutor] Could not determine context window (ownerDocument.defaultView) for element at index: ${index}`
+        `[ActionExecutor] Element at index ${index} has no ownerDocument.`
       );
     }
+
+    const contextWindow = ownerDoc.defaultView;
+    if (!contextWindow) {
+      throw new Error(
+        `[ActionExecutor] Could not determine context window (ownerDocument.defaultView) for element at index: ${index}. This might happen in detached iframes.`
+      );
+    }
+
+    // Add a log to confirm context was found
+    console.log(
+      `[ActionExecutor getElementContext] Context window found for index ${index}:`,
+      contextWindow.location.href
+    );
 
     return { element, contextWindow };
   }
@@ -267,9 +300,17 @@ export class ActionExecutor {
       contextWindow.requestAnimationFrame(() => {
         // Use rAF for better timing
         try {
+          console.log(
+            `[ActionExecutor handleClick] Attempting focus on index: ${index}`
+          );
           element.focus(); // Focusing first can improve reliability
+          console.log(
+            `[ActionExecutor handleClick] Focused index: ${index}. Attempting click.`
+          );
           element.click(); // Trigger the click
-          console.log(`[ActionExecutor] Clicked index: ${index}`);
+          console.log(
+            `[ActionExecutor handleClick] Click dispatched for index: ${index}`
+          );
           resolve();
         } catch (err: any) {
           console.error(
@@ -358,12 +399,18 @@ export class ActionExecutor {
       contextWindow.requestAnimationFrame(() => {
         // Use rAF
         try {
+          console.log(
+            `[ActionExecutor handleInputText] Simulating input for index: ${index}`
+          );
           // --- Use tag checks again for routing simulation ---
           if (isInputElementTag || isTextAreaElementTag) {
             simulateInput(element, text);
           } else if (isContentEditable) {
             simulateContentEditableInput(element, text);
           }
+          console.log(
+            `[ActionExecutor handleInputText] Input simulation complete for index: ${index}`
+          );
           // --- End Change ---
           resolve();
         } catch (err: any) {

@@ -140,11 +140,11 @@ if (!window[AGENT_KEY]) {
       switch (messageType) {
         case "PERFORM_ACTION":
           // Action Execution
-          console.log("[content.ts] Executing action:", message.action);
-          const functionCall: GeminiFunctionCall = {
-            name: message.action.type,
-            args: message.action.data,
-          };
+          console.log(
+            "[content.ts] Executing function call:",
+            message.functionCall
+          );
+          const functionCall: GeminiFunctionCall = message.functionCall;
           actionExecutor
             .execute(functionCall)
             .then((result) => {

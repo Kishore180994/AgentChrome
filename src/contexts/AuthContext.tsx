@@ -226,9 +226,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       // Set user in state and storage
       setUser(userData);
 
-      // Store the user in storage
+      // Store the user and token in storage
       chrome.storage.local.set({
         [USER_STORAGE_KEY]: JSON.stringify(userData),
+        agentchrome_token: token, // Store the token for API requests
       });
 
       console.log(
@@ -262,8 +263,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     // Remove user from state
     setUser(null);
 
-    // Remove from storage
-    chrome.storage.local.remove(USER_STORAGE_KEY);
+    // Remove user and token from storage
+    chrome.storage.local.remove([USER_STORAGE_KEY, "agentchrome_token"]);
 
     // Clear all cached tokens
     chrome.identity.clearAllCachedAuthTokens(() => {

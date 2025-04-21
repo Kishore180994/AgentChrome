@@ -6,7 +6,7 @@
 export const API_CONFIG = {
   // Base URL for the backend API
   // This should be updated based on the environment (development, production, etc.)
-  BASE_URL: "https://your-backend-server.com",
+  BASE_URL: "http://localhost:3000",
 
   // API version (if needed)
   VERSION: "v1",

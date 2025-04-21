@@ -11,6 +11,7 @@ import {
   HelpCircle,
   Settings,
   Mic,
+  List, // Import List icon
 } from "lucide-react";
 import MarkdownWrapper from "../MarkDownWrapper";
 import { StepState } from "../../types/responseFormat";
@@ -30,6 +31,8 @@ import {
   handleBlur,
 } from "./chatHandlers";
 import { Message, ProcessedMessage } from "./chatInterface";
+import api, { Chat } from "../../services/api"; // Import api and Chat
+import ChatListModal from "./ChatListModal"; // Default import
 import { RecordingMic } from "./RecordingMic";
 import StarfallCascadeAnimation from "../../utils/helpers";
 import { TranscriptLine, useDeepgramLive } from "../../hooks/useDeepgramLive";
@@ -60,6 +63,7 @@ export function ChatWidget() {
   const [accentColor, setAccentColor] = useState<AccentColor>("rose");
   const [mode, setMode] = useState<"light" | "dark">("dark");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isChatListOpen, setIsChatListOpen] = useState(false); // Add state for ChatListModal
   const [currentAnimation, setCurrentAnimation] =
     useState<"starfallCascade">("starfallCascade");
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
@@ -420,6 +424,14 @@ export function ChatWidget() {
                 className={`d4m-p-1 d4m-rounded-full d4m-bg-${accentColor}-400 d4m-text-white ${currentTheme.button} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
               >
                 <Settings className="d4m-w-4 d4m-h-4" />
+              </button>
+              {/* Added Chat List Button */}
+              <button
+                onClick={() => setIsChatListOpen(true)}
+                className={`d4m-p-1 d4m-rounded-full d4m-bg-${accentColor}-400 d4m-text-white ${currentTheme.button} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
+                title="View Chat History"
+              >
+                <List className="d4m-w-4 d4m-h-4" /> {/* Use List icon */}
               </button>
             </div>
           </div>
@@ -903,6 +915,51 @@ export function ChatWidget() {
               | "sky") || accentColor
           );
           setMode((newSettings.mode as "light" | "dark") || mode);
+        }}
+        theme={theme}
+        accentColor={accentColor}
+        mode={mode}
+      />
+      {/* Added ChatListModal */}
+      <ChatListModal
+        isOpen={isChatListOpen}
+        onClose={() => setIsChatListOpen(false)}
+        onChatSelect={async (chat: Chat) => {
+          console.log("Selected chat:", chat._id, chat.title);
+          setIsLoading(true); // Show loading indicator
+          setError(null);
+          try {
+            // Fetch the full chat details, including messages
+            const fullChat = await api.chats.getChatById(chat._id);
+            if (fullChat && fullChat.messages) {
+              // Map API messages to local Message type
+              const localMessages: Message[] = fullChat.messages.map(
+                (apiMsg) => ({
+                  id: apiMsg._id, // Map _id to id
+                  role: apiMsg.sender === "ai" ? "model" : apiMsg.sender, // Map sender to role ('ai' -> 'model')
+                  content: apiMsg.content,
+                  // Add other fields if necessary, or ensure they are optional in local Message type
+                })
+              );
+              // Format messages using the existing function (which expects local Message type)
+              const formatted = formatMessages(localMessages);
+              setMessages(formatted);
+              // Optionally save to storage as the current conversation
+              await chrome.storage.local.set({
+                conversationHistory: formatted,
+              });
+              setToast({ message: `Loaded chat: ${chat.title}`, type: "info" });
+            } else {
+              throw new Error("Chat messages not found.");
+            }
+          } catch (err) {
+            console.error("Failed to load selected chat:", err);
+            setError("Failed to load the selected chat.");
+            setToast({ message: "Error loading chat.", type: "error" });
+          } finally {
+            setIsLoading(false);
+            setIsChatListOpen(false); // Close modal regardless of success/failure
+          }
         }}
         theme={theme}
         accentColor={accentColor}

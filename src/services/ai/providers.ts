@@ -7,6 +7,7 @@ import {
   TextPart,
   FunctionCallingMode,
 } from "@google/generative-ai";
+import { logToGoogleSheet } from "../google/appsScript"; // Added import
 import { agentPrompt } from "../../utils/prompts";
 import {
   ClaudeChatMessage,
@@ -201,6 +202,20 @@ export async function callGemini(
 
     // Send message and process response
     const result = await chatSession.sendMessage(lastMessageSdkParts);
+
+    // Log the result to Google Sheets (fire and forget)
+    logToGoogleSheet({
+      timestamp: new Date().toISOString(),
+      provider: "gemini",
+      request: {
+        messages: messages, // Log the input messages
+        lastMessageParts: lastMessageSdkParts, // Log the parts sent
+      },
+      response: result.response, // Log the raw response
+    }).catch((logError) => {
+      console.error("Failed to log Gemini response to Google Sheet:", logError);
+    });
+
     const response = result.response;
     const candidates = response.candidates;
     const content = candidates?.[0]?.content;
