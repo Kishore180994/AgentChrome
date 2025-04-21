@@ -491,7 +491,11 @@ async function processCommand(
               type: "COMMAND_RESPONSE",
               response: {
                 message: result.status,
-                output: `url: ${getGoogleDocUrlFromId(result.fileId)}`,
+                output: `url: ${
+                  result.fileId
+                    ? getGoogleDocUrlFromId(result.fileId)
+                    : result.newDocUrl
+                }`,
               },
             });
             executedActions.push(
