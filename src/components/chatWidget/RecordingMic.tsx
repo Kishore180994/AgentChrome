@@ -303,20 +303,19 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
           <div
             ref={transcriptContainerRef}
             className="
-              d4m-h-28 /* Height 7rem */
-              d4m-overflow-hidden d4m-relative /* Removed flex alignment */
-              d4m-rounded-md d4m-p-2 /* Base padding */
-              d4m-bg-gradient-to-b d4m-from-gray-700/70 d4m-via-gray-800/80 d4m-to-gray-900/90
-              d4m-ring-1 d4m-ring-inset d4m-ring-gray-500/20
-            "
+  d4m-h-24 /* Reduced height to 6rem */
+  d4m-overflow-y-auto d4m-relative 
+  d4m-rounded-lg d4m-p-2 
+  d4m-bg-gradient-to-b d4m-from-gray-700/70 d4m-via-gray-800/80 d4m-to-gray-900/90
+  d4m-ring-1 d4m-ring-inset d4m-ring-gray-500/20
+  d4m-scrollbar-thin d4m-scrollbar-thumb-gray-400 d4m-scrollbar-track-transparent
+"
             style={
               {
-                // Mask: Gentle fades top and bottom, wide clear center
                 "--mask-gradient":
                   "linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%)",
                 maskImage: "var(--mask-gradient)",
                 WebkitMaskImage: "var(--mask-gradient)",
-                // Removed explicit paddingTop/paddingBottom for centering
               } as React.CSSProperties
             }
           >
@@ -334,23 +333,19 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
                 const isLastFinalized = index === lines.length - 1;
                 // Opacity based on position relative to the end (newest)
                 const lineDistanceFromEnd = lines.length - 1 - index;
-                // Make the last line fully visible, fade others quickly
-                const opacity = isLastFinalized
-                  ? 1
-                  : Math.max(0, 1 - lineDistanceFromEnd * 0.4);
-
+                // Removed opacity calculation for simplicity with scrolling
                 return (
                   <p
                     key={index}
                     className={`
-                      d4m-text-sm d4m-text-center d4m-transition-opacity d4m-duration-300 ease-in-out /* Consistent text-sm */
+                      d4m-text-sm d4m-text-center /* Consistent text-sm */
                       ${
                         isLastFinalized
                           ? "d4m-text-blue-300 d4m-font-medium" // Last final line is blue and medium weight
                           : "d4m-text-gray-300" // Older lines are gray
                       }
                     `}
-                    style={{ opacity: opacity }}
+                    // Removed inline style for opacity
                   >
                     {line}
                   </p>
