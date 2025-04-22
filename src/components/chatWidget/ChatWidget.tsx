@@ -35,7 +35,6 @@ import api, { Chat } from "../../services/api"; // Import api and Chat
 import ChatListModal from "./ChatListModal"; // Default import
 import { RecordingMic } from "./RecordingMic";
 import StarfallCascadeAnimation, { linkifyUrls } from "../../utils/helpers"; // Import linkifyUrls
-import { TranscriptLine, useDeepgramLive } from "../../hooks/useDeepgramLive";
 import { useSiriBorderWithRef } from "../../hooks/useSiriBorder";
 
 export function ChatWidget() {
@@ -75,14 +74,10 @@ export function ChatWidget() {
     message: string;
     type: "success" | "info" | "error";
   } | null>(null);
-  const [liveTranscript, setLiveTranscript] = useState<TranscriptLine[]>([]);
 
-  const { startRecording, stopRecording } = useDeepgramLive({
-    apiKey: "0f7e30b6546822958e971a12c1a4215bccceabb5",
-    onTranscript: (line) => {
-      setLiveTranscript((prev) => [...prev, line]);
-    },
-  });
+  // Recording state is now managed by the presence of RecordingMic component
+  // The onStop handler will receive the final transcript
+
   const widgetContainerRef = useRef<HTMLDivElement>(null);
   const suggestions = [
     "Open a new tab with Google",
@@ -411,9 +406,54 @@ export function ChatWidget() {
                 )}
               </button>
               <button
-                onClick={() => {
-                  setIsRecording(true);
-                  startRecording();
+                onClick={async () => {
+                  try {
+                    const permissionStatus = await navigator.permissions.query({
+                      name: "microphone" as PermissionName, // Cast to PermissionName
+                    });
+
+                    // Toggle the display of the RecordingMic component
+                    if (permissionStatus.state === "granted") {
+                      setIsRecording(true); // This state now controls showing RecordingMic
+                      // Recording starts automatically inside RecordingMic via useEffect
+                    } else if (permissionStatus.state === "prompt") {
+                      // Open the permission request popup
+                      chrome.windows.create({
+                        url: chrome.runtime.getURL("micPermission.html"), // Updated path
+                        type: "popup",
+                        height: 200,
+                        width: 350, // Slightly wider for the message + link
+                      });
+                      // Optional: Listen for permission changes to automatically start recording if granted
+                      permissionStatus.onchange = () => {
+                        if (permissionStatus.state === "granted") {
+                          setIsRecording(true); // Show RecordingMic if permission granted later
+                          // Recording starts automatically inside RecordingMic via useEffect
+                          // Consider closing the popup if it's still open, though the popup itself handles closing on grant.
+                        }
+                      };
+                    } else if (permissionStatus.state === "denied") {
+                      // Permission denied, show a toast message
+                      setToast({
+                        message:
+                          "Microphone access denied. Please enable it in extension settings.",
+                        type: "error",
+                      });
+                      // Optionally, open settings directly or provide a button/link
+                      // const extensionId = chrome.runtime.id;
+                      // const settingsUrl = `chrome://settings/content/siteDetails?site=chrome-extension%3A%2F%2F${extensionId}%2F`;
+                      // window.open(settingsUrl, '_blank');
+                    }
+                  } catch (error) {
+                    console.error(
+                      "Error checking/requesting microphone permission:",
+                      error
+                    );
+                    setToast({
+                      message: "Error checking microphone permission.",
+                      type: "error",
+                    });
+                  }
                 }}
                 className={`d4m-p-1 d4m-rounded-full d4m-bg-${accentColor}-400 d4m-text-white ${currentTheme.button} d4m-transition-transform d4m-duration-200 d4m-active:scale-95 d4m-cursor-pointer`}
               >
@@ -505,11 +545,12 @@ export function ChatWidget() {
             <RecordingMic
               accentColor={accentColor}
               textColor={textColor}
-              onStop={() => {
-                stopRecording();
-                setIsRecording(false);
+              onStop={(finalTranscript: string) => {
+                setInput(finalTranscript); // Set the input field with the final transcript
+                setIsRecording(false); // Hide the RecordingMic component
+                // Optionally focus the textarea after setting the input
+                textareaRef.current?.focus();
               }}
-              transcript={liveTranscript}
             />
           ) : (
             <React.Fragment>

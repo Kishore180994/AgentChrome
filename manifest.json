@@ -12,7 +12,8 @@
     "desktopCapture",
     "sidePanel",
     "downloads",
-    "identity"
+    "identity",
+    "windows"
   ],
   "host_permissions": ["<all_urls>"],
 "content_security_policy": {
@@ -52,7 +53,8 @@
       "storage.js",
       "*.js.map",
       "assets/*",
-      "node_modules/@aws-sdk/client-s3/dist/browser/*.js"
+      "node_modules/@aws-sdk/client-s3/dist/browser/*.js",
+      "src/pages/permission/mic-permission-req.html"
     ],
     "matches": ["*://*/*"]
   }],

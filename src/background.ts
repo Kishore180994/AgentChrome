@@ -77,7 +77,8 @@ async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
       !tab ||
       !tab.url ||
       tab.url.startsWith("chrome://") ||
-      tab.url.startsWith("about:")
+      tab.url.startsWith("about:") ||
+      tab.url.startsWith("chrome-extension://") // Add this check
     ) {
       console.warn(
         `[background.ts] Skipping injection for invalid tab or URL: ${tabId}, URL: ${tab?.url}`

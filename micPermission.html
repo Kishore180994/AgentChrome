@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Microphone Permission</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        padding: 10px;
+        text-align: center;
+      }
+      button {
+        padding: 8px 16px;
+        margin-top: 10px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <p>
+      This extension needs access to your microphone to enable voice commands.
+    </p>
+    <button id="requestPermissionBtn">Grant Permission</button>
+    <p id="statusMessage" style="color: red; display: none"></p>
+    <script src="micPermission.js" type="module"></script>
+    <!-- Point to the explicit JS entry point output -->
+  </body>
+</html>
