@@ -1,24 +1,11 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Mic, ChevronDown, ChevronUp, ListTodo } from "lucide-react";
-
-// --- Web Speech API Setup ---
-const SpeechRecognition =
-  (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-const recognition = SpeechRecognition ? new SpeechRecognition() : null;
-
-if (recognition) {
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  recognition.lang = "en-US";
-}
-// --- End Web Speech API Setup ---
-
-interface RecordingMicProps {
-  accentColor: string;
-  textColor: string;
-  onStop: (finalTranscript: string) => void;
-  tasks?: string[];
-}
+import React, { useState, useEffect } from "react";
+import { RecordingMicProps } from "./types";
+import { useSpeechRecognition } from "./hooks/useSpeechRecognition";
+import { useAudioCapture } from "./hooks/useAudioCapture";
+import { useDiarization } from "./hooks/useDiarization";
+import { MicButton } from "./MicButton";
+import { TranscriptDisplay } from "./TranscriptDisplay";
+import { DiarizationDisplay } from "./DiarizationDisplay";
 
 export const RecordingMic: React.FC<RecordingMicProps> = ({
   accentColor,
@@ -26,373 +13,98 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
   onStop,
   tasks = [],
 }) => {
+  // UI state
   const [showTranscript, setShowTranscript] = useState(true);
   const [showTasks, setShowTasks] = useState(true);
-  // const [finalTranscript, setFinalTranscript] = useState(""); // Replaced by lines
-  const [interimTranscript, setInterimTranscript] = useState("");
-  const [lines, setLines] = useState<string[]>([]); // State for transcript lines
-  const [audioLevel, setAudioLevel] = useState(0); // State for audio level (0-1)
+  const [showDiarization, setShowDiarization] = useState(true);
+  const [transcriptFullScreen, setTranscriptFullScreen] = useState(false);
+  const [diarizationFullScreen, setDiarizationFullScreen] = useState(false);
+  const [isTabAudio, setIsTabAudio] = useState(true); // Always use tab audio for diarization
 
-  const MAX_TRANSCRIPT_LINES = 10; // Keep more lines in state for smoother scroll history
-  const transcriptContainerRef = useRef<HTMLDivElement>(null); // Ref for scrolling
-  const recognitionRef = useRef(recognition);
-  // Refs for Web Audio API objects
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
+  // Initialize hooks
+  const [speechRecognition, startRecognition, stopRecognition] =
+    useSpeechRecognition(10);
+  const [audioData, stream, cleanupAudio] = useAudioCapture(isTabAudio);
+  const [
+    diarizationResults,
+    diarizationConnected,
+    speakerNames,
+    setSpeakerNames,
+  ] = useDiarization(stream);
 
+  // Extract data from hooks
+  const { interimTranscript, lines } = speechRecognition;
+  const { audioLevel } = audioData;
+
+  // Start speech recognition on mount
   useEffect(() => {
-    const currentRecognition = recognitionRef.current;
-    let localStream: MediaStream | null = null; // Keep track of the stream locally for cleanup
+    startRecognition();
 
-    // --- Web Speech API Logic ---
-    const setupSpeechRecognition = () => {
-      if (!currentRecognition) {
-        console.error("Speech Recognition API not supported.");
-        return;
-      }
-      currentRecognition.onresult = (event: any) => {
-        let interim = "";
-        let final = "";
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            final += event.results[i][0].transcript;
-          } else {
-            interim += event.results[i][0].transcript;
-          }
+    // Add keyboard event listener for Escape key to exit full screen
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (transcriptFullScreen) {
+          setTranscriptFullScreen(false);
         }
-        setInterimTranscript(interim); // Update interim transcript
-        if (final && final.trim()) {
-          // Add the new final segment as a new line
-          setLines((prevLines) => {
-            const newLines = [...prevLines, final.trim()];
-            // Keep the last MAX_TRANSCRIPT_LINES
-            return newLines.slice(
-              Math.max(newLines.length - MAX_TRANSCRIPT_LINES, 0)
-            );
-          });
-          // We clear interim here because a final result just arrived
-          setInterimTranscript("");
+        if (diarizationFullScreen) {
+          setDiarizationFullScreen(false);
         }
-      };
-      currentRecognition.onerror = (event: any) => {
-        console.error("Speech recognition error:", event.error);
-      };
-      currentRecognition.onend = () => {
-        console.log("Speech recognition ended.");
-        // Don't automatically stop audio analysis here, wait for explicit stop button
-      };
-      try {
-        currentRecognition.start();
-        console.log("Speech recognition started.");
-      } catch (e) {
-        console.error("Error starting speech recognition:", e);
       }
     };
-    // --- End Web Speech API Logic ---
 
-    // --- Web Audio API Logic for Visualization ---
-    const setupAudioAnalysis = async () => {
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        });
-        streamRef.current = localStream; // Store stream in ref for cleanup
+    window.addEventListener("keydown", handleKeyDown);
 
-        const audioContext = new (window.AudioContext ||
-          (window as any).webkitAudioContext)();
-        audioContextRef.current = audioContext;
-
-        const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 256; // Smaller FFT size for faster response
-        analyserRef.current = analyser;
-
-        const source = audioContext.createMediaStreamSource(localStream);
-        sourceRef.current = source;
-        source.connect(analyser);
-
-        const bufferLength = analyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-
-        const updateLevel = () => {
-          if (!analyserRef.current) return;
-          analyserRef.current.getByteFrequencyData(dataArray);
-
-          // Simple average calculation for volume level
-          let sum = 0;
-          for (let i = 0; i < bufferLength; i++) {
-            sum += dataArray[i];
-          }
-          const average = sum / bufferLength;
-          // Normalize the level (0-1), you might need to adjust the divisor (255)
-          const normalizedLevel = Math.min(average / 128, 1); // Adjust divisor for sensitivity
-          setAudioLevel(normalizedLevel);
-
-          animationFrameRef.current = requestAnimationFrame(updateLevel);
-        };
-
-        updateLevel(); // Start the animation loop
-        console.log("Audio analysis started.");
-      } catch (err) {
-        console.error("Error setting up audio analysis:", err);
-        // Handle microphone permission errors specifically if needed
-      }
-    };
-    // --- End Web Audio API Logic ---
-
-    // Start both APIs
-    setupSpeechRecognition();
-    setupAudioAnalysis();
-
-    // --- Cleanup Function ---
     return () => {
-      console.log("Cleaning up RecordingMic...");
-      // Stop Speech Recognition
-      if (currentRecognition) {
-        try {
-          currentRecognition.stop();
-          console.log("Speech recognition stopped on cleanup.");
-          currentRecognition.onresult = null;
-          currentRecognition.onerror = null;
-          currentRecognition.onend = null;
-        } catch (e) {
-          console.error("Error stopping speech recognition on cleanup:", e);
-        }
-      }
-
-      // Stop Audio Analysis Animation Loop
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = null;
-        console.log("Audio analysis animation stopped.");
-      }
-
-      // Disconnect Web Audio Nodes
-      if (sourceRef.current) {
-        sourceRef.current.disconnect();
-        sourceRef.current = null;
-        console.log("Audio source disconnected.");
-      }
-      analyserRef.current = null; // No need to disconnect analyser explicitly
-
-      // Close Audio Context
-      if (
-        audioContextRef.current &&
-        audioContextRef.current.state !== "closed"
-      ) {
-        audioContextRef.current
-          .close()
-          .then(() => {
-            console.log("Audio context closed.");
-            audioContextRef.current = null;
-          })
-          .catch((e) => console.error("Error closing audio context:", e));
-      } else {
-        audioContextRef.current = null;
-      }
-
-      // Stop Media Stream Tracks
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => {
-          track.stop();
-          console.log(`Media stream track stopped: ${track.kind}`);
-        });
-        streamRef.current = null;
-      } else if (localStream) {
-        // Fallback if streamRef wasn't set but localStream was acquired
-        localStream.getTracks().forEach((track) => {
-          track.stop();
-          console.log(`Media stream track stopped (fallback): ${track.kind}`);
-        });
-      }
+      window.removeEventListener("keydown", handleKeyDown);
     };
-    // Run effect only once on mount
-    // Run effect only once on mount
-  }, []);
+  }, [transcriptFullScreen, diarizationFullScreen]);
 
-  // Reintroduce smooth scrolling effect
-  useEffect(() => {
-    if (transcriptContainerRef.current) {
-      // Scroll smoothly to the bottom
-      transcriptContainerRef.current.scrollTo({
-        top: transcriptContainerRef.current.scrollHeight,
-        behavior: "smooth",
-      });
-    }
-  }, [lines, interimTranscript]); // Scroll when lines or interim changes
-
+  // Handle stop button click
   const handleStop = () => {
-    // The cleanup function in useEffect handles stopping everything
-    const fullTranscript = lines.join(" ") + " " + interimTranscript; // Combine lines for final output
-    onStop(fullTranscript.trim()); // Call the parent's onStop
-    // Note: The component will unmount after this, triggering the cleanup
+    stopRecognition();
+    cleanupAudio();
+    const fullTranscript = lines.join(" ") + " " + interimTranscript;
+    onStop(fullTranscript.trim());
   };
 
+  // Toggle functions
   const toggleTranscript = () => setShowTranscript(!showTranscript);
   const toggleTasks = () => setShowTasks(!showTasks);
-
-  // Calculate dynamic styles based on audioLevel
-  const baseScale = 1;
-  const maxScaleAddition = 0.4; // Max scale increase (e.g., 1.0 + 0.4 = 1.4)
-  const baseOpacity = 0.3;
-  const maxOpacityAddition = 0.4; // Max opacity increase (e.g., 0.3 + 0.4 = 0.7)
-
-  const rippleStyle1 = {
-    transform: `scale(${baseScale + audioLevel * maxScaleAddition * 0.6})`, // Less sensitive ripple
-    opacity: baseOpacity + audioLevel * maxOpacityAddition * 0.6,
-    transition: "transform 0.1s ease-out, opacity 0.1s ease-out", // Smooth transitions
-  };
-  const rippleStyle2 = {
-    transform: `scale(${baseScale + audioLevel * maxScaleAddition * 0.8})`, // Medium ripple
-    opacity: baseOpacity + audioLevel * maxOpacityAddition * 0.8,
-    transition: "transform 0.1s ease-out, opacity 0.1s ease-out",
-  };
-  const rippleStyle3 = {
-    transform: `scale(${baseScale + audioLevel * maxScaleAddition})`, // Most sensitive ripple
-    opacity: baseOpacity + audioLevel * maxOpacityAddition,
-    transition: "transform 0.1s ease-out, opacity 0.1s ease-out",
-  };
+  const toggleDiarization = () => setShowDiarization(!showDiarization);
 
   return (
     <div className="d4m-flex d4m-flex-col d4m-items-center d4m-gap-6 d4m-w-full d4m-h-full d4m-p-4 d4m-overflow-y-auto">
       {/* MIC BUTTON */}
-      <div className="d4m-relative d4m-flex d4m-items-center d4m-justify-center d4m-h-40">
-        <button
-          type="button"
-          onClick={handleStop}
-          className={`d4m-relative d4m-w-20 d4m-h-20 d4m-rounded-full d4m-bg-${accentColor}-500 d4m-text-white d4m-flex d4m-items-center d4m-justify-center d4m-shadow-lg d4m-transition-all d4m-duration-300 d4m-transform hover:d4m-scale-105 d4m-cursor-pointer focus:d4m-outline-none`}
-        >
-          {/* Ripple/Glow Animations - Removed d4m-animate-mic-ripple, added inline styles */}
-          <span
-            className={`d4m-absolute d4m-inset-0 d4m-rounded-full d4m-bg-${accentColor}-400`}
-            style={rippleStyle1}
-          ></span>
-          <span
-            className={`d4m-absolute d4m-inset-0 d4m-rounded-full d4m-bg-${accentColor}-300`}
-            style={rippleStyle2}
-          ></span>
-          <span
-            className={`d4m-absolute d4m-inset-0 d4m-rounded-full d4m-bg-${accentColor}-200`}
-            style={rippleStyle3}
-          ></span>
-          {/* Keep the glow separate */}
-          <div
-            className={`d4m-absolute d4m-inset-0 d4m-rounded-full d4m-border-4 d4m-border-${accentColor}-300 d4m-opacity-70 d4m-animate-mic-glow`}
-          ></div>
-          <Mic className="d4m-w-8 d4m-h-8 d4m-relative d4m-z-10 d4m-animate-mic-bounce" />
-        </button>
-      </div>
+      <MicButton
+        accentColor={accentColor}
+        audioLevel={audioLevel}
+        onStop={handleStop}
+      />
 
       {/* TRANSCRIPT SECTION */}
-      <div className="d4m-w-full">
-        <div className="d4m-flex d4m-justify-between d4m-items-center d4m-mb-2">
-          <h2 className={`d4m-text-md d4m-font-bold ${textColor}`}>
-            Live Transcript
-          </h2>
-          <button onClick={toggleTranscript}>
-            {showTranscript ? (
-              <ChevronUp className="d4m-w-4 d4m-h-4" />
-            ) : (
-              <ChevronDown className="d4m-w-4 d4m-h-4" />
-            )}
-          </button>
-        </div>
-        {showTranscript && (
-          <div
-            ref={transcriptContainerRef}
-            className="
-  d4m-h-24 /* Reduced height to 6rem */
-  d4m-overflow-y-auto d4m-relative 
-  d4m-rounded-lg d4m-p-2 
-  d4m-bg-gradient-to-b d4m-from-gray-700/70 d4m-via-gray-800/80 d4m-to-gray-900/90
-  d4m-ring-1 d4m-ring-inset d4m-ring-gray-500/20
-  d4m-scrollbar-thin d4m-scrollbar-thumb-gray-400 d4m-scrollbar-track-transparent
-"
-            style={
-              {
-                "--mask-gradient":
-                  "linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%)",
-                maskImage: "var(--mask-gradient)",
-                WebkitMaskImage: "var(--mask-gradient)",
-              } as React.CSSProperties
-            }
-          >
-            {/* Inner div for the actual content */}
-            <div className="d4m-w-full d4m-space-y-1">
-              {/* Placeholder */}
-              {lines.length === 0 && !interimTranscript && (
-                <p className="d4m-text-sm d4m-text-gray-500 d4m-italic d4m-text-center">
-                  Listening...
-                </p>
-              )}
+      <TranscriptDisplay
+        lines={lines}
+        interimTranscript={interimTranscript}
+        fullScreen={transcriptFullScreen}
+        setFullScreen={setTranscriptFullScreen}
+        showTranscript={showTranscript}
+        toggleTranscript={toggleTranscript}
+        textColor={textColor}
+      />
 
-              {/* Finalized Lines */}
-              {lines.map((line, index) => {
-                const isLastFinalized = index === lines.length - 1;
-                // Opacity based on position relative to the end (newest)
-                const lineDistanceFromEnd = lines.length - 1 - index;
-                // Removed opacity calculation for simplicity with scrolling
-                return (
-                  <p
-                    key={index}
-                    className={`
-                      d4m-text-sm d4m-text-center /* Consistent text-sm */
-                      ${
-                        isLastFinalized
-                          ? "d4m-text-blue-300 d4m-font-medium" // Last final line is blue and medium weight
-                          : "d4m-text-gray-300" // Older lines are gray
-                      }
-                    `}
-                    // Removed inline style for opacity
-                  >
-                    {line}
-                  </p>
-                );
-              })}
-
-              {/* Interim Transcript (appears below the last finalized line) */}
-              {interimTranscript && (
-                <p className="d4m-text-sm d4m-text-blue-200/70 d4m-text-center">
-                  {" "}
-                  {/* Consistent text-sm */}
-                  {interimTranscript}
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* TASKS SECTION */}
-      <div className="d4m-w-full">
-        <div className="d4m-flex d4m-justify-between d4m-items-center d4m-mb-2">
-          <h2 className={`d4m-text-md d4m-font-bold ${textColor}`}>
-            Action Items
-          </h2>
-          <button onClick={toggleTasks}>
-            {showTasks ? (
-              <ChevronUp className="d4m-w-4 d4m-h-4" />
-            ) : (
-              <ChevronDown className="d4m-w-4 d4m-h-4" />
-            )}
-          </button>
-        </div>
-        {showTasks && (
-          <ul className="d4m-list-disc d4m-pl-5 d4m-space-y-1 d4m-text-sm">
-            {tasks.length ? (
-              tasks.map((task, idx) => (
-                <li key={idx} className={`${textColor}`}>
-                  {task}
-                </li>
-              ))
-            ) : (
-              <li className="d4m-text-gray-400">No tasks identified yet.</li>
-            )}
-          </ul>
-        )}
-      </div>
+      {/* DIARIZATION SECTION */}
+      <DiarizationDisplay
+        diarizationResults={diarizationResults}
+        diarizationConnected={diarizationConnected}
+        accentColor={accentColor}
+        fullScreen={diarizationFullScreen}
+        setFullScreen={setDiarizationFullScreen}
+        showDiarization={showDiarization}
+        toggleDiarization={toggleDiarization}
+        textColor={textColor}
+        speakerNames={speakerNames}
+        setSpeakerNames={setSpeakerNames}
+      />
     </div>
   );
 };

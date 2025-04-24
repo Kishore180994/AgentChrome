@@ -1,3 +1,7 @@
+/**
+ * References: https://groups.google.com/a/chromium.org/g/chromium-extensions/c/cJmdMLmpbjg/m/zYGc54AaAQAJ
+ */
+
 import React, { useState, useRef, useEffect } from "react";
 import {
   Send,
