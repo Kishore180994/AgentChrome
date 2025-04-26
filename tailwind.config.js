@@ -197,6 +197,15 @@ export default {
         "starfall-cascade-1": "starfall-cascade 1.8s infinite 0s",
         "starfall-cascade-2": "starfall-cascade 1.8s infinite 0.4s",
         "starfall-cascade-3": "starfall-cascade 1.8s infinite 0.8s",
+        "fade-in": "fade-in 0.5s ease-out forwards",
+        "mic-bounce": "mic-bounce 2s ease-in-out infinite",
+        "mic-glow": "mic-glow 2s ease-in-out infinite",
+        "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        "ripple-1": "ripple 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        "ripple-2": "ripple 3s cubic-bezier(0.4, 0, 0.6, 1) infinite 0.5s",
+        "ripple-3": "ripple 3s cubic-bezier(0.4, 0, 0.6, 1) infinite 1s",
+        "subtle-bounce": "subtle-bounce 3s ease-in-out infinite",
+        "slow-spin": "slow-spin 12s linear infinite",
       },
       keyframes: {
         flow: {
@@ -208,6 +217,31 @@ export default {
           "0%": { transform: "translateY(-100%) scale(0.5)", opacity: "0" },
           "50%": { transform: "translateY(0%) scale(1)", opacity: "1" },
           "100%": { transform: "translateY(100%) scale(0.5)", opacity: "0" },
+        },
+        "fade-in": {
+          "0%": { opacity: "0", transform: "translateY(10px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "mic-bounce": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-5px)" },
+        },
+        "mic-glow": {
+          "0%, 100%": { opacity: "0.7", transform: "scale(1)" },
+          "50%": { opacity: "0.5", transform: "scale(1.05)" },
+        },
+        ripple: {
+          "0%": { transform: "scale(0.8)", opacity: "0.5" },
+          "50%": { transform: "scale(1.2)", opacity: "0.3" },
+          "100%": { transform: "scale(0.8)", opacity: "0.5" },
+        },
+        "subtle-bounce": {
+          "0%, 100%": { transform: "translateY(0) scale(1)" },
+          "50%": { transform: "translateY(-3px) scale(1.05)" },
+        },
+        "slow-spin": {
+          "0%": { transform: "rotate(0deg)" },
+          "100%": { transform: "rotate(360deg)" },
         },
       },
     },

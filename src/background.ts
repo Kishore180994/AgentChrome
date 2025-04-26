@@ -16,9 +16,9 @@ const recentActionsMap: Record<number, string[]> = {};
 const currentTasks: Record<number, string> = {};
 const activePorts: Record<number, chrome.runtime.Port> = {};
 
-// Constants for logging AI responses - REMOVED
-// const LOG_SHEET_ID = "1tE_DOOyTp19XgHJd2esdOdQZEQMhEE0cDmr_731mhAA";
-// const LOG_SHEET_NAME = "Sheet1"; // Assuming the first sheet is named Sheet1
+// Add state for the background script (optional but helpful for clarity)
+let isRecordingActive = false;
+let isWebSocketConnected = false;
 
 chrome.action.onClicked.addListener(async (tab) => {
   console.log("[background.ts] Extension action clicked, tab:", tab);
@@ -883,6 +883,96 @@ async function sendActionToTab(
   });
 }
 
+// --- Helper function to ensure the offscreen document is open ---
+async function setupOffscreenDocument(path = "offscreen.html") {
+  // Check if the offscreen document is already open
+  const offscreenUrl = chrome.runtime.getURL(path);
+  const existingContexts = await chrome.runtime.getContexts({});
+
+  const offscreenDocument = existingContexts.find(
+    (context) =>
+      context.contextType === "OFFSCREEN_DOCUMENT" &&
+      context.documentUrl === offscreenUrl
+  );
+
+  if (!offscreenDocument) {
+    // Create the offscreen document if it doesn't exist
+    console.log("Background: Creating offscreen document...");
+    try {
+      await chrome.offscreen.createDocument({
+        url: path,
+        reasons: [chrome.offscreen.Reason.USER_MEDIA],
+        justification: "Handling tab and microphone audio recording",
+      });
+      console.log("Background: Offscreen document created.");
+    } catch (error) {
+      console.error(
+        `Background: Failed to create offscreen document: ${error}`
+      );
+      throw new Error(
+        `Failed to create offscreen document: ${
+          (error as Error).message || error
+        }`
+      );
+    }
+  } else {
+    console.log("Background: Offscreen document already exists.");
+  }
+}
+
+// --- Function to Send Status Updates to UI (Side Panel) ---
+function sendStatusUpdateToUI(details?: { message?: string }) {
+  console.log("Background: Sending status update to UI:", {
+    isRecording: isRecordingActive,
+    isConnected: isWebSocketConnected,
+    message: details?.message,
+    // Audio level updates are forwarded separately from offscreen
+  });
+  chrome.runtime
+    .sendMessage({
+      type: details?.message ? "STATUS_UPDATE" : "RECORDING_STATE_UPDATE", // Use STATUS_UPDATE if message is provided
+      isRecording: isRecordingActive,
+      isConnected: isWebSocketConnected, // Include websocket status
+      message: details?.message, // Include the message
+    })
+    .catch((error) => {
+      // Catch potential errors if side panel is not open or listening
+      if (
+        error.message !==
+        "Could not establish connection. Receiving end does not exist."
+      ) {
+        console.warn(
+          "Background: Could not send status update message to UI:",
+          error.message
+        );
+      }
+    });
+}
+
+// --- Function to Close the Offscreen Document (Optional, good for cleanup) ---
+async function closeOffscreenDocument(path = "offscreen.html") {
+  const offscreenUrl = chrome.runtime.getURL(path);
+  const existingContexts = await chrome.runtime.getContexts({});
+
+  const offscreenDocument = existingContexts.find(
+    (context) =>
+      context.contextType === "OFFSCREEN_DOCUMENT" &&
+      context.documentUrl === offscreenUrl
+  );
+
+  if (offscreenDocument) {
+    console.log("Background: Closing offscreen document.");
+    try {
+      await chrome.offscreen.closeDocument();
+      console.log("Background: Offscreen document closed.");
+    } catch (error) {
+      console.error(`Background: Failed to close offscreen document: ${error}`);
+    }
+  } else {
+    console.log("Background: Offscreen document not found to close.");
+  }
+}
+
 chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
   if (msg.type === "PROCESS_COMMAND") {
     automationStopped = false;
@@ -940,6 +1030,184 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
       sendResponse({ success: false, error: "Sender tab ID not found" });
     }
     // No return true needed here as it's synchronous
+  } else if (msg.type === "START_RECORDING") {
+    console.log("Background: Received START_RECORDING message from UI.");
+
+    if (isRecordingActive) {
+      // Use internal state
+      console.log("Background: Recording already reported as active.");
+      sendResponse({ success: false, error: "Recording already started." });
+      return true;
+    }
+
+    try {
+      // Update background state to indicate start attempt
+      isRecordingActive = true;
+      isWebSocketConnected = false; // Assume not connected yet
+      sendStatusUpdateToUI({ message: "Starting recording setup..." }); // Notify UI that start is in progress
+
+      // 1. Ensure the offscreen document is open
+      sendStatusUpdateToUI({
+        message: "Ensuring offscreen document is ready...",
+      });
+      await setupOffscreenDocument();
+      sendStatusUpdateToUI({ message: "Offscreen document ready." });
+
+      // Ensure the tab ID is available (e.g., from the sender tab)
+      const targetTabId = msg.tabId;
+      if (!targetTabId) {
+        const errorMsg = "Background: Could not get target tab ID.";
+        console.error(errorMsg);
+        // Signal failure and clean up background state
+        isRecordingActive = false;
+        sendStatusUpdateToUI({ message: `Error: ${errorMsg}` }); // Update UI with inactive state and error
+        sendResponse({ success: false, error: errorMsg });
+        // Consider closing offscreen document if it was just opened solely for this
+        // closeOffscreenDocument(); // Optional based on desired lifecycle
+        return true;
+      }
+
+      // 2. Get Tab Audio Stream ID (Requires user gesture context, which the message from UI provides)
+      console.log("Background: Attempting to get tab audio stream ID...");
+      sendStatusUpdateToUI({ message: "Getting tab audio stream..." });
+      // This requires the 'desktopCapture' permission
+      const tabStreamId = await new Promise<string>((resolve, reject) => {
+        chrome.tabCapture.getMediaStreamId(
+          {
+            targetTabId: targetTabId,
+          },
+          (streamId) => {
+            if (chrome.runtime.lastError) {
+              reject(chrome.runtime.lastError.message);
+            } else {
+              resolve(streamId);
+            }
+          }
+        );
+      });
+      console.log("Background: Tab audio stream ID obtained:", tabStreamId);
+      sendStatusUpdateToUI({ message: "Tab audio stream obtained." });
+
+      if (!tabStreamId) {
+        const errorMsg =
+          chrome.runtime.lastError?.message || "Failed to get tab stream ID.";
+        console.error("Background:", errorMsg);
+        // Signal failure and clean up background state
+        isRecordingActive = false;
+        sendStatusUpdateToUI({ message: `Error: ${errorMsg}` }); // Update UI with inactive state and error
+        sendResponse({
+          success: false,
+          error: `Failed to start tab capture: ${errorMsg}`,
+        });
+        // closeOffscreenDocument(); // Optional based on desired lifecycle
+        return true;
+      }
+
+      // 4. Send message to offscreen document to start recording
+      console.log(
+        "Background: Sending start recording message to offscreen document..."
+      );
+      sendStatusUpdateToUI({
+        message: "Sending start command to offscreen...",
+      });
+      chrome.runtime
+        .sendMessage({
+          type: "START_RECORDING_OFFSCREEN",
+          target: "offscreen", // Target the offscreen document
+          data: {
+            // Pass necessary data
+            tabStreamId: tabStreamId,
+            meetingName: msg.meetingName, // Pass meeting name if needed by offscreen/backend
+          },
+        })
+        .catch((error) => {
+          // Handle error if offscreen document is not listening or message fails
+          console.error(
+            "Background: Failed to send start message to offscreen:",
+            error
+          );
+          // Signal failure and clean up background state
+          isRecordingActive = false;
+          sendStatusUpdateToUI({
+            message: `Error: Failed to communicate with offscreen: ${
+              error.message || error
+            }`,
+          }); // Update UI with inactive state and error
+          sendResponse({
+            success: false,
+            error: `Failed to communicate with offscreen document: ${
+              error.message || error
+            }`,
+          });
+          // closeOffscreenDocument(); // Optional
+        });
+
+      // Send success response back to the Side Panel immediately after messaging offscreen
+      // The Side Panel will get actual recording status from messages *from* offscreen later.
+      sendResponse({ success: true });
+    } catch (error: any) {
+      // This catch block primarily handles errors from setupOffscreenDocument or getMediaStreamId if not caught earlier
+      console.error(
+        "Background: Caught error during start setup process:",
+        error
+      );
+      // Ensure background state is marked inactive and UI is updated if an error occurred early
+      isRecordingActive = false;
+      sendStatusUpdateToUI({ message: `Error: ${error.message || error}` }); // Update UI with inactive state and error
+      // Send failure response if it hasn't been sent yet by internal catch blocks
+      if (!sender.tab) {
+        // Simple check if response wasn't sent via previous errors
+        sendResponse({
+          success: false,
+          error: error.message || "Unknown error during start setup.",
+        });
+      }
+      // Note: Specific errors during getUserMedia or getMediaStreamId are caught and handle stopRecording within their blocks
+    }
+
+    // ALWAYS return true from async listeners that send responses
+    return true;
+  } else if (msg.type === "STOP_RECORDING") {
+    console.log("Background: Received STOP_RECORDING message from UI.");
+
+    // Update background state to indicate stop attempt
+    // isRecordingActive will be set to false definitely when offscreen confirms stop
+    // but setting it here can provide immediate UI feedback depending on messaging
+    // isRecordingActive = false; // Maybe let offscreen drive this state change
+    // sendStatusUpdateToUI(); // Notify UI that stop is in progress
+    isRecordingActive = false;
+    // Send message to offscreen document to stop recording
+    chrome.runtime
+      .sendMessage({
+        type: "STOP_RECORDING_OFFSCREEN",
+        target: "offscreen", // Target the offscreen document
+      })
+      .catch((error) => {
+        console.error(
+          "Background: Failed to send stop message to offscreen:",
+          error
+        );
+        // If we can't even tell offscreen to stop, we might be stuck.
+        // Force background state cleanup?
+        isRecordingActive = false;
+        sendStatusUpdateToUI({
+          message: `Error: Failed to communicate stop command: ${
+            error.message || error
+          }`,
+        }); // Update UI
+        // Consider closing offscreen forcibly?
+        // closeOffscreenDocument();
+        sendResponse({
+          success: false,
+          error: `Failed to communicate stop command: ${
+            error.message || error
+          }`,
+        });
+      });
+
+    // Acknowledge the stop request was sent
+    sendResponse({ success: true });
+    return true;
   }
   // Return true for other async listeners if any, otherwise false/undefined is fine
   return false;

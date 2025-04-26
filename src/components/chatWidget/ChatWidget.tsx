@@ -37,9 +37,9 @@ import {
 import { Message, ProcessedMessage } from "./chatInterface";
 import api, { Chat } from "../../services/api"; // Import api and Chat
 import ChatListModal from "./ChatListModal"; // Default import
-import { RecordingMic } from "./RecordingMic";
 import StarfallCascadeAnimation, { linkifyUrls } from "../../utils/helpers"; // Import linkifyUrls
 import { useSiriBorderWithRef } from "../../hooks/useSiriBorder";
+import { RecordingMic } from "./RecordingMic";
 
 export function ChatWidget() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -376,108 +376,66 @@ export function ChatWidget() {
           ></div>
         )}
 
-        <div
-          className={`d4m-flex d4m-justify-between d4m-items-center d4m-px-3 d4m-py-2 ${currentTheme.header}`}
-        >
-          <div
-            className={`d4m-text-sm d4m-font-bold d4m-text-${accentColor}-500`}
+        {/* Simplified header with only new chat icon and mode selector */}
+        <div className="d4m-flex d4m-justify-end d4m-items-center d4m-px-3 d4m-py-2 d4m-gap-3">
+          {/* New Chat button */}
+          <button
+            onClick={handleNewChat(
+              setMessages,
+              setProcessedMessages,
+              setError,
+              setIsLoading,
+              setToast
+            )}
+            className={`d4m-p-1 d4m-rounded-full d4m-bg-${accentColor}-400 d4m-text-white ${currentTheme.button} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
+            title="New Chat"
           >
-            D4M Agent
-          </div>
-          <div className="d4m-flex d4m-items-center d4m-space-x-2">
-            <button
-              onClick={handleNewChat(
-                setMessages,
-                setProcessedMessages,
-                setError,
-                setIsLoading,
-                setToast
-              )}
-              className={`d4m-px-2 d4m-py-1 d4m-text-${accentColor}-400 d4m-text-sm d4m-rounded-lg ${currentTheme.button} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             >
-              New Chat
+              <path d="M12 5v14M5 12h14"></path>
+            </svg>
+          </button>
+
+          {/* Smaller capsule selector with accent color and liquid transition */}
+          <div className="d4m-relative d4m-flex d4m-items-center d4m-bg-gray-800 d4m-rounded-full d4m-p-0.5 d4m-overflow-hidden d4m-border d4m-border-gray-700 d4m-max-w-[160px]">
+            {/* Animated background pill that moves like liquid */}
+            <div
+              className={`d4m-absolute d4m-top-0.5 d4m-bottom-0.5 d4m-rounded-full d4m-transition-all d4m-duration-300 d4m-ease-in-out d4m-bg-${accentColor}-500`}
+              style={{
+                left: selectedModel === "gemini" ? "2px" : "calc(50% + 2px)",
+                width: "calc(50% - 4px)",
+              }}
+            ></div>
+
+            <button
+              onClick={() => setSelectedModel("gemini")}
+              className={`d4m-relative d4m-z-20 d4m-px-3 d4m-py-1 d4m-text-xs d4m-font-medium d4m-rounded-full d4m-transition-colors d4m-duration-300 d4m-w-1/2 d4m-text-center ${
+                selectedModel === "gemini"
+                  ? "d4m-text-white"
+                  : "d4m-text-gray-400"
+              }`}
+            >
+              D4M
             </button>
-
-            <div className="d4m-flex d4m-gap-2">
-              <button
-                onClick={toggleWatching(setIsWatching)}
-                className={`d4m-p-1 d4m-rounded-full d4m-bg-${accentColor}-400 d4m-text-white ${currentTheme.button} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
-              >
-                {isWatching ? (
-                  <Eye className="d4m-w-4 d4m-h-4" />
-                ) : (
-                  <EyeOff className="d4m-w-4 d4m-h-4" />
-                )}
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    const permissionStatus = await navigator.permissions.query({
-                      name: "microphone" as PermissionName, // Cast to PermissionName
-                    });
-
-                    // Toggle the display of the RecordingMic component
-                    if (permissionStatus.state === "granted") {
-                      setIsRecording(true); // This state now controls showing RecordingMic
-                      // Recording starts automatically inside RecordingMic via useEffect
-                    } else if (permissionStatus.state === "prompt") {
-                      // Open the permission request popup
-                      chrome.windows.create({
-                        url: chrome.runtime.getURL("micPermission.html"), // Updated path
-                        type: "popup",
-                        height: 200,
-                        width: 350, // Slightly wider for the message + link
-                      });
-                      // Optional: Listen for permission changes to automatically start recording if granted
-                      permissionStatus.onchange = () => {
-                        if (permissionStatus.state === "granted") {
-                          setIsRecording(true); // Show RecordingMic if permission granted later
-                          // Recording starts automatically inside RecordingMic via useEffect
-                          // Consider closing the popup if it's still open, though the popup itself handles closing on grant.
-                        }
-                      };
-                    } else if (permissionStatus.state === "denied") {
-                      // Permission denied, show a toast message
-                      setToast({
-                        message:
-                          "Microphone access denied. Please enable it in extension settings.",
-                        type: "error",
-                      });
-                      // Optionally, open settings directly or provide a button/link
-                      // const extensionId = chrome.runtime.id;
-                      // const settingsUrl = `chrome://settings/content/siteDetails?site=chrome-extension%3A%2F%2F${extensionId}%2F`;
-                      // window.open(settingsUrl, '_blank');
-                    }
-                  } catch (error) {
-                    console.error(
-                      "Error checking/requesting microphone permission:",
-                      error
-                    );
-                    setToast({
-                      message: "Error checking microphone permission.",
-                      type: "error",
-                    });
-                  }
-                }}
-                className={`d4m-p-1 d4m-rounded-full d4m-bg-${accentColor}-400 d4m-text-white ${currentTheme.button} d4m-transition-transform d4m-duration-200 d4m-active:scale-95 d4m-cursor-pointer`}
-              >
-                <Mic className="d4m-w-4 d4m-h-4" />
-              </button>
-              <button
-                onClick={() => setIsSettingsOpen(true)}
-                className={`d4m-p-1 d4m-rounded-full d4m-bg-${accentColor}-400 d4m-text-white ${currentTheme.button} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
-              >
-                <Settings className="d4m-w-4 d4m-h-4" />
-              </button>
-              {/* Added Chat List Button */}
-              <button
-                onClick={() => setIsChatListOpen(true)}
-                className={`d4m-p-1 d4m-rounded-full d4m-bg-${accentColor}-400 d4m-text-white ${currentTheme.button} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
-                title="View Chat History"
-              >
-                <List className="d4m-w-4 d4m-h-4" /> {/* Use List icon */}
-              </button>
-            </div>
+            <button
+              onClick={() => setSelectedModel("claude")}
+              className={`d4m-relative d4m-z-20 d4m-px-3 d4m-py-1 d4m-text-xs d4m-font-medium d4m-rounded-full d4m-transition-colors d4m-duration-300 d4m-w-1/2 d4m-text-center ${
+                selectedModel === "claude"
+                  ? "d4m-text-white"
+                  : "d4m-text-gray-400"
+              }`}
+            >
+              Agent
+            </button>
           </div>
         </div>
         {toast && (
@@ -546,16 +504,7 @@ export function ChatWidget() {
               </div>
             )}
           {isRecordingClicked ? (
-            <RecordingMic
-              accentColor={accentColor}
-              textColor={textColor}
-              onStop={(finalTranscript: string) => {
-                setInput(finalTranscript); // Set the input field with the final transcript
-                setIsRecording(false); // Hide the RecordingMic component
-                // Optionally focus the textarea after setting the input
-                textareaRef.current?.focus();
-              }}
-            />
+            <RecordingMic accentColor={accentColor} textColor={textColor} />
           ) : (
             <React.Fragment>
               {processedMessages.map((item, index) => {

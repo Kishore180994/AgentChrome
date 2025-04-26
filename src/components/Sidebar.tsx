@@ -1,6 +1,6 @@
 import React from "react";
-import App from "../App";
 import LoginPage from "./LoginPage";
+import { MaterialSidebar } from "./MaterialSidebar";
 import { AuthProvider, useAuth } from "../contexts/AuthContext";
 
 // Inner component that uses the auth context
@@ -63,9 +63,9 @@ const SidebarContent: React.FC = () => {
         d4m-duration-300
         d4m-ease-in-out
         d4m-text-gray-100
-        d4m-h-full"
+        d4m-h-screen"
     >
-      {user ? <App /> : <LoginPage />}
+      {user ? <MaterialSidebar /> : <LoginPage />}
     </div>
   );
 };
