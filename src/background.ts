@@ -974,6 +974,72 @@ async function closeOffscreenDocument(path = "offscreen.html") {
 }
 
 chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
+  // Forward UPDATE_TRANSCRIPTION messages from offscreen.js to UI components
+  if (msg.type === "UPDATE_TRANSCRIPTION" && msg.target === "background") {
+    console.log("Background: from offscreen, forwarding to UI");
+
+    // Now the server message is in the data field
+    if (msg.data) {
+      console.log("Background: Message contains data field:", msg.data);
+
+      // Check if this is the speaker_transcription_update format
+      if (msg.data.type === "speaker_transcription_update") {
+        console.log(
+          "Background: Processing speaker_transcription_update format with segments:",
+          msg.data.segments?.length || 0
+        );
+      }
+    }
+
+    // Remove the target field as it's not needed anymore
+    const { target, ...messageData } = msg;
+
+    // Forward the message to any listening UI components or content scripts
+    // If we have data field, we should forward it properly
+    if (msg.data) {
+      console.log(
+        "Background: Forwarding with speaker_transcription_update data"
+      );
+      chrome.runtime
+        .sendMessage({
+          type: "UPDATE_TRANSCRIPTION",
+          ...msg.data, // Use data from the server directly
+        })
+        .catch((error) => {
+          // Ignore errors when no listeners are available
+          if (
+            error.message !==
+            "Could not establish connection. Receiving end does not exist."
+          ) {
+            console.warn(
+              "Background: Error forwarding UPDATE_TRANSCRIPTION:",
+              error
+            );
+          }
+        });
+    } else {
+      // Legacy format, just forward as is
+      chrome.runtime
+        .sendMessage({
+          type: "UPDATE_TRANSCRIPTION",
+          ...messageData,
+        })
+        .catch((error) => {
+          // Ignore errors when no listeners are available
+          if (
+            error.message !==
+            "Could not establish connection. Receiving end does not exist."
+          ) {
+            console.warn(
+              "Background: Error forwarding UPDATE_TRANSCRIPTION:",
+              error
+            );
+          }
+        });
+    }
+    return true; // Indicate async response handling
+  }
+
   if (msg.type === "PROCESS_COMMAND") {
     automationStopped = false;
     const [activeTab] = await chrome.tabs.query({

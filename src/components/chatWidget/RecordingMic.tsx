@@ -5,22 +5,17 @@ import React, { useEffect, useState, useRef } from "react";
 import SpeechRecognition, {
   useSpeechRecognition,
 } from "react-speech-recognition";
+import { AudioVisualizer } from "./AudioVisualizer";
+import {
+  DiarizationRequest,
+  DiarizationSegment,
+} from "../../services/ai/interfaces";
 
 interface RecordingMicProps {
   accentColor: string;
   textColor: string;
   // onStop prop might still be useful for parent component cleanup/state update
   onStop?: () => void; // Changed signature as final transcript comes from backend now
-}
-
-// Interface for the diarization results received from the background script
-interface DiarizationSegment {
-  speaker: string;
-  text: string;
-  start?: number; // Optional: segment start time
-  end?: number; // Optional: segment end time
-  isFinal: boolean; // Indicates if this segment is final
-  segmentIndex?: number; // Add segmentIndex type based on updateDiarizationResults logic
 }
 
 export const RecordingMic: React.FC<RecordingMicProps> = ({
@@ -130,19 +125,131 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
     ) => {
       switch (request.type) {
         case "UPDATE_TRANSCRIPTION":
-          updateDiarizationResults(request as DiarizationSegment);
+          console.log("RecordingMic: Received UPDATE_TRANSCRIPTION", request);
+          const diarizationRequest = request as DiarizationRequest;
+          // Check if this is a speaker_transcription_update message format
+          if (
+            diarizationRequest.type === "speaker_transcription_update" &&
+            diarizationRequest.data &&
+            diarizationRequest.data.segments &&
+            Array.isArray(diarizationRequest.data.segments)
+          ) {
+            console.log(
+              "RecordingMic: Processing speaker_transcription_update with segments array",
+              JSON.stringify(diarizationRequest.data.segments, null, 2)
+            );
+
+            const data = diarizationRequest.data;
+
+            // Important debug info
+            console.log("RecordingMic: Current diarization state:", {
+              isConnected: diarizationConnected,
+              resultsCount: data.segments.length,
+            });
+
+            // Log each segment separately to verify structure
+            data.segments.forEach((segment, index: number) => {
+              console.log(`RecordingMic: Segment ${index}:`, {
+                speaker: segment.speaker || "UNDEFINED",
+                text: segment.text || "EMPTY",
+                start: segment.start,
+                end: segment.end,
+              });
+            });
+
+            // Filter out any segments with undefined speaker or text before adding them
+            const validSegments = data.segments.filter(
+              (segment) =>
+                segment &&
+                typeof segment === "object" &&
+                segment.text &&
+                segment.speaker
+            );
+
+            console.log(
+              "RecordingMic: Filtered down to valid segments:",
+              validSegments.length
+            );
+
+            if (validSegments.length === 0) {
+              console.warn(
+                "RecordingMic: No valid segments found in update. Skipping update."
+              );
+              return;
+            }
+
+            // Clear previous results and replace with the valid complete transcript
+            // This ensures we have the complete state from the server
+            setDiarizationResults(validSegments);
+
+            // Add speaker names for any new speakers
+            validSegments.forEach((segment) => {
+              // We've already validated these have speaker values
+              if (!speakerNames[segment.speaker]) {
+                // Extract the speaker number safely with proper error handling
+                try {
+                  const speakerNumber = segment.speaker.includes("SPEAKER_")
+                    ? segment.speaker.replace("SPEAKER_", "")
+                    : segment.speaker;
+
+                  setSpeakerNames((prevNames) => ({
+                    ...prevNames,
+                    [segment.speaker]: `Speaker ${speakerNumber}`,
+                  }));
+                } catch (error) {
+                  console.error(
+                    "Error processing speaker name:",
+                    error,
+                    segment
+                  );
+                }
+              }
+            });
+
+            // Mark diarization as connected since we're receiving data
+            setDiarizationConnected(true);
+
+            console.log(
+              "RecordingMic: Updated with segments, new count:",
+              request.segments.length
+            );
+          }
+          // Fallback for legacy format - single segment or other format
+          else if (
+            diarizationRequest.data.segments &&
+            Array.isArray(diarizationRequest.data.segments)
+          ) {
+            // Handle server response with segments array (legacy format)
+            console.log(
+              "RecordingMic: Processing legacy format with segments array",
+              diarizationRequest.data.segments
+            );
+            diarizationRequest.data.segments.forEach((segment) => {
+              updateDiarizationResults(segment);
+            });
+            // Also mark diarization as connected
+            setDiarizationConnected(true);
+          } else {
+            // Handle single segment format
+            console.log(
+              "RecordingMic: Processing single segment format",
+              request
+            );
+            updateDiarizationResults(diarizationRequest.data.segments);
+          }
           break;
         case "RECORDING_STATE_UPDATE":
           // Update local recording state based on background's actual recording status
           setIsRecording(request.isRecording);
-          // If recording is now TRUE, clear any initialization status message
+          // If recording is now TRUE, show connecting message if we're not connected yet
           if (request.isRecording) {
-            setInitializationStatus(null);
+            if (!diarizationConnected) {
+              setInitializationStatus("Connecting to diarization server...");
+            }
           } else {
             // If recording is now FALSE, maybe set a default status if no error is coming
             if (initializationStatus === null) {
-              // Avoid overwriting a specific error message
-              // setInitializationStatus("Ready"); // Or null
+              setInitializationStatus("Ready");
             }
           }
           // If recording stopped in background, stop mic listening here too
@@ -193,7 +300,7 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
     };
   }, [micListening, resetMicTranscript, isRecording, initializationStatus]); // Dependencies updated
 
-  // Function to update diarization results state (remains the same)
+  // Function to update diarization results state with improved error handling
   const updateDiarizationResults = (segment: DiarizationSegment) => {
     setDiarizationResults((prevResults) => {
       // Find and update logic...
@@ -217,10 +324,24 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
     });
 
     if (segment.speaker && !speakerNames[segment.speaker]) {
-      setSpeakerNames((prevNames) => ({
-        ...prevNames,
-        [segment.speaker]: `Speaker ${segment.speaker}`,
-      }));
+      try {
+        // Extract the speaker number safely
+        const speakerNumber = segment.speaker.includes("SPEAKER_")
+          ? segment.speaker.replace("SPEAKER_", "")
+          : segment.speaker;
+
+        setSpeakerNames((prevNames) => ({
+          ...prevNames,
+          [segment.speaker]: `Speaker ${speakerNumber}`,
+        }));
+      } catch (error) {
+        console.error("Error formatting speaker name:", error, segment);
+        // Fallback to basic format
+        setSpeakerNames((prevNames) => ({
+          ...prevNames,
+          [segment.speaker]: `Speaker ${segment.speaker}`,
+        }));
+      }
     }
   };
 
@@ -340,7 +461,10 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
   };
 
   // Helper function to get a color for a speaker
-  function getSpeakerColor(speakerId: string, accentColor: string): string {
+  function getSpeakerColor(
+    speakerId: string | undefined,
+    accentColor: string
+  ): string {
     const colors: string[] = [
       `d4m-bg-${accentColor}-500 d4m-text-white`,
       "d4m-bg-blue-500 d4m-text-white",
@@ -350,6 +474,11 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
       "d4m-bg-pink-500 d4m-text-white",
     ];
 
+    // Handle undefined or empty speakerId
+    if (!speakerId) {
+      return colors[0]; // Default to first color if no speaker ID
+    }
+
     // Simple hash function to consistently map speaker IDs to colors
     const hash = speakerId.split("").reduce((acc, char) => {
       return acc + char.charCodeAt(0);
@@ -357,25 +486,6 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
 
     return colors[hash % colors.length];
   }
-
-  // --- Render ---
-
-  // Rainbow colors for equalizer bars (keep)
-  const rainbowColors = [
-    "d4m-bg-red-500",
-    "d4m-bg-orange-500",
-    "d4m-bg-yellow-500",
-    "d4m-bg-green-500",
-    "d4m-bg-teal-500",
-    "d4m-bg-blue-500",
-    "d4m-bg-indigo-500",
-    "d4m-bg-purple-500",
-    "d4m-bg-pink-500",
-  ];
-  const getBarColor = (index: number) =>
-    rainbowColors[index % rainbowColors.length];
-
-  // Check if browser supports speech recognition for microphone-only view (remains the same)
 
   // Determine the status text to display at the bottom
   const currentStatusText = isRecording
@@ -422,21 +532,11 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
         </div>
       </div>
 
-      {/* Audio visualizer / Equalizer */}
-      <div className="d4m-flex d4m-justify-center d4m-items-end d4m-h-24 d4m-mb-6 d4m-bg-gray-900 d4m-bg-opacity-50 d4m-rounded-lg d4m-p-2">
-        {/* Visualizer opacity based on if we're *attempting* to record or are recording */}
-        {equalizerBars.map((height, index) => (
-          <div
-            key={index}
-            className={`d4m-w-1 d4m-mx-0.5 d4m-rounded-t-sm ${getBarColor(
-              index
-            )} d4m-transition-all d4m-duration-100`}
-            style={{
-              height: `${Math.max(2, height * 100)}px`,
-              opacity: isRecording || initializationStatus ? 1 : 0.3, // Active if recording OR initializing
-            }}
-          ></div>
-        ))}
+      <div className="d4m-mb-6">
+        <AudioVisualizer
+          audioLevel={currentAudioLevel}
+          isActive={isRecording || initializationStatus !== null}
+        />
       </div>
 
       {/* Recording controls with meeting info (remains the same) */}
@@ -624,14 +724,56 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
               </span>
             </div>
 
+            {/* Connection Status Banner - show when connecting or waiting */}
+            {isRecording && !diarizationConnected && (
+              <div className="d4m-mb-4 d4m-bg-yellow-500 d4m-bg-opacity-10 d4m-border d4m-border-yellow-500 d4m-border-opacity-20 d4m-rounded-md d4m-p-3 d4m-text-yellow-400 d4m-flex d4m-items-center d4m-gap-2">
+                <div className="d4m-w-3 d4m-h-3 d4m-rounded-full d4m-bg-yellow-400 d4m-animate-pulse"></div>
+                <span className="d4m-text-sm d4m-font-medium">
+                  Establishing connection to transcription server... Please
+                  wait.
+                </span>
+              </div>
+            )}
+
+            {/* Disconnection Warning - show when connection is unexpectedly lost */}
+            {isRecording &&
+              diarizationConnected === false &&
+              diarizationResults.length > 0 && (
+                <div className="d4m-mb-4 d4m-bg-red-500 d4m-bg-opacity-10 d4m-border d4m-border-red-500 d4m-border-opacity-20 d4m-rounded-md d4m-p-3 d4m-text-red-400 d4m-flex d4m-items-center d4m-gap-2">
+                  <div className="d4m-w-3 d4m-h-3 d4m-rounded-full d4m-bg-red-400 d4m-animate-pulse"></div>
+                  <span className="d4m-text-sm d4m-font-medium">
+                    Connection to transcription server interrupted. Attempting
+                    to reconnect...
+                  </span>
+                </div>
+              )}
+
+            {/* Shutdown Message - show when waiting for final transcript */}
+            {!isRecording &&
+              initializationStatus &&
+              initializationStatus.includes("final") && (
+                <div className="d4m-mb-4 d4m-bg-blue-500 d4m-bg-opacity-10 d4m-border d4m-border-blue-500 d4m-border-opacity-20 d4m-rounded-md d4m-p-3 d4m-text-blue-400 d4m-flex d4m-items-center d4m-gap-2">
+                  <div className="d4m-w-3 d4m-h-3 d4m-rounded-full d4m-bg-blue-400 d4m-animate-pulse"></div>
+                  <span className="d4m-text-sm d4m-font-medium">
+                    Finalizing transcription... Please wait while we process the
+                    last segments.
+                  </span>
+                </div>
+              )}
+
             {diarizationResults.length > 0 ? (
               <div className="d4m-space-y-4">
                 {diarizationResults.map((segment, index) => {
-                  const speakerName =
-                    speakerNames[segment.speaker] ||
-                    `Speaker ${segment.speaker}`;
+                  // Speaker and text are validated during filtering above
+                  // Safely extract speaker name
+                  const speakerName = speakerNames[segment.speaker]
+                    ? speakerNames[segment.speaker] // Use existing speaker name if available
+                    : segment.speaker && segment.speaker.includes("SPEAKER_")
+                    ? `Speaker ${segment.speaker.replace("SPEAKER_", "")}` // Convert SPEAKER_XX to Speaker XX
+                    : `Speaker ${segment.speaker || "Unknown"}`; // Fallback display
+
                   const speakerColor = getSpeakerColor(
-                    segment.speaker,
+                    segment.speaker || "unknown",
                     accentColor
                   );
                   return (
@@ -646,10 +788,14 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
                           {speakerName}
                           <button
                             onClick={() => {
+                              if (!segment.speaker) {
+                                alert("Cannot edit name for undefined speaker");
+                                return;
+                              }
                               const newName = prompt(
                                 `Enter name for ${speakerName}:`,
                                 speakerNames[segment.speaker] ||
-                                  `Speaker ${segment.speaker}`
+                                  `Speaker ${segment.speaker || "Unknown"}`
                               );
                               if (newName !== null && newName.trim() !== "") {
                                 handleSpeakerNameChange(
@@ -684,17 +830,50 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
                 })}
               </div>
             ) : (
-              <div className="d4m-text-gray-500 d4m-italic d4m-text-sm">
-                {
-                  isRecording // If recording but no results yet
-                    ? "Processing combined audio..."
-                    : initializationStatus &&
-                      !initializationStatus.startsWith("Error:") // If initializing (not error)
-                    ? initializationStatus // Show initialization status
-                    : initializationStatus // If error
-                    ? initializationStatus // Show error status
-                    : "Start recording to see diarization results." // Default message
-                }
+              <div className="d4m-text-center d4m-py-8">
+                {isRecording && !diarizationConnected ? (
+                  <div className="d4m-flex d4m-flex-col d4m-items-center d4m-gap-3">
+                    <div className="d4m-w-10 d4m-h-10 d4m-border-t-4 d4m-border-r-4 d4m-border-yellow-500 d4m-rounded-full d4m-animate-spin"></div>
+                    <p className="d4m-text-yellow-400 d4m-font-medium">
+                      Connecting to transcription service...
+                    </p>
+                    <p className="d4m-text-gray-500 d4m-text-sm">
+                      This may take a few moments
+                    </p>
+                  </div>
+                ) : isRecording ? (
+                  <div className="d4m-flex d4m-flex-col d4m-items-center d4m-gap-3">
+                    <div className="d4m-w-10 d4m-h-10 d4m-border-t-4 d4m-border-r-4 d4m-border-blue-500 d4m-rounded-full d4m-animate-spin"></div>
+                    <p className="d4m-text-blue-400 d4m-font-medium">
+                      Processing audio...
+                    </p>
+                    <p className="d4m-text-gray-500 d4m-text-sm">
+                      Waiting for the first transcription segments
+                    </p>
+                  </div>
+                ) : initializationStatus &&
+                  !initializationStatus.startsWith("Error:") ? (
+                  <div className="d4m-flex d4m-flex-col d4m-items-center d4m-gap-2">
+                    <p className="d4m-text-yellow-400 d4m-font-medium">
+                      {initializationStatus}
+                    </p>
+                  </div>
+                ) : initializationStatus ? (
+                  <div className="d4m-flex d4m-flex-col d4m-items-center d4m-gap-2">
+                    <p className="d4m-text-red-400 d4m-font-medium">
+                      {initializationStatus}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="d4m-flex d4m-flex-col d4m-items-center d4m-gap-2">
+                    <p className="d4m-text-gray-500 d4m-font-medium">
+                      Start recording to see diarization results
+                    </p>
+                    <p className="d4m-text-gray-600 d4m-text-sm">
+                      Click the microphone button to begin
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -736,22 +915,3 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
     </div>
   );
 };
-
-// Helper function to get a color for a speaker
-function getSpeakerColor(speakerId: string, accentColor: string): string {
-  const colors: string[] = [
-    `d4m-bg-${accentColor}-500 d4m-text-white`,
-    "d4m-bg-blue-500 d4m-text-white",
-    "d4m-bg-green-500 d4m-text-white",
-    "d4m-bg-yellow-500 d4m-text-black",
-    "d4m-bg-purple-500 d4m-text-white",
-    "d4m-bg-pink-500 d4m-text-white",
-  ];
-
-  // Simple hash function to consistently map speaker IDs to colors
-  const hash = speakerId.split("").reduce((acc, char) => {
-    return acc + char.charCodeAt(0);
-  }, 0);
-
-  return colors[hash % colors.length];
-}

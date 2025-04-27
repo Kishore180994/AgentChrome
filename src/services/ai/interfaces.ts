@@ -230,3 +230,20 @@ export interface GeminiFunctionCallWrapper {
 // The Gemini response is an array of GeminiFunctionCallWrapper
 // This matches the format [{functionCall: {...}}, {functionCall: {...}}, ...]
 export type GeminiResponse = GeminiFunctionCallWrapper[];
+
+export interface DiarizationSegment {
+  speaker: string;
+  start: number;
+  end: number;
+  text: string;
+  segmentIndex: number;
+}
+export interface DiarizationData {
+  type: string;
+  segments: DiarizationSegment[];
+}
+export interface DiarizationRequest {
+  type: string;
+  target?: string;
+  data: DiarizationData;
+}

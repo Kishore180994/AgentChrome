@@ -33,6 +33,11 @@ const SAMPLES_PER_CHUNK = TARGET_SAMPLE_RATE * (CHUNK_DURATION_MS / 1000); // Nu
 // --- Message Listener from Background Script ---
 chrome.runtime.onMessage.addListener(async (request) => {
   console.log("Offscreen received message:", request);
+  console.log("Offscreen received message type:", request.type);
+  console.log(
+    "Offscreen received message data:",
+    JSON.stringify(request.data || {}, null, 2)
+  );
 
   switch (request.type) {
     case "START_RECORDING_OFFSCREEN":
@@ -273,6 +278,26 @@ async function startRecordingOffscreen(tabStreamId) {
       console.log("Offscreen: WebSocket connection opened.");
       isWebSocketConnected = true;
       sendStatusUpdateOffscreen();
+
+      // Send explicit WebSocket connection status to UI
+      chrome.runtime
+        .sendMessage({
+          type: "WEBSOCKET_STATUS",
+          target: "background",
+          isConnected: true,
+          message: "WebSocket connection established",
+        })
+        .catch((error) => {
+          if (
+            error.message !==
+            "Could not establish connection. Receiving end does not exist."
+          ) {
+            console.warn(
+              "Offscreen: Could not send WebSocket status update to background:",
+              error.message
+            );
+          }
+        });
       // Start processing via scriptProcessor.onaudioprocess when data is available
     };
     socket.onerror = (error) => {
@@ -287,6 +312,27 @@ async function startRecordingOffscreen(tabStreamId) {
       );
       isWebSocketConnected = false;
       sendStatusUpdateOffscreen();
+
+      // Send explicit WebSocket disconnection status to UI
+      chrome.runtime
+        .sendMessage({
+          type: "WEBSOCKET_STATUS",
+          target: "background",
+          isConnected: false,
+          message: `WebSocket disconnected (Code: ${event.code})`,
+        })
+        .catch((error) => {
+          if (
+            error.message !==
+            "Could not establish connection. Receiving end does not exist."
+          ) {
+            console.warn(
+              "Offscreen: Could not send WebSocket status update to background:",
+              error.message
+            );
+          }
+        });
+
       if (isRecordingActive) {
         stopRecordingOffscreen(
           `WebSocket connection closed unexpectedly (Code: ${event.code}).`
@@ -294,13 +340,24 @@ async function startRecordingOffscreen(tabStreamId) {
       }
     };
     socket.onmessage = (event) => {
+      console.log(
+        "Offscreen WebSocket received message:",
+        typeof event.data,
+        event.data.length || 0
+      );
       try {
         const result = JSON.parse(event.data);
+        console.log(
+          "Offscreen WebSocket parsed message:",
+          JSON.stringify(result, null, 2)
+        );
+        // Don't spread the result directly, as it would overwrite the message type
+        // Instead, pass the entire parsed message as a data field
         chrome.runtime
           .sendMessage({
             type: "UPDATE_TRANSCRIPTION",
             target: "background",
-            ...result,
+            data: result, // Send the entire result as data field
           })
           .catch((error) => {
             if (
@@ -327,12 +384,51 @@ async function startRecordingOffscreen(tabStreamId) {
   }
 }
 
+// Flags for controlled shutdown
+let shutdownInProgress = false;
+let finalTranscriptReceived = false;
+let shutdownTimeoutId = null;
+
 // Function to stop recording and clean up
 function stopRecordingOffscreen(errorMessage = null) {
-  console.log("Offscreen: Stopping recording and cleaning up.");
+  console.log("Offscreen: Stopping recording process initiated.");
+
+  // Only proceed with a full shutdown if we're not already shutting down
+  if (shutdownInProgress) {
+    console.log(
+      "Offscreen: Shutdown already in progress, ignoring duplicate call."
+    );
+    return;
+  }
+
+  // Mark that we're in shutdown process
+  shutdownInProgress = true;
+
+  // Update UI immediately to show recording is stopping
   isRecordingActive = false;
-  isWebSocketConnected = false;
+
+  // Send status update but keep WebSocket connection status as is
+  // This lets the UI know recording stopped but connection still active for final transcript
   sendStatusUpdateOffscreen();
+
+  // Send explicit status message to UI
+  chrome.runtime
+    .sendMessage({
+      type: "STATUS_UPDATE",
+      target: "background",
+      message: "Waiting for final transcription before closing...",
+    })
+    .catch((error) => {
+      if (
+        error.message !==
+        "Could not establish connection. Receiving end does not exist."
+      ) {
+        console.warn(
+          "Offscreen: Could not send shutdown status update to background:",
+          error.message
+        );
+      }
+    });
 
   // Send any remaining buffered audio before shutting down
   if (
@@ -357,7 +453,32 @@ function stopRecordingOffscreen(errorMessage = null) {
     bufferStartTime = null;
   }
 
+  // Set a maximum timeout for waiting for the server to send final transcript
+  const MAX_WAIT_FOR_FINAL = 5000; // 5 seconds
+  shutdownTimeoutId = setTimeout(
+    completeShutdown,
+    MAX_WAIT_FOR_FINAL,
+    errorMessage
+  );
+
   stopLevelMonitoringOffscreen();
+}
+
+// Helper function to complete the shutdown process
+function completeShutdown(errorMessage = null) {
+  console.log(
+    "Offscreen: Completing shutdown process - cleaning up resources."
+  );
+
+  // Clear the timeout if it's still active
+  if (shutdownTimeoutId) {
+    clearTimeout(shutdownTimeoutId);
+    shutdownTimeoutId = null;
+  }
+
+  // Update state to indicate fully disconnected
+  isWebSocketConnected = false;
+  sendStatusUpdateOffscreen();
 
   if (audioWorkletNode) {
     console.log("Offscreen: Disconnecting AudioWorkletNode...");
@@ -447,6 +568,25 @@ function stopRecordingOffscreen(errorMessage = null) {
         }
       });
   }
+
+  // Send a message that transcription is complete
+  chrome.runtime
+    .sendMessage({
+      type: "STATUS_UPDATE",
+      target: "background",
+      message: "Recording stopped.",
+    })
+    .catch((error) => {
+      if (
+        error.message !==
+        "Could not establish connection. Receiving end does not exist."
+      ) {
+        console.warn(
+          "Offscreen: Could not send final status message to background:",
+          error.message
+        );
+      }
+    });
 }
 
 // Function to send status updates to the background script
