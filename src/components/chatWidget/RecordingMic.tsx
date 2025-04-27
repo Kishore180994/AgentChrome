@@ -36,7 +36,8 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
   >("live"); // 'live' will be microphone-only from useSpeechRecognition
 
   // Meeting information
-  const defaultMeetingName = `Meeting - ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`;
+  const [meetingTimestamp, setMeetingTimestamp] = useState(new Date());
+  const defaultMeetingName = `Meeting - ${meetingTimestamp.toLocaleDateString()} ${meetingTimestamp.toLocaleTimeString()}`;
   const [meetingName, setMeetingName] = useState(defaultMeetingName);
   const [isEditingName, setIsEditingName] = useState(false);
 
@@ -383,6 +384,9 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
       setSpeakerNames({});
       resetMicTranscript(); // Clear mic transcript from previous session
 
+      // Reset meeting timestamp for new recording
+      setMeetingTimestamp(new Date());
+
       // Set initial status message optimistically
       setInitializationStatus("Starting initialization...");
 
@@ -545,7 +549,7 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
         <div className="d4m-flex-shrink-0">
           <button
             onClick={toggleRecording}
-            className={`d4m-w-16 d4m-h-16 d4m-rounded-full d4m-flex d4m-items-center d4m-justify-center d4m-transition-all d4m-duration-300 ${
+            className={`d4m-w-10 d4m-h-10 d4m-rounded-full d4m-flex d4m-items-center d4m-justify-center d4m-transition-all d4m-duration-300 ${
               isRecording
                 ? `d4m-bg-red-500 d4m-text-white d4m-animate-pulse`
                 : `d4m-bg-${accentColor}-500 d4m-text-white`
@@ -587,15 +591,15 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
           </button>
         </div>
 
-        {/* Meeting info card (remains largely the same, status text updated) */}
-        <div className="d4m-flex-1 d4m-bg-gray-800 d4m-bg-opacity-50 d4m-rounded-lg d4m-p-3 d4m-border d4m-border-gray-700">
+        {/* Meeting info card - enhanced with icons and better styling */}
+        <div className="d4m-flex-1 d4m-bg-gray-800 d4m-bg-opacity-50 d4m-rounded-lg d4m-p-4 d4m-border d4m-border-gray-700 d4m-shadow-lg">
           {isEditingName /* Edit mode */ ? (
             <div className="d4m-flex d4m-gap-2">
               <input
                 type="text"
                 value={meetingName}
                 onChange={(e) => setMeetingName(e.target.value)}
-                className="d4m-flex-1 d4m-bg-gray-700 d4m-text-white d4m-px-2 d4m-py-1 d4m-rounded d4m-text-sm d4m-border d4m-border-gray-600 d4m-focus:outline-none d4m-focus:border-blue-500"
+                className="d4m-flex-1 d4m-bg-gray-700 d4m-text-white d4m-px-3 d4m-py-2 d4m-rounded d4m-text-sm d4m-border d4m-border-gray-600 d4m-focus:outline-none d4m-focus:border-blue-500 d4m-shadow-inner"
                 autoFocus
                 onBlur={() => setIsEditingName(false)}
                 onKeyDown={(e) => {
@@ -604,30 +608,24 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
               />
               <button
                 onClick={() => setIsEditingName(false)}
-                className="d4m-bg-blue-500 d4m-text-white d4m-px-2 d4m-py-1 d4m-rounded d4m-text-xs"
+                className={`d4m-bg-${accentColor}-500 d4m-text-white d4m-px-3 d4m-py-2 d4m-rounded d4m-text-xs d4m-font-medium d4m-shadow-sm d4m-transition-colors hover:d4m-bg-${accentColor}-600`}
               >
                 Save
               </button>
             </div>
           ) : (
-            /* Display mode */
-            <div className="d4m-flex d4m-justify-between d4m-items-start">
-              <div>
+            /* Display mode - enhanced with icons */
+            <div className="d4m-flex d4m-flex-col d4m-gap-3">
+              <div className="d4m-flex d4m-justify-between d4m-items-start">
                 <div className="d4m-flex d4m-items-center d4m-gap-2">
-                  <h3
-                    className={`d4m-text-${accentColor}-400 d4m-text-sm d4m-font-medium`}
-                  >
-                    New Meeting
-                  </h3>
-                  <button
-                    onClick={() => setIsEditingName(true)}
-                    className="d4m-opacity-50 hover:d4m-opacity-100 d4m-transition-opacity"
-                    title="Edit meeting name"
+                  {/* Meeting icon */}
+                  <div
+                    className={`d4m-text-${accentColor}-400 d4m-flex-shrink-0`}
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
-                      width="12"
-                      height="12"
+                      width="16"
+                      height="16"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
@@ -635,29 +633,133 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
                       strokeLinecap="round"
                       strokeLinejoin="round"
                     >
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                      <path d="M21 8v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8"></path>
+                      <path d="M19 4H5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"></path>
+                      <line x1="12" y1="12" x2="12" y2="16"></line>
+                      <line x1="8" y1="12" x2="8" y2="16"></line>
+                      <line x1="16" y1="12" x2="16" y2="16"></line>
                     </svg>
-                  </button>
+                  </div>
+
+                  <div className="d4m-flex d4m-flex-col">
+                    <div className="d4m-flex d4m-items-center d4m-gap-2">
+                      <h3
+                        className={`d4m-text-${accentColor}-400 d4m-text-sm d4m-font-semibold`}
+                      >
+                        {meetingName.split(" - ")[0]}
+                      </h3>
+                      <button
+                        onClick={() => setIsEditingName(true)}
+                        className="d4m-opacity-50 hover:d4m-opacity-100 d4m-transition-opacity"
+                        title="Edit meeting name"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <p className="d4m-text-xs d4m-text-gray-400">
-                  {new Date().toLocaleDateString()} •{" "}
-                  {new Date().toLocaleTimeString()}
-                </p>
+
+                {/* Recording Status Badge */}
+                <div
+                  className={`d4m-flex d4m-items-center d4m-gap-1.5 d4m-text-xs d4m-px-2 d4m-py-1 d4m-rounded-full d4m-font-medium d4m-shadow-sm ${
+                    isRecording
+                      ? "d4m-bg-red-500 d4m-bg-opacity-20 d4m-text-red-400 d4m-border d4m-border-red-500 d4m-border-opacity-20"
+                      : initializationStatus // If not recording, check initialization status
+                      ? initializationStatus.startsWith("Error:")
+                        ? "d4m-bg-red-500 d4m-bg-opacity-20 d4m-text-red-400 d4m-border d4m-border-red-500 d4m-border-opacity-20"
+                        : "d4m-bg-yellow-500 d4m-bg-opacity-20 d4m-text-yellow-400 d4m-border d4m-border-yellow-500 d4m-border-opacity-20" // Show yellow for initializing, red for error
+                      : "d4m-bg-gray-600 d4m-bg-opacity-30 d4m-text-gray-400 d4m-border d4m-border-gray-600 d4m-border-opacity-20" // Default Ready state
+                  }`}
+                >
+                  {isRecording && (
+                    <span className="d4m-w-2 d4m-h-2 d4m-rounded-full d4m-bg-red-500 d4m-animate-pulse"></span>
+                  )}
+                  {initializationStatus &&
+                    initializationStatus.startsWith("Error:") && (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                      </svg>
+                    )}
+                  {currentStatusText} {/* Display the calculated status text */}
+                </div>
               </div>
-              {/* Recording Status Text (updated logic) */}
-              <div
-                className={`d4m-text-xs d4m-px-2 d4m-py-0.5 d4m-rounded-full ${
-                  isRecording
-                    ? "d4m-bg-red-500 d4m-bg-opacity-20 d4m-text-red-400"
-                    : initializationStatus // If not recording, check initialization status
-                    ? initializationStatus.startsWith("Error:")
-                      ? "d4m-bg-red-500 d4m-bg-opacity-20 d4m-text-red-400"
-                      : "d4m-bg-yellow-500 d4m-bg-opacity-20 d4m-text-yellow-400" // Show yellow for initializing, red for error
-                    : "d4m-bg-gray-600 d4m-bg-opacity-30 d4m-text-gray-400" // Default Ready state
-                }`}
-              >
-                {currentStatusText} {/* Display the calculated status text */}
+
+              {/* Time and Duration */}
+              <div className="d4m-flex d4m-justify-between d4m-items-center d4m-mt-1">
+                <div className="d4m-flex d4m-items-center d4m-gap-2">
+                  <div className="d4m-text-gray-400">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg>
+                  </div>
+                  <p className="d4m-text-xs d4m-text-gray-400">
+                    {meetingTimestamp.toLocaleDateString()} •{" "}
+                    {meetingTimestamp.toLocaleTimeString()}
+                  </p>
+                </div>
+
+                {isRecording && (
+                  <div className="d4m-flex d4m-items-center d4m-gap-1.5 d4m-text-xs d4m-text-gray-300">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <rect
+                        x="2"
+                        y="6"
+                        width="20"
+                        height="12"
+                        rx="2"
+                        ry="2"
+                      ></rect>
+                      <line x1="12" y1="12" x2="12.01" y2="12"></line>
+                    </svg>
+                    {diarizationResults.length} segments
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -762,7 +864,7 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
               )}
 
             {diarizationResults.length > 0 ? (
-              <div className="d4m-space-y-4">
+              <div className="d4m-space-y-4 d4m-mt-2">
                 {diarizationResults.map((segment, index) => {
                   // Speaker and text are validated during filtering above
                   // Safely extract speaker name
@@ -779,38 +881,19 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
                   return (
                     <div
                       key={segment.segmentIndex ?? index}
-                      className="d4m-flex d4m-flex-col d4m-gap-1 d4m-border-b d4m-border-gray-700/30 d4m-pb-3 d4m-last:border-0"
+                      className="d4m-flex d4m-flex-col d4m-gap-2 d4m-border-b d4m-border-gray-700/30 d4m-pb-4 d4m-pt-1 d4m-last:border-0 d4m-rounded d4m-hover:bg-gray-800/30 d4m-transition-colors"
                     >
-                      <div className="d4m-flex d4m-items-center d4m-gap-2">
-                        <div
-                          className={`d4m-self-start d4m-px-3 d4m-py-1 d4m-rounded-full d4m-text-xs d4m-font-medium ${speakerColor} d4m-flex d4m-items-center d4m-gap-1`}
-                        >
-                          {speakerName}
-                          <button
-                            onClick={() => {
-                              if (!segment.speaker) {
-                                alert("Cannot edit name for undefined speaker");
-                                return;
-                              }
-                              const newName = prompt(
-                                `Enter name for ${speakerName}:`,
-                                speakerNames[segment.speaker] ||
-                                  `Speaker ${segment.speaker || "Unknown"}`
-                              );
-                              if (newName !== null && newName.trim() !== "") {
-                                handleSpeakerNameChange(
-                                  segment.speaker,
-                                  newName.trim()
-                                );
-                              }
-                            }}
-                            className="d4m-ml-1 d4m-opacity-50 hover:d4m-opacity-100 d4m-transition-opacity"
-                            title="Edit speaker name"
+                      <div className="d4m-flex d4m-items-center d4m-justify-between">
+                        <div className="d4m-flex d4m-items-center d4m-gap-2">
+                          {/* Speaker badge with icon */}
+                          <div
+                            className={`d4m-flex d4m-items-center d4m-gap-2 d4m-px-3 d4m-py-1.5 d4m-rounded-full d4m-text-xs d4m-font-medium ${speakerColor} d4m-shadow-sm`}
                           >
+                            {/* Person icon */}
                             <svg
                               xmlns="http://www.w3.org/2000/svg"
-                              width="10"
-                              height="10"
+                              width="12"
+                              height="12"
                               viewBox="0 0 24 24"
                               fill="none"
                               stroke="currentColor"
@@ -818,13 +901,83 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
                               strokeLinecap="round"
                               strokeLinejoin="round"
                             >
-                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                              <circle cx="12" cy="7" r="4"></circle>
                             </svg>
-                          </button>
+
+                            <span>{speakerName}</span>
+
+                            <button
+                              onClick={() => {
+                                if (!segment.speaker) {
+                                  alert(
+                                    "Cannot edit name for undefined speaker"
+                                  );
+                                  return;
+                                }
+                                const newName = prompt(
+                                  `Enter name for ${speakerName}:`,
+                                  speakerNames[segment.speaker] ||
+                                    `Speaker ${segment.speaker || "Unknown"}`
+                                );
+                                if (newName !== null && newName.trim() !== "") {
+                                  handleSpeakerNameChange(
+                                    segment.speaker,
+                                    newName.trim()
+                                  );
+                                }
+                              }}
+                              className="d4m-ml-1 d4m-opacity-60 hover:d4m-opacity-100 d4m-transition-opacity"
+                              title="Edit speaker name"
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                width="10"
+                                height="10"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Optional timestamp badge */}
+                        {segment.start !== undefined && (
+                          <div className="d4m-text-xs d4m-text-gray-500 d4m-px-2 d4m-py-0.5 d4m-bg-gray-800 d4m-bg-opacity-50 d4m-rounded-full">
+                            {Math.floor(segment.start / 60)}:
+                            {(segment.start % 60).toFixed(0).padStart(2, "0")}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Transcript text with speech icon */}
+                      <div className="d4m-flex d4m-items-start d4m-gap-2 d4m-pl-4">
+                        <div className="d4m-text-gray-400 d4m-mt-1 d4m-flex-shrink-0">
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                          </svg>
+                        </div>
+                        <div className="d4m-text-sm d4m-flex-1">
+                          {segment.text}
                         </div>
                       </div>
-                      <div className="d4m-text-sm d4m-pl-4">{segment.text}</div>
                     </div>
                   );
                 })}
@@ -865,13 +1018,76 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
                     </p>
                   </div>
                 ) : (
-                  <div className="d4m-flex d4m-flex-col d4m-items-center d4m-gap-2">
-                    <p className="d4m-text-gray-500 d4m-font-medium">
-                      Start recording to see diarization results
-                    </p>
-                    <p className="d4m-text-gray-600 d4m-text-sm">
-                      Click the microphone button to begin
-                    </p>
+                  <div className="d4m-flex d4m-flex-col d4m-items-center d4m-gap-4 d4m-p-6 d4m-bg-gray-800 d4m-bg-opacity-30 d4m-rounded-lg d4m-border d4m-border-gray-700 d4m-border-opacity-50">
+                    <div
+                      className={`d4m-text-${accentColor}-400 d4m-p-3 d4m-rounded-full d4m-bg-gray-800`}
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="32"
+                        height="32"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                        <line x1="12" y1="19" x2="12" y2="22"></line>
+                      </svg>
+                    </div>
+                    <div className="d4m-text-center">
+                      <h4
+                        className={`d4m-text-${accentColor}-400 d4m-font-semibold d4m-mb-2`}
+                      >
+                        Ready to Record
+                      </h4>
+                      <p className="d4m-text-gray-400 d4m-mb-1">
+                        Start recording to see diarization results
+                      </p>
+                      <p className="d4m-text-gray-500 d4m-text-sm">
+                        Click the microphone button on the left to begin
+                      </p>
+                    </div>
+                    <div className="d4m-flex d4m-flex-col d4m-gap-2 d4m-mt-2 d4m-w-full d4m-max-w-sm">
+                      <div className="d4m-flex d4m-items-center d4m-gap-2 d4m-text-gray-400 d4m-text-xs d4m-bg-gray-800 d4m-bg-opacity-50 d4m-px-3 d4m-py-2 d4m-rounded">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                          <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                        <span>Automatically identifies different speakers</span>
+                      </div>
+                      <div className="d4m-flex d4m-items-center d4m-gap-2 d4m-text-gray-400 d4m-text-xs d4m-bg-gray-800 d4m-bg-opacity-50 d4m-px-3 d4m-py-2 d4m-rounded">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                        <span>
+                          Transcribes audio in real-time with timestamps
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
