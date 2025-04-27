@@ -148,6 +148,11 @@ async function startRecordingOffscreen(tabStreamId) {
       audioSource.connect(audioWorkletNode);
       audioWorkletNode.connect(audioContext.destination);
 
+      // Continue to play the captured audio to the user.
+      const output = new AudioContext();
+      const source = output.createMediaStreamSource(tabMedia);
+      source.connect(output.destination);
+
       console.log("Offscreen: AudioWorklet setup complete");
     } catch (error) {
       const errorMsg = `Offscreen: Failed to initialize AudioWorklet: ${error.message}`;
