@@ -183,9 +183,9 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
             // This ensures we have the complete state from the server
             setDiarizationResults(validSegments);
 
-            // Add speaker names for any new speakers
+            // Add speaker names for any new speakers (preserving custom names)
             validSegments.forEach((segment) => {
-              // We've already validated these have speaker values
+              // Skip if there's already a name for this speaker (custom or default)
               if (!speakerNames[segment.speaker]) {
                 // Extract the speaker number safely with proper error handling
                 try {
@@ -324,6 +324,8 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
       }
     });
 
+    // Only assign a default speaker name if this is a new speaker
+    // This preserves any custom names that were previously set
     if (segment.speaker && !speakerNames[segment.speaker]) {
       try {
         // Extract the speaker number safely
@@ -379,9 +381,9 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
       if (onStop) onStop();
     } else {
       // --- Starting Recording ---
-      // Clear previous results and status messages
+      // Clear previous results but preserve speaker names
       setDiarizationResults([]);
-      setSpeakerNames({});
+      // Don't reset speakerNames to preserve custom names
       resetMicTranscript(); // Clear mic transcript from previous session
 
       // Reset meeting timestamp for new recording
@@ -549,7 +551,7 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
         <div className="d4m-flex-shrink-0">
           <button
             onClick={toggleRecording}
-            className={`d4m-w-10 d4m-h-10 d4m-rounded-full d4m-flex d4m-items-center d4m-justify-center d4m-transition-all d4m-duration-300 ${
+            className={`d4m-w-16 d4m-h-16 d4m-rounded-full d4m-flex d4m-items-center d4m-justify-center d4m-transition-all d4m-duration-300 ${
               isRecording
                 ? `d4m-bg-red-500 d4m-text-white d4m-animate-pulse`
                 : `d4m-bg-${accentColor}-500 d4m-text-white`
@@ -865,7 +867,48 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
 
             {diarizationResults.length > 0 ? (
               <div className="d4m-space-y-4 d4m-mt-2">
-                {diarizationResults.map((segment, index) => {
+                {/* Process and combine consecutive segments from the same speaker */}
+                {(() => {
+                  // Combine consecutive segments from the same speaker
+                  const combinedResults: DiarizationSegment[] = [];
+                  let currentSpeaker: string | null = null;
+                  let currentSegment: DiarizationSegment | null = null;
+
+                  diarizationResults.forEach((segment, idx) => {
+                    // If this is the first segment or it's from a different speaker than the previous one
+                    if (
+                      currentSpeaker === null ||
+                      segment.speaker !== currentSpeaker
+                    ) {
+                      // If we have a previous segment, add it to our results
+                      if (currentSegment !== null) {
+                        combinedResults.push(currentSegment);
+                      }
+
+                      // Start a new segment
+                      currentSpeaker = segment.speaker;
+                      currentSegment = { ...segment };
+                    } else if (currentSegment) {
+                      // This segment is from the same speaker as the previous one, so combine them
+                      currentSegment.text += " " + segment.text;
+                      // Keep the end time of the latest segment
+                      if (segment.end !== undefined) {
+                        currentSegment.end = segment.end;
+                      }
+                    }
+
+                    // If this is the last segment, add it to our results
+                    if (
+                      idx === diarizationResults.length - 1 &&
+                      currentSegment
+                    ) {
+                      combinedResults.push(currentSegment);
+                    }
+                  });
+
+                  // Return the combined results array for rendering below
+                  return combinedResults;
+                })().map((segment, index) => {
                   // Speaker and text are validated during filtering above
                   // Safely extract speaker name
                   const speakerName = speakerNames[segment.speaker]

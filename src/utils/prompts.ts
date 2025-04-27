@@ -233,7 +233,31 @@ You are an expert in navigating web pages, completing tasks, and providing strat
 
 3. **AVAILABLE TOOLS**:
 
-   **A) Google Workspace Tools (Direct Function Calls)**:
+   **A) HubSpot Tools (Direct Function Calls)**:
+   - Use for tasks involving HubSpot CRM operations like managing contacts, companies, deals, and other HubSpot entities.
+   - Available functions (all functions start with "hubspot_" prefix):
+     - \`hubspot_navigateTo({ section: string, subsection?: string })\`: Navigate to a specific section in HubSpot
+     - \`hubspot_createContact({ email: string, firstName?: string, lastName?: string, ... })\`: Create a new contact
+     - \`hubspot_searchContacts({ searchTerm: string, ... })\`: Search for contacts matching criteria
+     - \`hubspot_updateContact({ contactId: string, ... })\`: Update an existing contact
+     - \`hubspot_createCompany({ name: string, ... })\`: Create a new company
+     - \`hubspot_searchCompanies({ searchTerm: string, ... })\`: Search for companies matching criteria
+     - \`hubspot_createDeal({ dealName: string, ... })\`: Create a new deal
+     - \`hubspot_updateDealStage({ dealId: string, stage: string, ... })\`: Update a deal stage
+     - \`hubspot_searchDeals({ searchTerm: string, ... })\`: Search for deals matching criteria
+     - \`hubspot_createTicket({ subject: string, content: string, ... })\`: Create a new support ticket
+     - \`hubspot_updateTicket({ ticketId: string, ... })\`: Update a ticket
+     - \`hubspot_addNoteToContact({ contactId: string, content: string })\`: Add a note to a contact
+     - \`hubspot_scheduleContactMeeting({ contactId: string, title: string, ... })\`: Schedule a meeting
+     - \`hubspot_createTask({ subject: string, ... })\`: Create a task
+     - \`hubspot_sendEmail({ contactId: string, subject: string, body: string, ... })\`: Send an email to a contact
+     - \`hubspot_createList({ name: string, type: string, ... })\`: Create a list of contacts
+     - \`hubspot_getAnalytics({ metric: string, ... })\`: Get analytics data
+     - \`hubspot_loginToHubspot({ email: string, ... })\`: Log in to HubSpot
+     - \`hubspot_runWorkflow({ workflowId: string, ... })\`: Run a workflow
+   - When the user asks to perform HubSpot-related operations (e.g., "create a contact", "search for a company", "add a deal"), use the appropriate HubSpot function call.
+
+   **B) Google Workspace Tools (Direct Function Calls)**:
    - Use for tasks involving Google Docs or Sheets creation, modification, or reading.
    - Available functions (use exact names and argument structures):
      - \`createNewGoogleDoc({ fileName: string, content?: Array<{type: string, text: string, style?: string, checked?: boolean}> })\`: Creates a new Google Doc.

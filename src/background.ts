@@ -6,6 +6,7 @@ import {
   UncompressedPageElement,
 } from "./services/ai/interfaces";
 import { executeAppsScriptFunction } from "./services/google/appsScript";
+import { executeHubspotFunction } from "./services/hubspot";
 import { chatWithAI } from "./services/openai/api";
 import { LocalAction } from "./types/actionType";
 import { getGoogleDocUrlFromId } from "./utils/helpers";
@@ -514,6 +515,53 @@ async function processCommand(
                 message:
                   "Google Workspace function execution failed: " +
                   (error as Error).message,
+              },
+            });
+            throw error; // Re-throw to be caught by the outer try-catch
+          }
+        }
+
+        // Handle HubSpot functions
+        else if (functionName.startsWith("hubspot_")) {
+          try {
+            const result = await executeHubspotFunction({
+              name: functionName,
+              args,
+            });
+            console.log(
+              "[background.ts] HubSpot function call executed successfully:",
+              result
+            );
+
+            await chrome.runtime.sendMessage({
+              type: "COMMAND_RESPONSE",
+              response: {
+                message:
+                  result.message ||
+                  `HubSpot operation successful: ${functionName}`,
+                output: result.data ? JSON.stringify(result.data) : undefined,
+              },
+            });
+
+            executedActions.push(`Executed HubSpot function: ${functionName}`);
+
+            // For navigation functions, set lastActionType for potential navigation
+            if (functionName === "hubspot_navigateTo") {
+              lastActionType = "navigate";
+            }
+
+            continue;
+          } catch (error) {
+            console.error(
+              "[background.ts] HubSpot function call failed:",
+              error
+            );
+            await chrome.runtime.sendMessage({
+              type: "COMMAND_RESPONSE",
+              response: {
+                message:
+                  "HubSpot function execution failed: " +
+                  (error instanceof Error ? error.message : String(error)),
               },
             });
             throw error; // Re-throw to be caught by the outer try-catch

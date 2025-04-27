@@ -12,6 +12,7 @@ import {
   Settings,
   LogIn,
 } from "lucide-react";
+import { SettingsPage } from "./SettingsPage";
 import { ChatWidget } from "./chatWidget/ChatWidget";
 import { RecordingMic } from "./chatWidget/RecordingMic";
 import { storage } from "../utils/storage";
@@ -32,6 +33,9 @@ interface AppSettings {
   theme: "neumorphism" | "glassmorphism" | "claymorphism";
   accentColor: AccentColor;
   mode: "light" | "dark";
+  hubspotConfig?: {
+    apiKey: string;
+  };
 }
 
 // Dummy data
@@ -92,6 +96,7 @@ export const MaterialSidebar: React.FC = () => {
           "theme",
           "accentColor",
           "mode",
+          "hubspotConfig",
         ]);
         setGeminiKey(settings.geminiKey || "");
         setOpenaiKey(settings.openaiKey || "");
@@ -221,219 +226,22 @@ export const MaterialSidebar: React.FC = () => {
         );
       case "settings":
         return (
-          <div className="d4m-p-4 d4m-overflow-y-auto d4m-h-full">
-            <h2
-              className={`d4m-text-xl d4m-font-semibold d4m-flex d4m-items-center d4m-gap-2 d4m-text-${accentColor}-400 d4m-mb-4`}
-            >
-              <Settings className="d4m-w-5 d4m-h-5" />
-              Settings
-            </h2>
+          <SettingsPage
+            theme={theme}
+            accentColor={accentColor}
+            mode={mode}
+            onSettingsUpdate={(settings) => {
+              if (settings.theme) setTheme(settings.theme);
+              if (settings.accentColor) setAccentColor(settings.accentColor);
+              if (settings.mode) setMode(settings.mode);
+              if (settings.aiProvider) setAiProvider(settings.aiProvider);
+              if (settings.geminiKey) setGeminiKey(settings.geminiKey);
+              if (settings.openaiKey) setOpenaiKey(settings.openaiKey);
 
-            <div className="d4m-space-y-6 d4m-text-sm">
-              {/* Account Section */}
-              <div className={`d4m-border-b ${borderColor} d4m-pb-4 d4m-mb-4`}>
-                <div className="d4m-flex d4m-items-center d4m-justify-between d4m-mb-3">
-                  <h3
-                    className={`d4m-font-medium d4m-text-${accentColor}-400 d4m-flex d4m-items-center d4m-gap-1`}
-                  >
-                    <User className="d4m-w-4 d4m-h-4" />
-                    Account
-                  </h3>
-                  {user && "isGuest" in user ? (
-                    <span
-                      className={`d4m-text-xs d4m-px-2 d4m-py-1 d4m-rounded-full d4m-bg-gray-700 ${textColor}`}
-                    >
-                      Guest Mode
-                    </span>
-                  ) : user ? (
-                    <span
-                      className={`d4m-text-xs d4m-px-2 d4m-py-1 d4m-rounded-full d4m-bg-${accentColor}-900/30 d4m-text-${accentColor}-400`}
-                    >
-                      Signed In
-                    </span>
-                  ) : null}
-                </div>
-
-                {user && !("isGuest" in user) && (
-                  <div className="d4m-flex d4m-items-center d4m-gap-3 d4m-mb-3">
-                    {user.picture && (
-                      <img
-                        src={user.picture}
-                        alt={user.name}
-                        className={`d4m-w-10 d4m-h-10 d4m-rounded-full d4m-border ${borderColor}`}
-                      />
-                    )}
-                    <div className="d4m-flex-1 d4m-min-w-0">
-                      <p
-                        className={`d4m-font-medium ${textColor} d4m-truncate`}
-                      >
-                        {user.name}
-                      </p>
-                      <p className="d4m-text-gray-500 d4m-text-xs d4m-truncate">
-                        {user.email}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="d4m-flex d4m-justify-end">
-                  {user && "isGuest" in user ? (
-                    <button
-                      onClick={loginWithGoogle}
-                      disabled={authLoading}
-                      className="d4m-text-white d4m-py-1.5 d4m-px-3 d4m-rounded-full d4m-text-xs d4m-flex d4m-items-center d4m-gap-1.5 d4m-bg-blue-600 d4m-hover:bg-blue-700 d4m-transition-colors"
-                    >
-                      <LogIn className="d4m-w-3 d4m-h-3" />
-                      Sign in with Google
-                    </button>
-                  ) : (
-                    <button
-                      onClick={logout}
-                      className="d4m-text-white d4m-py-1.5 d4m-px-3 d4m-rounded-full d4m-text-xs d4m-flex d4m-items-center d4m-gap-1.5 d4m-bg-red-600 d4m-hover:bg-red-700 d4m-transition-colors"
-                    >
-                      <LogOut className="d4m-w-3 d4m-h-3" />
-                      Sign Out
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Settings Fields */}
-              <div className="d4m-space-y-4">
-                {/* AI Provider */}
-                <div className="d4m-flex d4m-items-center d4m-gap-2">
-                  <label
-                    className={`d4m-font-medium d4m-text-${accentColor}-400 d4m-w-24`}
-                  >
-                    AI Provider
-                  </label>
-                  <div className={`d4m-flex d4m-gap-3 ${textColor}`}>
-                    <label className="d4m-flex d4m-items-center d4m-gap-1">
-                      <input
-                        type="radio"
-                        name="aiProvider"
-                        value="gemini"
-                        checked={aiProvider === "gemini"}
-                        onChange={(e) =>
-                          setAiProvider(
-                            e.target.value as AppSettings["aiProvider"]
-                          )
-                        }
-                      />
-                      Gemini
-                    </label>
-                    <label className="d4m-flex d4m-items-center d4m-gap-1">
-                      <input
-                        type="radio"
-                        name="aiProvider"
-                        value="openai"
-                        checked={aiProvider === "openai"}
-                        onChange={(e) =>
-                          setAiProvider(
-                            e.target.value as AppSettings["aiProvider"]
-                          )
-                        }
-                      />
-                      OpenAI
-                    </label>
-                  </div>
-                </div>
-
-                {/* API Key */}
-                <div className="d4m-flex d4m-items-center d4m-gap-2">
-                  <label
-                    className={`d4m-font-medium d4m-text-${accentColor}-400 d4m-w-24`}
-                  >
-                    {aiProvider === "gemini" ? "Gemini Key" : "OpenAI Key"}
-                  </label>
-                  <input
-                    type="password"
-                    value={aiProvider === "gemini" ? geminiKey : openaiKey}
-                    onChange={(e) =>
-                      aiProvider === "gemini"
-                        ? setGeminiKey(e.target.value)
-                        : setOpenaiKey(e.target.value)
-                    }
-                    className={`d4m-flex-1 d4m-px-2 d4m-py-1 ${textColor} d4m-rounded-full d4m-border ${borderColor}`}
-                    placeholder="API Key"
-                  />
-                </div>
-
-                {/* Theme */}
-                <div className="d4m-flex d4m-items-center d4m-gap-2">
-                  <label
-                    className={`d4m-font-medium d4m-text-${accentColor}-400 d4m-w-24`}
-                  >
-                    Theme
-                  </label>
-                  <select
-                    value={theme}
-                    onChange={(e) =>
-                      setTheme(e.target.value as AppSettings["theme"])
-                    }
-                    className={`d4m-flex-1 d4m-px-2 d4m-py-1 d4m-bg-transparent ${textColor} d4m-rounded-full d4m-border ${borderColor}`}
-                  >
-                    <option value="neumorphism">Neumorphism</option>
-                    <option value="glassmorphism">Glassmorphism</option>
-                    <option value="claymorphism">Claymorphism</option>
-                  </select>
-                </div>
-
-                {/* Accent Color */}
-                <div className="d4m-flex d4m-items-center d4m-gap-2">
-                  <label
-                    className={`d4m-font-medium d4m-text-${accentColor}-400 d4m-w-24`}
-                  >
-                    Accent Color
-                  </label>
-                  <select
-                    value={accentColor}
-                    onChange={(e) =>
-                      setAccentColor(
-                        e.target.value as AppSettings["accentColor"]
-                      )
-                    }
-                    className={`d4m-flex-1 d4m-px-2 d4m-py-1 d4m-bg-transparent ${textColor} d4m-rounded-full d4m-border ${borderColor}`}
-                  >
-                    {ACCENT_COLORS.map((color) => (
-                      <option key={color} value={color}>
-                        {color.charAt(0).toUpperCase() + color.slice(1)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Mode */}
-                <div className="d4m-flex d4m-items-center d4m-gap-2">
-                  <label
-                    className={`d4m-font-medium d4m-text-${accentColor}-400 d4m-w-24`}
-                  >
-                    Mode
-                  </label>
-                  <select
-                    value={mode}
-                    onChange={(e) =>
-                      setMode(e.target.value as AppSettings["mode"])
-                    }
-                    className={`d4m-flex-1 d4m-px-2 d4m-py-1 d4m-bg-transparent ${textColor} d4m-rounded-full d4m-border ${borderColor}`}
-                  >
-                    <option value="light">Light</option>
-                    <option value="dark">Dark</option>
-                  </select>
-                </div>
-
-                {/* Save Button */}
-                <div className="d4m-pt-3">
-                  <button
-                    onClick={saveSettings}
-                    className={`d4m-w-full d4m-text-white d4m-py-2 d4m-px-4 d4m-rounded-full d4m-bg-${accentColor}-500 d4m-hover:bg-${accentColor}-600`}
-                  >
-                    Save Settings
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+              // Switch back to chat panel after saving
+              setActivePanel("chat");
+            }}
+          />
         );
       default:
         return <div>Select a panel</div>;
