@@ -431,21 +431,57 @@ export function ChatWidget() {
             // Check if responseData exists
             let newMessage: Message | null = null;
             if (typeof responseData === "object") {
-              // Determine if it's a structured success/error (e.g., HubSpotExecutionResult)
-              const isSuccess = responseData.success === true;
-              const isError =
-                responseData.success === false || !!responseData.error; // Check for error property too
-
-              if (isSuccess || isError) {
-                // Create a structured message for HubSpot cards
+              // Check for specific message types
+              if (responseData.type === "question") {
+                // This is an "ask" action from AI
                 newMessage = {
                   id: Date.now().toString(),
                   role: "model",
-                  type: isSuccess ? "hubspot_success" : "hubspot_error",
+                  type: "question",
+                  content: responseData.message,
+                };
+                console.log(
+                  `[ChatWidget] Created question message: "${responseData.message}"`
+                );
+              } else if (responseData.type === "completion") {
+                // This is a "done" action from AI
+                newMessage = {
+                  id: Date.now().toString(),
+                  role: "model",
+                  type: "completion",
+                  content:
+                    responseData.message +
+                    (responseData.output ? `: ${responseData.output}` : ""),
+                };
+                console.log(
+                  `[ChatWidget] Created completion message: "${responseData.message}"`
+                );
+              }
+              // Determine if it's a structured success/error (e.g., HubSpotExecutionResult)
+              else if (responseData.success === true) {
+                // Create a structured message for HubSpot success
+                newMessage = {
+                  id: Date.now().toString(),
+                  role: "model",
+                  type: "hubspot_success",
                   content: responseData as HubSpotExecutionResult, // Store the whole object
                 };
                 console.log(
-                  `[ChatWidget] Created structured ${newMessage.type} message.`
+                  `[ChatWidget] Created structured hubspot_success message.`
+                );
+              } else if (
+                responseData.success === false ||
+                !!responseData.error
+              ) {
+                // Create a structured message for HubSpot error
+                newMessage = {
+                  id: Date.now().toString(),
+                  role: "model",
+                  type: "hubspot_error",
+                  content: responseData as HubSpotExecutionResult, // Store the whole object
+                };
+                console.log(
+                  `[ChatWidget] Created structured hubspot_error message.`
                 );
               } else {
                 // Fallback for other object structures - try to get meaningful text
@@ -506,6 +542,31 @@ export function ChatWidget() {
               ? message.response
               : message.response?.message || "Task completed";
           setToast({ message: msg, type: "success" });
+          messageHandled = true;
+        }
+        // Handle UPDATE_SIDEPANEL messages sent by the background script
+        else if (message?.type === "UPDATE_SIDEPANEL" && message.question) {
+          console.log(
+            "[ChatWidget] Handling UPDATE_SIDEPANEL with question:",
+            message.question
+          );
+          setIsLoading(false); // Stop loading indicator
+
+          // Create a question message
+          const newMessage: Message = {
+            id: Date.now().toString(),
+            role: "model",
+            type: "question",
+            content: message.question,
+          };
+
+          // Add the question to the chat
+          setMessages((prev) => {
+            const updated = [...prev, newMessage];
+            chrome.storage.local.set({ conversationHistory: updated }); // Persist
+            return updated;
+          });
+
           messageHandled = true;
         }
         // Add other message type handlers here (e.g., "ERROR_MESSAGE", "STATUS_UPDATE")

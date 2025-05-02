@@ -111,6 +111,33 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
                       accentColor={accentColor}
                       currentTheme={currentTheme}
                     />
+                  ) : "type" in message && message.type === "question" ? (
+                    // Question message from AI
+                    <div className="d4m-flex d4m-flex-col d4m-gap-2">
+                      <div className="d4m-flex d4m-items-center d4m-gap-2">
+                        <HelpCircle
+                          size={16}
+                          className={
+                            accentColor === "white"
+                              ? "d4m-text-orange-500"
+                              : `d4m-text-${accentColor}-500`
+                          }
+                        />
+                        <span className="d4m-font-semibold">AI Question</span>
+                      </div>
+                      <MarkdownWrapper content={message.content as string} />
+                    </div>
+                  ) : "type" in message && message.type === "completion" ? (
+                    // Completion message from AI
+                    <div className="d4m-flex d4m-flex-col d4m-gap-2">
+                      <div className="d4m-flex d4m-items-center d4m-gap-2">
+                        <Check size={16} className="d4m-text-green-500" />
+                        <span className="d4m-font-semibold">
+                          Task Completed
+                        </span>
+                      </div>
+                      <MarkdownWrapper content={message.content as string} />
+                    </div>
                   ) : typeof message.content === "string" ? (
                     // Standard markdown for string content
                     <MarkdownWrapper content={message.content} />

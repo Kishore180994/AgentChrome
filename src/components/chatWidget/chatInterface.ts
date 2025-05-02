@@ -10,10 +10,10 @@ export type Message =
   | {
       id: string;
       role: "model";
-      type: "hubspot_error" | "hubspot_success";
+      type: "hubspot_error" | "hubspot_success" | "question" | "completion";
       errorType?: string;
       message?: string;
-      content?: HubSpotExecutionResult;
+      content?: HubSpotExecutionResult | string;
       details?: string;
       status?: number;
     };

@@ -335,6 +335,16 @@ async function handleDomAction(
     case DOMAction.done.name: {
       const message = (args as any).message || "Task completed.";
       const output = (args as any).output;
+      console.log(`[background.ts] Task completed: "${message}"`);
+      // Send as a COMMAND_RESPONSE which ChatWidget knows how to handle
+      await chrome.runtime.sendMessage({
+        type: "COMMAND_RESPONSE",
+        response: {
+          message: message,
+          output: output,
+          type: "completion", // Add a type to identify this as a completion
+        },
+      });
       executedActions.push(
         `Completed task: ${message}${output ? ` Output: ${output}` : ""}`
       );
@@ -343,6 +353,17 @@ async function handleDomAction(
     }
     case DOMAction.ask.name: {
       const question = (args as any).question || "Please provide instructions.";
+      console.log(
+        `[background.ts] Asking question via ${DOMAction.ask.name}: "${question}"`
+      );
+      // Send as a COMMAND_RESPONSE which ChatWidget knows how to handle
+      await chrome.runtime.sendMessage({
+        type: "COMMAND_RESPONSE",
+        response: {
+          message: question,
+          type: "question", // Add a type to identify this as a question
+        },
+      });
       executedActions.push(`Asked question: "${question}"`);
       automationStopped = true;
       break;
@@ -1124,10 +1145,17 @@ async function processCommand(
             (args as any).question || "Please provide instructions.";
           console.log(`[background.ts] Asking: ${question}`);
           automationStopped = true; // Pause automation
-          chrome.runtime.sendMessage({
-            type: "UPDATE_SIDEPANEL",
-            question: question,
+
+          // Send COMMAND_RESPONSE instead of UPDATE_SIDEPANEL
+          // This is the message that the ChatWidget component is properly handling
+          await chrome.runtime.sendMessage({
+            type: "COMMAND_RESPONSE",
+            response: {
+              message: question,
+              type: "question",
+            },
           });
+
           executedActions.push(`Asked question: "${question}"`);
           automationStopped = true;
           return "ASK_PAUSED";
@@ -1538,18 +1566,22 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
     }
     recentActionsMap[activeTab.id] = [];
     currentTasks[activeTab.id] = msg.command; // Store the initial command as the task
+
+    // Always send immediate success response to prevent "Error starting command processing" toast
+    sendResponse({ success: true });
+
+    // Then process the command asynchronously
     processCommand(
       activeTab.id,
       msg.command,
       msg.command,
       [],
       msg.model || "gemini"
-    )
-      .then(() => sendResponse({ success: true }))
-      .catch((err) => {
-        console.error("Error starting processCommand:", err);
-        sendResponse({ success: false, error: err.message });
-      });
+    ).catch((err) => {
+      console.error("Error during processCommand:", err);
+      // Real errors will be sent via FINISH_PROCESS_COMMAND
+    });
+
     return true; // Indicate async response
   } else if (msg.type === "NEW_CHAT") {
     chrome.storage.local.set({ conversationHistory: [] }, () => {
