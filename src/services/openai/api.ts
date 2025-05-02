@@ -92,8 +92,6 @@ async function prepareConversation(
   const existingHistory = await getConversationHistory();
   console.log("[prepareConversation] existingHistory", existingHistory);
 
-  // Store only the original user message in history, but send the message with state to AI
-  // This way we don't store DOM elements in the history
   await storeUserMessage(userMsg);
 
   // Get previously stored AI current state

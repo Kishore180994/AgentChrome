@@ -224,8 +224,6 @@ export async function callGemini(
           (tool) => tool.toolGroupName === selectedTool
         );
 
-        console.log({ matchingToolGroup });
-
         if (matchingToolGroup) {
           // Use only the tools for this specific command
           HSTools = [matchingToolGroup];
