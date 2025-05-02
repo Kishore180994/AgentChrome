@@ -1316,6 +1316,7 @@ async function handleError(
     const errorMessage = `Command processing failed: ${
       err instanceof Error ? err.message : String(err)
     }`;
+    console.error({ errorMessage });
     chrome.tabs.sendMessage(tabIdRef.value, {
       type: "DISPLAY_MESSAGE",
       response: { message: errorMessage },
@@ -1578,15 +1579,7 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
     // Always send immediate success response to prevent "Error starting command processing" toast
     sendResponse({ success: true });
     const selectedSlashCommand = msg.slashCommand;
-    // Then process the command asynchronously
-    /**
 
-
-
-
-  retryCount: number = 0,
-  selectedSlashCommand: string
-     */
     processCommand(
       activeTab.id,
       msg.command,
@@ -1595,8 +1588,7 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
       msg.model || "gemini",
       selectedSlashCommand
     ).catch((err) => {
-      console.error("Error during processCommand:", err);
-      // Real errors will be sent via FINISH_PROCESS_COMMAND
+      console.debug("Error during processCommand:", err);
     });
 
     return true; // Indicate async response

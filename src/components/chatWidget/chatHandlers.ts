@@ -176,11 +176,6 @@ export const handleSubmit = async (
               100
             )}`
           );
-          setToast({
-            message: "Error starting command processing.",
-            type: "error",
-          });
-          setIsLoading(false); // Stop loading on immediate error
         } else {
           console.log(
             "[Handlers] Initial response from background PROCESS_COMMAND:",

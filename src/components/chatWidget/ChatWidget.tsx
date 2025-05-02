@@ -1041,7 +1041,7 @@ export function ChatWidget() {
         {/* Input Area Section */}
         <div className="d4m-flex-shrink-0 d4m-relative d4m-z-20 d4m-border-t d4m-border-black/10 dark:d4m-border-white/10">
           {isLoading ? (
-            // --- Loading Indicator ---
+            // --- Loading Indicator with Star Animation when waiting for AI response ---
             <div
               className={`d4m-flex d4m-items-center d4m-justify-between d4m-w-full d4m-px-4 d4m-py-3 ${
                 currentTheme.loading || ""

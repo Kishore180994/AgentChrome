@@ -6,6 +6,7 @@ import {
   InlineDataPart,
   TextPart,
   FunctionCallingMode,
+  Tool,
 } from "@google/generative-ai";
 import { agentPrompt, hubspotSystemPrompt } from "../../utils/prompts";
 import {
@@ -15,7 +16,7 @@ import {
   Role,
   GeminiResponse,
 } from "./interfaces";
-import { googleTools, HSTools, hubspotModularTools } from "./tools";
+import { googleDOMTools, HSTools, hubspotModularTools } from "./tools";
 import { getAPICompatibleTools, HubspotFunctionTool } from "./hubspotTool";
 import { commonTools } from "./commonTools";
 
@@ -245,27 +246,23 @@ export async function callGemini(
     }
 
     // Make sure we always have tools to send to the AI
-    let finalTools = googleTools;
+    let finalTools: Tool[] = [];
 
     if (isHubSpotModeOn) {
       if (HSTools && HSTools.length > 0) {
         // Only send the specific selected tool to the API, not all tools
         finalTools = getAPICompatibleTools(HSTools);
-        finalTools.push(...commonTools);
         console.log("[callGemini] Using selected tool only:", HSTools.length);
       } else {
-        // IMPORTANT: Only send DOM tools when no specific tool is selected
-        // This prevents sending the entire HubSpot toolset which is too large for the API
-        finalTools = googleTools;
         console.log("[callGemini] No tool selected, using minimal tools");
       }
+    } else {
+      finalTools = [...googleDOMTools];
     }
+    finalTools.push(...commonTools);
 
     console.log("Final tools being sent to AI:", {
-      toolsCount: finalTools.length,
-      isHubspotMode: await shouldUseHubspotSystemPrompt(),
-      selectedCommand:
-        HSTools.length > 0 ? (HSTools[0] as any).toolGroupName : "none",
+      finalTools,
     });
 
     // Initialize chat session
