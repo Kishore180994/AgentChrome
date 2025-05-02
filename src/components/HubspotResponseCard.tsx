@@ -140,10 +140,37 @@ const HubspotResponseCard: React.FC<HubspotResponseCardProps> = ({
       );
     }
 
-    // If not an error response, fall back to simple error message
+    // If not an error response, fall back to a more styled error message
     return (
-      <div className="d4m-text-red-500">
-        Error: Not a valid Hubspot response format
+      <div
+        className={`d4m-rounded-lg d4m-p-4 d4m-flex d4m-items-center d4m-gap-3 
+          ${
+            mode === "light"
+              ? "d4m-bg-red-50 d4m-border d4m-border-red-200"
+              : "d4m-bg-red-900/10 d4m-border d4m-border-red-800/30"
+          }`}
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className="d4m-w-5 d4m-h-5 d4m-text-red-500"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
+        </svg>
+        <span
+          className={`${
+            mode === "light" ? "d4m-text-gray-800" : "d4m-text-gray-200"
+          } d4m-font-medium`}
+        >
+          Unable to parse HubSpot response format
+        </span>
       </div>
     );
   }

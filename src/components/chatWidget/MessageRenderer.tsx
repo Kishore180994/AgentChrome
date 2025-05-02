@@ -72,14 +72,27 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
               ? "d4m-max-w-[85%] md:d4m-max-w-[75%]"
               : "d4m-w-full";
 
+          // Apply futuristic styles to AI messages - make AI messages truly take full width
+          const messageContainerStyle =
+            message.role === "user"
+              ? `d4m-flex ${widthClass} ${alignment} d4m-mb-3`
+              : `d4m-flex d4m-w-full d4m-mb-3 d4m-justify-start`; // Full width container, left-aligned
+
+          // Enhanced styling for AI message bubbles - make AI bubbles take full width
+          const enhancedBubbleStyle =
+            message.role === "model"
+              ? `d4m-text-sm d4m-p-4 d4m-rounded-lg ${bubbleStyle} d4m-border-l-4 ${
+                  accentColor === "white"
+                    ? "d4m-border-orange-500"
+                    : `d4m-border-${accentColor}-500`
+                } d4m-backdrop-blur-sm ${
+                  mode === "light" ? "d4m-bg-opacity-80" : "d4m-bg-opacity-90"
+                } d4m-transition-all d4m-duration-300 d4m-w-full`
+              : `d4m-text-sm d4m-p-2.5 d4m-rounded-lg ${bubbleStyle} d4m-shadow-sm`;
+
           return (
-            <div
-              key={itemKey}
-              className={`d4m-flex ${widthClass} ${alignment} d4m-mb-3`}
-            >
-              <div
-                className={`d4m-text-sm d4m-p-2.5 d4m-rounded-lg ${bubbleStyle} d4m-shadow-sm`}
-              >
+            <div key={itemKey} className={messageContainerStyle}>
+              <div className={enhancedBubbleStyle}>
                 {message.role === "model" ? (
                   // --- Model Message Content ---
                   "type" in message && message.type === "hubspot_error" ? (
@@ -124,31 +137,40 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
                       currentTheme={currentTheme}
                     />
                   ) : "type" in message && message.type === "question" ? (
-                    // Question message from AI
-                    <div className="d4m-flex d4m-flex-col d4m-gap-2">
-                      <div className="d4m-flex d4m-items-center d4m-gap-2">
+                    // Question message from AI with futuristic design
+                    <div className="d4m-flex d4m-flex-col d4m-gap-3">
+                      <div className="d4m-flex d4m-items-center d4m-gap-2 d4m-bg-black/10 dark:d4m-bg-white/10 d4m-p-2 d4m-rounded-md d4m-backdrop-blur-sm">
                         <HelpCircle
-                          size={16}
+                          size={18}
                           className={
                             accentColor === "white"
-                              ? "d4m-text-orange-500"
-                              : `d4m-text-${accentColor}-500`
+                              ? "d4m-text-orange-400"
+                              : `d4m-text-${accentColor}-400`
                           }
                         />
-                        <span className="d4m-font-semibold">AI Question</span>
+                        <span className="d4m-font-medium d4m-text-base d4m-tracking-wide">
+                          AI Question
+                        </span>
                       </div>
-                      <MarkdownWrapper content={message.content as string} />
+                      <div className="d4m-pl-2">
+                        <MarkdownWrapper content={message.content as string} />
+                      </div>
                     </div>
                   ) : "type" in message && message.type === "completion" ? (
-                    // Completion message from AI
-                    <div className="d4m-flex d4m-flex-col d4m-gap-2">
-                      <div className="d4m-flex d4m-items-center d4m-gap-2">
-                        <Check size={16} className="d4m-text-green-500" />
-                        <span className="d4m-font-semibold">
+                    // Completion message from AI with futuristic design
+                    <div className="d4m-flex d4m-flex-col d4m-gap-3">
+                      <div className="d4m-flex d4m-items-center d4m-gap-2 d4m-bg-green-500/20 dark:d4m-bg-green-500/20 d4m-p-2 d4m-rounded-md d4m-backdrop-blur-sm">
+                        <Check
+                          size={18}
+                          className="d4m-text-green-500 dark:d4m-text-green-400"
+                        />
+                        <span className="d4m-font-medium d4m-text-base d4m-tracking-wide d4m-text-green-700 dark:d4m-text-green-400">
                           Task Completed
                         </span>
                       </div>
-                      <MarkdownWrapper content={message.content as string} />
+                      <div className="d4m-pl-2">
+                        <MarkdownWrapper content={message.content as string} />
+                      </div>
                     </div>
                   ) : typeof message.content === "string" ? (
                     // Standard markdown for string content
@@ -175,9 +197,22 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
                       />
                     )
                   ) : (
-                    // Fallback for unknown model content - display as JSON
-                    <pre className="d4m-text-xs d4m-whitespace-pre-wrap d4m-bg-gray-800 d4m-p-2 d4m-rounded-md d4m-overflow-auto d4m-max-h-[300px]">
-                      <code>{JSON.stringify(message.content, null, 2)}</code>
+                    // Fallback for unknown model content - display as JSON with futuristic styling
+                    <pre className="d4m-text-xs d4m-whitespace-pre-wrap d4m-bg-black/20 dark:d4m-bg-white/5 d4m-p-3 d4m-rounded-md d4m-overflow-auto d4m-max-h-[300px] d4m-border d4m-border-gray-200/30 dark:d4m-border-gray-700/30 d4m-backdrop-blur-sm d4m-font-mono">
+                      <div className="d4m-flex d4m-items-center d4m-justify-between d4m-mb-2 d4m-pb-2 d4m-border-b d4m-border-gray-200/30 dark:d4m-border-gray-700/30">
+                        <span
+                          className={`d4m-text-xs d4m-font-medium ${
+                            accentColor === "white"
+                              ? "d4m-text-orange-400"
+                              : `d4m-text-${accentColor}-400`
+                          }`}
+                        >
+                          JSON Data
+                        </span>
+                      </div>
+                      <code className="d4m-text-gray-800 dark:d4m-text-gray-200">
+                        {JSON.stringify(message.content, null, 2)}
+                      </code>
                     </pre>
                   )
                 ) : (
@@ -195,14 +230,20 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
           return (
             <div
               key={itemKey}
-              className={`d4m-flex d4m-flex-col d4m-gap-1 d4m-max-w-[85%] md:d4m-max-w-[75%] d4m-mr-auto d4m-mb-3`}
+              className={`d4m-flex d4m-flex-col d4m-gap-1 d4m-w-full d4m-mr-auto d4m-mb-3`}
             >
               {item.messages!.map((msg, msgIdx) => (
                 <div
                   key={msg.id || msgIdx}
-                  className={`d4m-text-sm d4m-p-2.5 d4m-rounded-lg ${
+                  className={`d4m-text-sm d4m-p-4 d4m-rounded-lg ${
                     mode === "light" ? "d4m-bg-gray-100" : "d4m-bg-gray-700"
-                  } ${textColor} d4m-shadow-sm`}
+                  } ${textColor} d4m-border-l-4 ${
+                    accentColor === "white"
+                      ? "d4m-border-orange-500"
+                      : `d4m-border-${accentColor}-500`
+                  } d4m-backdrop-blur-sm ${
+                    mode === "light" ? "d4m-bg-opacity-80" : "d4m-bg-opacity-90"
+                  } d4m-transition-all d4m-duration-300 d4m-w-full`}
                 >
                   {typeof msg.content === "string" ? (
                     <MarkdownWrapper content={msg.content} />
@@ -246,8 +287,21 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
                       currentTheme={currentTheme}
                     />
                   ) : (
-                    <pre className="d4m-text-xs d4m-whitespace-pre-wrap">
-                      {JSON.stringify(msg.content, null, 2)}
+                    <pre className="d4m-text-xs d4m-whitespace-pre-wrap d4m-bg-black/20 dark:d4m-bg-white/5 d4m-p-3 d4m-rounded-md d4m-overflow-auto d4m-max-h-[300px] d4m-border d4m-border-gray-200/30 dark:d4m-border-gray-700/30 d4m-backdrop-blur-sm d4m-font-mono">
+                      <div className="d4m-flex d4m-items-center d4m-justify-between d4m-mb-2 d4m-pb-2 d4m-border-b d4m-border-gray-200/30 dark:d4m-border-gray-700/30">
+                        <span
+                          className={`d4m-text-xs d4m-font-medium ${
+                            accentColor === "white"
+                              ? "d4m-text-orange-400"
+                              : `d4m-text-${accentColor}-400`
+                          }`}
+                        >
+                          JSON Data
+                        </span>
+                      </div>
+                      <code className="d4m-text-gray-800 dark:d4m-text-gray-200">
+                        {JSON.stringify(msg.content, null, 2)}
+                      </code>
                     </pre>
                   )}
                 </div>
@@ -263,9 +317,13 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
               key={itemKey}
               className={`d4m-p-3 d4m-mb-3 d4m-rounded-lg d4m-border ${
                 mode === "light"
-                  ? "d4m-bg-gray-50/50 d4m-border-gray-200"
-                  : "d4m-bg-gray-700/30 d4m-border-gray-600"
-              } d4m-max-w-[90%] d4m-mr-auto`}
+                  ? "d4m-bg-gray-50/80 d4m-border-gray-200 d4m-border-l-4"
+                  : "d4m-bg-gray-700/80 d4m-border-gray-600 d4m-border-l-4"
+              } ${
+                accentColor === "white"
+                  ? "d4m-border-l-orange-500"
+                  : `d4m-border-l-${accentColor}-500`
+              } d4m-w-full d4m-mr-auto d4m-backdrop-blur-sm d4m-transition-all d4m-duration-300`}
             >
               <div
                 className="d4m-flex d4m-justify-between d4m-items-center d4m-cursor-pointer"
@@ -290,19 +348,19 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
               </div>
               {isExpanded && (
                 <div
-                  className="d4m-mt-2 d4m-overflow-x-auto"
+                  className="d4m-mt-3 d4m-overflow-x-auto d4m-bg-black/10 dark:d4m-bg-white/5 d4m-rounded-md d4m-backdrop-blur-sm d4m-border d4m-border-gray-200/30 dark:d4m-border-gray-700/30"
                   id={`execution-details-${index}`}
                 >
                   <table className={`d4m-w-full d4m-text-xs ${textColor}`}>
-                    <thead className="d4m-border-b d4m-border-gray-300 dark:d4m-border-gray-600">
+                    <thead className="d4m-border-b d4m-border-gray-300/30 dark:d4m-border-gray-600/30">
                       <tr>
-                        <th className="d4m-py-1 d4m-px-2 d4m-text-left d4m-font-medium">
+                        <th className="d4m-py-2 d4m-px-3 d4m-text-left d4m-font-medium d4m-tracking-wider">
                           #
                         </th>
-                        <th className="d4m-py-1 d4m-px-2 d4m-text-left d4m-font-medium">
+                        <th className="d4m-py-2 d4m-px-3 d4m-text-left d4m-font-medium d4m-tracking-wider">
                           Description
                         </th>
-                        <th className="d4m-py-1 d4m-px-2 d4m-text-center d4m-font-medium">
+                        <th className="d4m-py-2 d4m-px-3 d4m-text-center d4m-font-medium d4m-tracking-wider">
                           Status
                         </th>
                       </tr>
@@ -311,35 +369,52 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
                       {item.taskHistories!.map((task, taskIdx) => (
                         <tr
                           key={taskIdx}
-                          className="d4m-border-b d4m-border-gray-200 dark:d4m-border-gray-700 d4m-last:border-b-0"
+                          className={`d4m-border-b d4m-border-gray-200/30 dark:d4m-border-gray-700/30 d4m-last:border-b-0 d4m-transition-colors ${
+                            task.status === "PASS" || task.status === "passed"
+                              ? "d4m-bg-green-50/30 dark:d4m-bg-green-900/20"
+                              : task.status === "FAIL" ||
+                                task.status === "failed"
+                              ? "d4m-bg-red-50/30 dark:d4m-bg-red-900/20"
+                              : "hover:d4m-bg-black/5 dark:hover:d4m-bg-white/5"
+                          }`}
                         >
-                          <td className="d4m-py-1.5 d4m-px-2">{taskIdx + 1}</td>
-                          <td className="d4m-py-1.5 d4m-px-2">
+                          <td className="d4m-py-2 d4m-px-3 d4m-font-mono">
+                            {taskIdx + 1}
+                          </td>
+                          <td className="d4m-py-2 d4m-px-3">
                             {task.description || task.step_number || "N/A"}
                           </td>
-                          <td className="d4m-py-1.5 d4m-px-2 d4m-text-center">
-                            {/* Status Icons */}
+                          <td className="d4m-py-2 d4m-px-3 d4m-text-center">
+                            {/* Enhanced Status Icons */}
                             {(task.status === "PASS" ||
                               task.status === "passed") && (
-                              <Check
-                                size={14}
-                                className="d4m-text-green-500 d4m-mx-auto"
-                              />
+                              <div className="d4m-flex d4m-justify-center d4m-items-center d4m-w-7 d4m-h-7 d4m-rounded-full d4m-bg-green-500/20 d4m-mx-auto">
+                                <Check
+                                  size={16}
+                                  className="d4m-text-green-500 dark:d4m-text-green-400"
+                                />
+                              </div>
                             )}
                             {(task.status === "FAIL" ||
                               task.status === "failed") && (
-                              <X
-                                size={14}
-                                className="d4m-text-red-500 d4m-mx-auto"
-                              />
+                              <div className="d4m-flex d4m-justify-center d4m-items-center d4m-w-7 d4m-h-7 d4m-rounded-full d4m-bg-red-500/20 d4m-mx-auto">
+                                <X
+                                  size={16}
+                                  className="d4m-text-red-500 dark:d4m-text-red-400"
+                                />
+                              </div>
                             )}
                             {(task.status === "PENDING" ||
                               task.status === "pending") && (
-                              <div className="d4m-w-3 d4m-h-3 d4m-border-2 d4m-border-gray-400 d4m-border-t-transparent d4m-rounded-full d4m-animate-spin d4m-mx-auto"></div>
+                              <div className="d4m-flex d4m-justify-center d4m-items-center d4m-w-7 d4m-h-7 d4m-rounded-full d4m-bg-gray-500/20 d4m-mx-auto">
+                                <div className="d4m-w-4 d4m-h-4 d4m-border-2 d4m-border-gray-400 d4m-border-t-transparent d4m-rounded-full d4m-animate-spin"></div>
+                              </div>
                             )}
                             {(task.status === "IN_PROGRESS" ||
                               task.status === "in_progress") && (
-                              <div className="d4m-w-3 d4m-h-3 d4m-border-2 d4m-border-blue-400 d4m-border-t-transparent d4m-rounded-full d4m-animate-spin d4m-mx-auto"></div>
+                              <div className="d4m-flex d4m-justify-center d4m-items-center d4m-w-7 d4m-h-7 d4m-rounded-full d4m-bg-blue-500/20 d4m-mx-auto">
+                                <div className="d4m-w-4 d4m-h-4 d4m-border-2 d4m-border-blue-400 d4m-border-t-transparent d4m-rounded-full d4m-animate-spin"></div>
+                              </div>
                             )}
                             {![
                               "PASS",
@@ -351,10 +426,12 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
                               "IN_PROGRESS",
                               "in_progress",
                             ].includes(task.status) && (
-                              <HelpCircle
-                                size={14}
-                                className="d4m-text-gray-400 d4m-mx-auto"
-                              />
+                              <div className="d4m-flex d4m-justify-center d4m-items-center d4m-w-7 d4m-h-7 d4m-rounded-full d4m-bg-gray-500/10 d4m-mx-auto">
+                                <HelpCircle
+                                  size={16}
+                                  className="d4m-text-gray-400"
+                                />
+                              </div>
                             )}
                           </td>
                         </tr>
