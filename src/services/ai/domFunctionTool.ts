@@ -1,11 +1,12 @@
+import { DOMAction } from "./../../types/actionType";
 import { SchemaType, Tool } from "@google/generative-ai";
 
 export const domTools: Tool[] = [
   {
     functionDeclarations: [
       {
-        name: "clickElement",
-        description: "Clicks an interactive element on the page",
+        name: DOMAction.clickElement.name,
+        description: DOMAction.clickElement.description,
         parameters: {
           type: SchemaType.OBJECT,
           properties: {
@@ -28,8 +29,8 @@ export const domTools: Tool[] = [
         },
       },
       {
-        name: "inputText",
-        description: "Enters text into an input element on the page",
+        name: DOMAction.inputText.name,
+        description: DOMAction.inputText.description,
         parameters: {
           type: SchemaType.OBJECT,
           properties: {
@@ -56,8 +57,83 @@ export const domTools: Tool[] = [
         },
       },
       {
-        name: "submitForm",
-        description: "Submits a form by clicking the submit button/element",
+        name: DOMAction.selectRadioButton.name,
+        description: DOMAction.selectDropdown.description,
+        parameters: {
+          type: SchemaType.OBJECT,
+          properties: {
+            index: {
+              type: SchemaType.NUMBER,
+              description:
+                "Required element index from the Interactive Elements list",
+            },
+            value: {
+              type: SchemaType.STRING,
+              description:
+                "Value of the radio button to select (optional if index is sufficient)",
+            },
+            selector: {
+              type: SchemaType.STRING,
+              description:
+                "Optional CSS selector for the radio group, if applicable",
+            },
+          },
+          required: ["index"],
+        },
+      },
+      {
+        name: DOMAction.selectDropdown.name,
+        description: DOMAction.selectDropdown.description,
+        parameters: {
+          type: SchemaType.OBJECT,
+          properties: {
+            index: {
+              type: SchemaType.NUMBER,
+              description:
+                "Required element index from the Interactive Elements list",
+            },
+            value: {
+              type: SchemaType.STRING,
+              description: "Value to select in the dropdown",
+            },
+            selector: {
+              type: SchemaType.STRING,
+              description:
+                "Optional CSS selector for the dropdown, if applicable",
+            },
+          },
+          required: ["index", "value"],
+        },
+      },
+      {
+        name: DOMAction.selectMultiDropdown.name,
+        description: DOMAction.selectMultiDropdown.description,
+        parameters: {
+          type: SchemaType.OBJECT,
+          properties: {
+            index: {
+              type: SchemaType.NUMBER,
+              description:
+                "Required element index from the Interactive Elements list",
+            },
+            values: {
+              type: SchemaType.ARRAY,
+              items: { type: SchemaType.STRING },
+              description:
+                "Array of values to select in the multi-select dropdown",
+            },
+            selector: {
+              type: SchemaType.STRING,
+              description:
+                "Optional CSS selector for the dropdown, if applicable",
+            },
+          },
+          required: ["index", "values"],
+        },
+      },
+      {
+        name: DOMAction.submitForm.name,
+        description: DOMAction.submitForm.description,
         parameters: {
           type: SchemaType.OBJECT,
           properties: {
@@ -80,8 +156,8 @@ export const domTools: Tool[] = [
         },
       },
       {
-        name: "keyPress",
-        description: "Simulates a key press on an element",
+        name: DOMAction.keyPress.name,
+        description: DOMAction.keyPress.description,
         parameters: {
           type: SchemaType.OBJECT,
           properties: {
@@ -108,8 +184,8 @@ export const domTools: Tool[] = [
         },
       },
       {
-        name: "scroll",
-        description: "Scrolls the page up or down",
+        name: DOMAction.scroll.name,
+        description: DOMAction.scroll.description,
         parameters: {
           type: SchemaType.OBJECT,
           properties: {
@@ -127,8 +203,8 @@ export const domTools: Tool[] = [
         },
       },
       {
-        name: "goToUrl",
-        description: "Navigates to a new URL",
+        name: DOMAction.goToUrl.name,
+        description: DOMAction.goToUrl.description,
         parameters: {
           type: SchemaType.OBJECT,
           properties: {
@@ -141,8 +217,8 @@ export const domTools: Tool[] = [
         },
       },
       {
-        name: "openTab",
-        description: "Opens a new tab with the specified URL",
+        name: DOMAction.openTab.name,
+        description: DOMAction.openTab.description,
         parameters: {
           type: SchemaType.OBJECT,
           properties: {
@@ -155,8 +231,8 @@ export const domTools: Tool[] = [
         },
       },
       {
-        name: "extractContent",
-        description: "Extracts content from an element",
+        name: DOMAction.extractContent.name,
+        description: DOMAction.extractContent.description,
         parameters: {
           type: SchemaType.OBJECT,
           properties: {
@@ -179,8 +255,8 @@ export const domTools: Tool[] = [
         },
       },
       {
-        name: "verify",
-        description: "Verifies the current URL",
+        name: DOMAction.verify.name,
+        description: DOMAction.verify.description,
         parameters: {
           type: SchemaType.OBJECT,
           properties: {
@@ -193,8 +269,8 @@ export const domTools: Tool[] = [
         },
       },
       {
-        name: "done",
-        description: "Indicates task completion",
+        name: DOMAction.done.name,
+        description: DOMAction.done.description,
         parameters: {
           type: SchemaType.OBJECT,
           properties: {
@@ -211,9 +287,8 @@ export const domTools: Tool[] = [
         },
       },
       {
-        name: "ask",
-        description:
-          "Asks the user a question for clarification or confirmation",
+        name: DOMAction.ask.name,
+        description: DOMAction.ask.description,
         parameters: {
           type: SchemaType.OBJECT,
           properties: {
@@ -226,9 +301,8 @@ export const domTools: Tool[] = [
         },
       },
       {
-        name: "reportCurrentState",
-        description:
-          "Reports the current state of the task, mandatory for every response",
+        name: DOMAction.reportCurrentState.name,
+        description: DOMAction.reportCurrentState.description,
         parameters: {
           type: SchemaType.OBJECT,
           properties: {

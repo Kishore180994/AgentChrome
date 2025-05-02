@@ -97,8 +97,15 @@ export function SettingsModal({
         mode: selectedMode,
       };
 
-      // Save HubSpot config separately
-      await saveHubSpotConfig({ apiKey: hubspotApiKey });
+      // Save HubSpot config separately - used only when in HubSpot mode
+      const hubspotConfig = { apiKey: hubspotApiKey };
+      await saveHubSpotConfig(hubspotConfig);
+
+      // Also store in localStorage for direct access by shouldUseHubspotSystemPrompt
+      localStorage.setItem("hubspotConfig", JSON.stringify(hubspotConfig));
+
+      // We no longer set useHubspotApi flag as the API is now only used when in HubSpot mode
+      // HubSpot mode is controlled directly from the ChatWidget toggle
 
       await storage.set(newSettings);
       onSettingsUpdate(newSettings);
@@ -255,25 +262,30 @@ export function SettingsModal({
             </div>
 
             {/* HubSpot API Key */}
-            <div className="d4m-flex d4m-items-center d4m-gap-2 d4m-mb-3">
-              <label
-                className={`d4m-font-medium d4m-text-${accentColor}-400 d4m-w-24`}
-              >
-                HubSpot API Key
-              </label>
-              <input
-                type="password"
-                value={hubspotApiKey}
-                onChange={(e) => setHubspotApiKey(e.target.value)}
-                className={`d4m-flex-1 d4m-px-2 d4m-py-1 ${textColor} d4m-text-sm d4m-rounded-full d4m-border ${borderColor} ${
-                  currentTheme.textarea
-                } d4m-focus:outline-none d4m-focus:ring-1 d4m-focus:ring-${accentColor}-500 ${
-                  mode === "light"
-                    ? "d4m-placeholder-gray-400"
-                    : "d4m-placeholder-gray-500"
-                } d4m-transition-all`}
-                placeholder="HubSpot API Key"
-              />
+            <div className="d4m-flex d4m-flex-col d4m-gap-1 d4m-mb-3">
+              <div className="d4m-flex d4m-items-center d4m-gap-2">
+                <label
+                  className={`d4m-font-medium d4m-text-${accentColor}-400 d4m-w-24`}
+                >
+                  HubSpot API Key
+                </label>
+                <input
+                  type="password"
+                  value={hubspotApiKey}
+                  onChange={(e) => setHubspotApiKey(e.target.value)}
+                  className={`d4m-flex-1 d4m-px-2 d4m-py-1 ${textColor} d4m-text-sm d4m-rounded-full d4m-border ${borderColor} ${
+                    currentTheme.textarea
+                  } d4m-focus:outline-none d4m-focus:ring-1 d4m-focus:ring-${accentColor}-500 ${
+                    mode === "light"
+                      ? "d4m-placeholder-gray-400"
+                      : "d4m-placeholder-gray-500"
+                  } d4m-transition-all`}
+                  placeholder="HubSpot API Key"
+                />
+              </div>
+              <div className="d4m-text-xs d4m-text-gray-500 d4m-ml-24">
+                This key will only be used when in HubSpot mode
+              </div>
             </div>
 
             {/* AI Provider Keys */}

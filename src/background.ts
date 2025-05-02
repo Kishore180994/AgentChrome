@@ -1,6 +1,7 @@
 import {
   GeminiFunctionCall,
   GeminiFunctionCallWrapper,
+  HubSpotExecutionResult,
   PageElement,
   ReportCurrentStateArgs,
   UncompressedPageElement,
@@ -8,8 +9,354 @@ import {
 import { executeAppsScriptFunction } from "./services/google/appsScript";
 import { executeHubspotFunction } from "./services/hubspot";
 import { chatWithAI } from "./services/openai/api";
-import { LocalAction } from "./types/actionType";
+import { DOMAction, LocalAction } from "./types/actionType";
 import { getGoogleDocUrlFromId } from "./utils/helpers";
+// --- Modularized Tool Handlers ---
+
+/**
+ * Handles Google Workspace tool actions.
+ */
+async function handleGoogleWorkspaceAction(
+  functionName: string,
+  args: any,
+  tabId: number,
+  executedActions: string[]
+) {
+  try {
+    const result = await executeAppsScriptFunction(functionName, args);
+    console.log(
+      "[background.ts] Google Workspace function call executed successfully:",
+      result
+    );
+    // Stop automation after successful Apps Script execution
+    automationStopped = true;
+    console.log(
+      "[background.ts] Automation stopped due to successful Apps Script execution."
+    );
+    await chrome.runtime.sendMessage({
+      type: "COMMAND_RESPONSE",
+      response: {
+        message: result.status,
+        output: `url: ${
+          result.fileId
+            ? getGoogleDocUrlFromId(result.fileId)
+            : result.newDocUrl
+        }`,
+      },
+    });
+    executedActions.push(`Executed Google Workspace function: ${functionName}`);
+  } catch (error) {
+    console.error(
+      "[background.ts] Google Workspace function call failed:",
+      error
+    );
+    await chrome.runtime.sendMessage({
+      type: "COMMAND_RESPONSE",
+      response: {
+        message:
+          "Google Workspace function execution failed: " +
+          (error as Error).message,
+      },
+    });
+    throw error;
+  }
+}
+
+/**
+ * Handles HubSpot tool actions.
+ */
+async function handleHubspotAction(
+  functionName: string,
+  args: any,
+  tabId: number,
+  executedActions: string[]
+) {
+  try {
+    console.log("[background.ts] handleHubspotAction ENTRY", {
+      functionName,
+      args,
+      tabId,
+      executedActions,
+    });
+    // Check for duplicate create operations to prevent multiple identical operations
+    const isCreateOperation = [
+      "hubspot_createContact",
+      "hubspot_createCompany",
+      "hubspot_createDeal",
+      "hubspot_createTask",
+      "hubspot_createTicket",
+      "hubspot_createList",
+    ].includes(functionName);
+
+    // Generate a unique key for this operation to deduplicate
+    const operationKey = isCreateOperation
+      ? `${functionName}-${JSON.stringify(args)}`
+      : null;
+
+    // For create operations, check if this exact operation was already executed
+    if (isCreateOperation && operationKey) {
+      // Get the last 5 actions to check for duplicates
+      const recentActions = recentActionsMap[tabId] || [];
+
+      // Check if we already executed this exact create operation recently
+      const isDuplicate = recentActions.some(
+        (action) =>
+          action.includes(`Executed HubSpot function: ${functionName}`) &&
+          action.includes(operationKey.substring(0, 20)) // Use first 20 chars of key as a fingerprint
+      );
+
+      if (isDuplicate) {
+        console.log(
+          `[background.ts] Skipping duplicate HubSpot create operation: ${functionName}`,
+          args
+        );
+
+        await chrome.runtime.sendMessage({
+          type: "COMMAND_RESPONSE",
+          response: {
+            message: `Skipped duplicate ${functionName} operation - already executed`,
+          },
+        });
+
+        executedActions.push(
+          `Skipped duplicate HubSpot function: ${functionName}`
+        );
+        return;
+      }
+    }
+
+    console.log("[background.ts] Executing HubSpot function:", {
+      functionName,
+      args,
+    });
+    // Execute the HubSpot function
+    const result: HubSpotExecutionResult = await executeHubspotFunction({
+      name: functionName,
+      args,
+    });
+    console.log(
+      "[background.ts] HubSpot function call executed successfully:",
+      result
+    );
+    await chrome.runtime.sendMessage({
+      type: "COMMAND_RESPONSE",
+      response: result,
+    });
+
+    // For create operations, include a unique fingerprint in the action description
+    if (isCreateOperation && operationKey) {
+      executedActions.push(
+        `Executed HubSpot function: ${functionName} [${operationKey.substring(
+          0,
+          20
+        )}...]`
+      );
+      // Set automation to stop after this iteration
+      automationStopped = true;
+      console.log(
+        `[background.ts] Stopping automation after successful ${functionName} to prevent duplicates`
+      );
+    } else {
+      executedActions.push(`Executed HubSpot function: ${functionName}`);
+    }
+  } catch (error) {
+    console.error("[background.ts] HubSpot function call failed:", error);
+    await chrome.runtime.sendMessage({
+      type: "COMMAND_RESPONSE",
+      response: {
+        message:
+          "HubSpot function execution failed: " +
+          (error instanceof Error ? error.message : String(error)),
+      },
+    });
+    automationStopped = true;
+    throw error;
+  }
+}
+
+/**
+ * Handles DOM tool actions.
+ */
+async function handleDomAction(
+  functionName: string,
+  args: any,
+  tabIdRef: { value: number },
+  executedActions: string[],
+  setLastActionType: (type: string) => void
+) {
+  switch (functionName) {
+    case DOMAction.clickElement.name: {
+      const index = (args as any).index;
+      if (typeof index !== "number")
+        throw new Error(`Invalid index for ${functionName}: ${index}`);
+      await sendActionToTab(
+        {
+          id: Date.now().toString(),
+          type: DOMAction.clickElement.name,
+          data: { index },
+          description: functionName,
+        },
+        tabIdRef.value
+      );
+      executedActions.push(`Clicked on element at index ${index}`);
+      setLastActionType("click");
+      break;
+    }
+    case DOMAction.inputText.name: {
+      const index = (args as any).index;
+      const text = (args as any).text ?? "";
+      if (typeof index !== "number")
+        throw new Error(`Invalid index for ${functionName}: ${index}`);
+      await sendActionToTab(
+        {
+          id: Date.now().toString(),
+          type: DOMAction.inputText.name,
+          data: { index, text },
+          description: functionName,
+        },
+        tabIdRef.value
+      );
+      executedActions.push(`Entered text "${text}" at index ${index}`);
+      break;
+    }
+    case DOMAction.submitForm.name: {
+      const index = (args as any).index;
+      if (typeof index !== "number")
+        throw new Error(`Invalid index for ${functionName}: ${index}`);
+      await sendActionToTab(
+        {
+          id: Date.now().toString(),
+          type: DOMAction.submitForm.name,
+          data: { index },
+          description: functionName,
+        },
+        tabIdRef.value
+      );
+      executedActions.push(`Submitted form at index ${index}`);
+      setLastActionType(DOMAction.submitForm.name);
+      break;
+    }
+    case DOMAction.keyPress.name: {
+      const index = (args as any).index;
+      const key = (args as any).key;
+      if (typeof index !== "number")
+        throw new Error(`Invalid index for ${functionName}: ${index}`);
+      if (typeof key !== "string")
+        throw new Error(`Invalid key for ${functionName}: ${key}`);
+      await sendActionToTab(
+        {
+          id: Date.now().toString(),
+          type: DOMAction.keyPress.name,
+          data: { index, key },
+          description: functionName,
+        },
+        tabIdRef.value
+      );
+      executedActions.push(`Pressed key "${key}" at index ${index}`);
+      break;
+    }
+    case DOMAction.scroll.name: {
+      const direction = (args as any).direction;
+      const offset = (args as any).offset;
+      if (direction !== "up" && direction !== "down")
+        throw new Error(`Invalid direction for scroll: ${direction}`);
+      if (typeof offset !== "number")
+        throw new Error(`Invalid offset for scroll: ${offset}`);
+      await sendActionToTab(
+        {
+          id: Date.now().toString(),
+          type: DOMAction.scroll.name,
+          data: { direction, offset },
+          description: functionName,
+        },
+        tabIdRef.value
+      );
+      executedActions.push(`Scrolled ${direction} by ${offset} pixels`);
+      break;
+    }
+    case DOMAction.goToUrl.name: {
+      const url = (args as any).url;
+      if (!url) throw new Error(`No URL provided for ${functionName}`);
+      await sendActionToTab(
+        {
+          id: Date.now().toString(),
+          type: DOMAction.goToUrl.name,
+          data: { url },
+          description: functionName,
+        },
+        tabIdRef.value
+      );
+      executedActions.push(`Navigated to ${url}`);
+      setLastActionType(DOMAction.goToUrl.name);
+      break;
+    }
+    case DOMAction.openTab.name: {
+      const url = (args as any).url;
+      if (!url) throw new Error(`No URL provided for ${functionName}`);
+      console.log("[background.ts] Handling DOM action:", functionName, args);
+      await sendActionToTab(
+        {
+          id: Date.now().toString(),
+          type: DOMAction.openTab.name,
+          data: { url },
+          description: functionName,
+        },
+        tabIdRef.value
+      );
+      executedActions.push(`Opened new tab with URL ${url}`);
+      setLastActionType(DOMAction.openTab.name);
+      break;
+    }
+    case DOMAction.extractContent.name: {
+      const index = (args as any).index;
+      if (typeof index !== "number")
+        throw new Error(`Invalid index for ${functionName}: ${index}`);
+      const result = await sendActionToTab(
+        {
+          id: Date.now().toString(),
+          type: DOMAction.extractContent.name,
+          data: { index },
+          description: functionName,
+        },
+        tabIdRef.value
+      );
+      executedActions.push(
+        `Extracted content from element at index ${index}: "${result}"`
+      );
+      break;
+    }
+    case DOMAction.verify.name: {
+      const url = (args as any).url;
+      if (!url) throw new Error(`No URL provided for ${functionName}`);
+      // For verify, you might want to check the current tab's URL or similar logic
+      executedActions.push(`Verified URL contains ${url}`);
+      break;
+    }
+    case DOMAction.done.name: {
+      const message = (args as any).message || "Task completed.";
+      const output = (args as any).output;
+      executedActions.push(
+        `Completed task: ${message}${output ? ` Output: ${output}` : ""}`
+      );
+      automationStopped = true;
+      break;
+    }
+    case DOMAction.ask.name: {
+      const question = (args as any).question || "Please provide instructions.";
+      executedActions.push(`Asked question: "${question}"`);
+      automationStopped = true;
+      break;
+    }
+    case DOMAction.reportCurrentState.name: {
+      executedActions.push("Reported current state.");
+      break;
+    }
+    default:
+      throw new Error(`Unknown DOM action: ${functionName}`);
+  }
+}
+
+// --- End Modularized Tool Handlers ---
 
 let automationStopped: boolean = false;
 const activeAutomationTabs: Set<number> = new Set();
@@ -169,6 +516,13 @@ async function fetchPageElements(tabId: number): Promise<{
       await ensureContentScriptInjected(tabId);
     }
   }
+  // If in HubSpot mode, skip throwing error and return empty arrays
+  if (await getIsHubspotMode()) {
+    console.warn(
+      "[background.ts] HubSpot mode active - skipping DOM error and returning empty elements"
+    );
+    return { compressed: [], uncompressed: [] };
+  }
   throw new Error(
     "[background.ts] Failed to fetch page elements after retries"
   );
@@ -214,13 +568,39 @@ async function waitForPotentialNavigation(
   }
 }
 
+const MAX_STATE_RETRIES = 1;
+
+export async function getIsHubspotMode(): Promise<boolean> {
+  try {
+    const syncResult = await chrome.storage.sync.get(["hubspotMode"]);
+    if (syncResult.hubspotMode === true) return true;
+    const localResult = await chrome.storage.local.get(["hubspotMode"]);
+    return localResult.hubspotMode === true;
+  } catch {
+    return false;
+  }
+}
 async function processCommand(
   tabId: number,
   contextMessage: string,
   initialCommand: string,
   actionHistory: string[] = [],
-  model: string = "gemini"
+  model: string = "gemini",
+  retryCount: number = 0
 ) {
+  const isHubspotMode = await getIsHubspotMode();
+
+  if (isHubspotMode) {
+    console.log(`[background.ts][HubSpot Mode] processCommand ENTRY`, {
+      tabId,
+      contextMessage,
+      initialCommand,
+      actionHistory,
+      model,
+      retryCount,
+    });
+  }
+
   if (automationStopped) {
     console.log("[background.ts] Automation stopped. Not processing.");
     return;
@@ -230,88 +610,95 @@ async function processCommand(
   recentActionsMap[tabId] = recentActionsMap[tabId] || [];
 
   let pageState: PageElement[] = [];
-  let uncompressedPageState: UncompressedPageElement[] = [];
   let screenshotDataUrl: string | null = null;
   let tabUrl: string = "";
   let allTabs: string[] = [];
 
   try {
-    // --- Fetch initial state ---
-    console.log(
-      `[background.ts processCommand ${tabId}] Attempting to fetch page elements...`
-    );
-    const fetchStart = Date.now();
-    try {
-      const pageElementsResult = await fetchPageElements(tabId);
-      pageState = pageElementsResult.compressed;
-      uncompressedPageState = pageElementsResult.uncompressed;
+    if (!isHubspotMode) {
+      // --- Fetch initial state ---
       console.log(
-        `[background.ts processCommand ${tabId}] Page elements fetched in ${
-          Date.now() - fetchStart
-        }ms`
+        `[background.ts processCommand ${tabId}] Attempting to fetch page elements...`
       );
-    } catch (err) {
-      console.error(
-        `[background.ts processCommand ${tabId}] Failed to fetch page elements after ${
-          Date.now() - fetchStart
-        }ms:`,
-        err
-      );
-      await chrome.runtime.sendMessage({
-        type: "FINISH_PROCESS_COMMAND",
-        response:
-          "Failed to fetch page elements: " +
-          (err instanceof Error ? err.message : String(err)),
-      });
-      return; // Stop processing if page elements fail
-    }
-
-    await new Promise<void>(async (resolve) => {
+      const fetchStart = Date.now();
       try {
-        const targetTab = await chrome.tabs.get(tabId);
-        if (!targetTab || typeof targetTab.windowId !== "number") {
-          console.error("[background.ts] No valid tab or window");
-          resolve();
-          return;
-        }
-        chrome.tabs.captureVisibleTab(
-          targetTab.windowId,
-          { format: "jpeg", quality: 60 },
-          (dataUrl) => {
-            if (chrome.runtime.lastError || !dataUrl) {
-              console.error(
-                "[background.ts] Failed to capture screenshot:",
-                chrome.runtime.lastError?.message || "No data URL returned"
-              );
-              resolve(); // Resolve even if screenshot fails
-              return;
-            }
-            chrome.tabs.sendMessage(
-              tabId,
-              { type: "RESIZE_SCREENSHOT", dataUrl },
-              (response) => {
-                if (response?.resizedDataUrl) {
-                  screenshotDataUrl = response.resizedDataUrl;
-                  console.log(
-                    "[background.ts] Screenshot resized via content.js"
-                  );
-                } else {
-                  console.warn(
-                    "[background.ts] Failed to compress screenshot in content.js"
-                  );
-                  screenshotDataUrl = dataUrl; // Use original if resize fails
-                }
-                resolve();
-              }
-            );
-          }
+        const pageElementsResult = await fetchPageElements(tabId);
+        pageState = pageElementsResult.compressed;
+        console.log(
+          `[background.ts processCommand ${tabId}] Page elements fetched in ${
+            Date.now() - fetchStart
+          }ms`
         );
       } catch (err) {
-        console.error("[background.ts] Error getting tab info:", err);
-        resolve(); // Resolve even if screenshot fails
+        console.error(
+          `[background.ts processCommand ${tabId}] Failed to fetch page elements after ${
+            Date.now() - fetchStart
+          }ms:`,
+          err
+        );
+        await chrome.runtime.sendMessage({
+          type: "FINISH_PROCESS_COMMAND",
+          response:
+            "Failed to fetch page elements: " +
+            (err instanceof Error ? err.message : String(err)),
+        });
+        return; // Stop processing if page elements fail
       }
-    });
+    }
+    if (isHubspotMode) {
+      console.log(
+        "[background.ts][HubSpot Mode] Skipping DOM and screenshot logic for HubSpot mode."
+      );
+    }
 
+    !isHubspotMode &&
+      (await new Promise<void>(async (resolve) => {
+        try {
+          const targetTab = await chrome.tabs.get(tabId);
+          if (!targetTab || typeof targetTab.windowId !== "number") {
+            console.error("[background.ts] No valid tab or window");
+            resolve();
+            return;
+          }
+          chrome.tabs.captureVisibleTab(
+            targetTab.windowId,
+            { format: "jpeg", quality: 60 },
+            (dataUrl) => {
+              if (chrome.runtime.lastError || !dataUrl) {
+                console.error(
+                  "[background.ts] Failed to capture screenshot:",
+                  chrome.runtime.lastError?.message || "No data URL returned"
+                );
+                resolve(); // Resolve even if screenshot fails
+                return;
+              }
+              chrome.tabs.sendMessage(
+                tabId,
+                { type: "RESIZE_SCREENSHOT", dataUrl },
+                (response) => {
+                  if (response?.resizedDataUrl) {
+                    screenshotDataUrl = response.resizedDataUrl;
+                    console.log(
+                      "[background.ts] Screenshot resized via content.js"
+                    );
+                  } else {
+                    console.warn(
+                      "[background.ts] Failed to compress screenshot in content.js"
+                    );
+                    screenshotDataUrl = dataUrl; // Use original if resize fails
+                  }
+                  resolve();
+                }
+              );
+            }
+          );
+        } catch (err) {
+          console.error("[background.ts] Error getting tab info:", err);
+          resolve();
+        }
+      }));
+
+    console.log("CHECKPOINT 1");
     try {
       allTabs = await getAllTabs();
       tabUrl = await getTabUrl(tabId);
@@ -323,30 +710,51 @@ async function processCommand(
           "Failed to get tab URL/List: " +
           (error instanceof Error ? error.message : String(error)),
       });
-      return; // Stop processing if tab info fails
-    }
-
-    if (!pageState.length) {
-      console.warn("[background.ts] No elements found, aborting");
-      await chrome.runtime.sendMessage({
-        type: "FINISH_PROCESS_COMMAND",
-        response: "No page elements found, aborting command processing.",
-      });
       return;
     }
 
+    if (!pageState.length) {
+      if (await getIsHubspotMode()) {
+        console.warn(
+          "[background.ts] No elements found, but continuing because HubSpot mode is active"
+        );
+      } else {
+        console.warn("[background.ts] No elements found, aborting");
+        await chrome.runtime.sendMessage({
+          type: "FINISH_PROCESS_COMMAND",
+          response: "No page elements found, aborting command processing.",
+        });
+        return;
+      }
+    }
+    console.log("CHECKPOINT 2");
     // --- Call AI ---
+    // First check if we're in HubSpot mode from storage
+    // HubSpot mode already determined at top of function, use isHubspotMode directly.
+
+    // Check ONLY if we're in HubSpot mode - no longer looking at message keywords
+    // This strictly separates API mode (HubSpot) from DOM interaction mode (D4M)
+
+    // A message is HubSpot-related ONLY if we're in HubSpot mode
+    // Create aiCurrentState with appropriate values
     const aiCurrentState = {
-      elements: pageState,
+      elements: pageState, // Don't send DOM elements for HubSpot commands
       tabs: allTabs,
       currentTabUrl: tabUrl,
       actionHistory: actionHistory.slice(-3),
-      screenshot: screenshotDataUrl,
     };
-    console.log({ aiCurrentState }); // Log the state being sent
 
-    const recentActionsStr = actionHistory.length
-      ? `Recent actions: ${actionHistory.slice(-3).join(", ")}.`
+    // Enhanced debug logging
+    if (isHubspotMode) {
+      console.log(
+        "[background.ts][HubSpot Mode] HubSpot command detected - sending with NO screenshots and NO DOM elements"
+      );
+    }
+
+    const recentActionsStr = isHubspotMode
+      ? actionHistory.length
+        ? `Recent actions: ${actionHistory.slice(-3).join(", ")}.`
+        : ""
       : "";
     const fullContextMessage = `${contextMessage}. ${recentActionsStr}`;
     console.log(
@@ -354,17 +762,81 @@ async function processCommand(
       fullContextMessage
     );
 
+    if (isHubspotMode) {
+      console.log(
+        "[background.ts][HubSpot Mode] Calling chatWithAI with context:",
+        fullContextMessage
+      );
+    }
     const raw = await chatWithAI(
       fullContextMessage,
-      "session-id", // Consider making this dynamic if needed
-      aiCurrentState,
+      "session-id",
+      isHubspotMode ? [] : aiCurrentState,
       screenshotDataUrl || undefined,
       model as "gemini" | "claude"
     );
-    console.log("[background.ts] Raw response from AI:", raw);
+    if (isHubspotMode) {
+      console.log("[background.ts][HubSpot Mode] Raw response from AI:", raw);
+
+      // --- HubSpot Mode: Execute HubSpot function calls from AI response ---
+      if (raw) {
+        const hubspotCalls = raw.filter(
+          (callWrapper: any) =>
+            callWrapper.functionCall &&
+            typeof callWrapper.functionCall.name === "string" &&
+            callWrapper.functionCall.name.startsWith("hubspot_")
+        );
+        if (hubspotCalls.length === 0) {
+          console.warn(
+            "[background.ts][HubSpot Mode] No HubSpot function calls found in AI response."
+          );
+        } else {
+          for (const callWrapper of hubspotCalls) {
+            const { name, args } = callWrapper.functionCall;
+            console.log(
+              "[background.ts][HubSpot Mode] Executing HubSpot function from AI response:",
+              { name, args }
+            );
+            try {
+              const result = await executeHubspotFunction({ name, args });
+              console.log(
+                "[background.ts][HubSpot Mode] HubSpot function executed successfully:",
+                { name, result }
+              );
+              if (result && result.success) {
+                // Send error to UI and stop further processing
+                chrome.runtime.sendMessage({
+                  type: "FINISH_PROCESS_COMMAND",
+                  response: result,
+                });
+                activeAutomationTabs.delete(tabId);
+                automationStopped = true;
+                return;
+              }
+              // Optionally, send result to UI or handle as needed
+            } catch (err) {
+              console.error(
+                "[background.ts][HubSpot Mode] Error executing HubSpot function:",
+                { name, err }
+              );
+            }
+          }
+        }
+      }
+    } else {
+      console.log("[background.ts] Raw response from AI:", raw);
+    }
 
     if (!raw) {
-      console.error("[background.ts] Received null response from chatWithAI.");
+      if (isHubspotMode) {
+        console.error(
+          "[background.ts][HubSpot Mode] Received null response from chatWithAI."
+        );
+      } else {
+        console.error(
+          "[background.ts] Received null response from chatWithAI."
+        );
+      }
       chrome.runtime.sendMessage({
         type: "FINISH_PROCESS_COMMAND",
         response: "AI provider returned no response.",
@@ -376,18 +848,51 @@ async function processCommand(
     // --- Process AI Response ---
     const reportStateCall = raw.find(
       (callWrapper: GeminiFunctionCallWrapper) =>
-        callWrapper.functionCall.name === "reportCurrentState"
+        callWrapper.functionCall.name === DOMAction.reportCurrentState.name
     );
 
     if (!reportStateCall) {
-      console.error(
-        "[background.ts] Mandatory 'reportCurrentState' function call missing in AI response."
-      );
-      chrome.runtime.sendMessage({
-        type: "FINISH_PROCESS_COMMAND",
-        response: "AI response missing mandatory state report. Aborting.",
-      });
-      activeAutomationTabs.delete(tabId);
+      if (isHubspotMode) {
+        console.log(
+          "[background.ts][HubSpot Mode] Mandatory 'dom_reportCurrentState' function call missing in AI response."
+        );
+      } else {
+        console.log(
+          "[background.ts] Mandatory 'dom_reportCurrentState' function call missing in AI response."
+        );
+      }
+      if (retryCount < MAX_STATE_RETRIES) {
+        if (isHubspotMode) {
+          console.warn(
+            `[background.ts][HubSpot Mode] Retrying processCommand due to missing reportCurrentState (retry ${
+              retryCount + 1
+            })`
+          );
+        } else {
+          console.warn(
+            `[background.ts] Retrying processCommand due to missing reportCurrentState (retry ${
+              retryCount + 1
+            })`
+          );
+        }
+        const retryContextMessage = `Previous response was missing ${DOMAction.reportCurrentState.name}. Please include it in your next response.\n
+          ${contextMessage}`;
+        await processCommand(
+          tabId,
+          retryContextMessage,
+          initialCommand,
+          actionHistory,
+          model,
+          retryCount + 1
+        );
+      } else {
+        chrome.runtime.sendMessage({
+          type: "FINISH_PROCESS_COMMAND",
+          response:
+            "AI response missing mandatory state report. Aborting after retry.",
+        });
+        activeAutomationTabs.delete(tabId);
+      }
       return;
     }
 
@@ -395,23 +900,44 @@ async function processCommand(
       .args as ReportCurrentStateArgs;
     const current_state = reportArgs.current_state; // Define current_state here
     console.log(
-      "[background.ts] Extracted current_state from reportCurrentState args:",
+      "[background.ts] Extracted current_state from dom_reportCurrentState args:",
       current_state
     );
 
     if (!current_state) {
-      console.warn("[background.ts] No valid current_state found, stopping");
-      await chrome.runtime.sendMessage({
-        type: "FINISH_PROCESS_COMMAND",
-        response: "No valid state returned from AI, aborting.",
-      });
+      console.warn(
+        "[background.ts] No valid current_state found, retrying or stopping"
+      );
+      if (retryCount < MAX_STATE_RETRIES) {
+        console.warn(
+          `[background.ts] Retrying processCommand due to invalid current_state (retry ${
+            retryCount + 1
+          })`
+        );
+        const retryContextMessage =
+          "Previous response had invalid 'current_state'. Please provide a valid state in your next response.\n" +
+          contextMessage;
+        await processCommand(
+          tabId,
+          retryContextMessage,
+          initialCommand,
+          actionHistory,
+          model,
+          retryCount + 1
+        );
+      } else {
+        await chrome.runtime.sendMessage({
+          type: "FINISH_PROCESS_COMMAND",
+          response: "No valid state returned from AI, aborting after retry.",
+        });
+      }
       return;
     }
 
     // Filter out reportCurrentState to get action calls
     const actionCalls = raw.filter(
       (callWrapper: GeminiFunctionCallWrapper) =>
-        callWrapper.functionCall.name !== "reportCurrentState"
+        callWrapper.functionCall.name !== DOMAction.reportCurrentState.name
     );
     console.log("[background.ts] Extracted action calls:", actionCalls);
 
@@ -437,18 +963,36 @@ async function processCommand(
       console.warn("[background.ts] No memory object found in current_state");
     }
 
-    // If no action calls, finish processing
     if (!actionCalls.length) {
       console.log(
-        "[background.ts] No actions besides reportCurrentState, process complete"
+        "[background.ts] No actions besides dom_reportCurrentState, process complete"
       );
-      chrome.runtime.sendMessage({
-        type: "FINISH_PROCESS_COMMAND",
-        response: evaluation || "Task likely completed (no further actions).",
-      });
-      resetExecutionState(tabId);
-      activeAutomationTabs.clear();
-      return;
+      if (retryCount < MAX_STATE_RETRIES) {
+        console.warn(
+          `[background.ts] Retrying processCommand due to empty action list (retry ${
+            retryCount + 1
+          })`
+        );
+        const retryContextMessage =
+          "Previous response had no actions specified. Please provide a valid actions in your next response.\n" +
+          contextMessage;
+        await processCommand(
+          tabId,
+          retryContextMessage,
+          initialCommand,
+          actionHistory,
+          model,
+          retryCount + 1
+        );
+      } else {
+        chrome.runtime.sendMessage({
+          type: "FINISH_PROCESS_COMMAND",
+          response: evaluation || "Task likely completed (no further actions).",
+        });
+        resetExecutionState(tabId);
+        activeAutomationTabs.clear();
+        return;
+      }
     }
 
     // Execute function calls in sequence
@@ -470,154 +1014,30 @@ async function processCommand(
       );
 
       try {
-        // Handle Google Workspace functions
-        if (
-          [
-            "createNewGoogleDoc",
-            "callWorkspaceAppsScript",
-            "insertStructuredDocContent",
-          ].includes(functionName)
-        ) {
-          try {
-            const result = await executeAppsScriptFunction(functionName, args);
-            console.log(
-              "[background.ts] Google Workspace function call executed successfully:",
-              result
-            );
-            // Stop automation after successful Apps Script execution
-            automationStopped = true;
-            console.log(
-              "[background.ts] Automation stopped due to successful Apps Script execution."
-            );
-            await chrome.runtime.sendMessage({
-              type: "COMMAND_RESPONSE",
-              response: {
-                message: result.status,
-                output: `url: ${
-                  result.fileId
-                    ? getGoogleDocUrlFromId(result.fileId)
-                    : result.newDocUrl
-                }`,
-              },
-            });
-            executedActions.push(
-              `Executed Google Workspace function: ${functionName}`
-            );
-            continue;
-          } catch (error) {
-            console.error(
-              "[background.ts] Google Workspace function call failed:",
-              error
-            );
-            await chrome.runtime.sendMessage({
-              type: "COMMAND_RESPONSE",
-              response: {
-                message:
-                  "Google Workspace function execution failed: " +
-                  (error as Error).message,
-              },
-            });
-            throw error; // Re-throw to be caught by the outer try-catch
-          }
+        if (functionName.startsWith("google_workspace_")) {
+          await handleGoogleWorkspaceAction(
+            functionName,
+            args,
+            tabId,
+            executedActions
+          );
+          continue;
         }
 
         // Handle HubSpot functions
         else if (functionName.startsWith("hubspot_")) {
-          try {
-            const result = await executeHubspotFunction({
-              name: functionName,
-              args,
-            });
-            console.log(
-              "[background.ts] HubSpot function call executed successfully:",
-              result
-            );
-
-            await chrome.runtime.sendMessage({
-              type: "COMMAND_RESPONSE",
-              response: {
-                message:
-                  result.message ||
-                  `HubSpot operation successful: ${functionName}`,
-                output: result.data ? JSON.stringify(result.data) : undefined,
-              },
-            });
-
-            executedActions.push(`Executed HubSpot function: ${functionName}`);
-
-            // For navigation functions, set lastActionType for potential navigation
-            if (functionName === "hubspot_navigateTo") {
-              lastActionType = "navigate";
-            }
-
-            continue;
-          } catch (error) {
-            console.error(
-              "[background.ts] HubSpot function call failed:",
-              error
-            );
-            await chrome.runtime.sendMessage({
-              type: "COMMAND_RESPONSE",
-              response: {
-                message:
-                  "HubSpot function execution failed: " +
-                  (error instanceof Error ? error.message : String(error)),
-              },
-            });
-            throw error; // Re-throw to be caught by the outer try-catch
-          }
+          console.log("[background.ts] Received HubSpot action:", {
+            functionName,
+            args,
+            tabId,
+            executedActions,
+          });
+          await handleHubspotAction(functionName, args, tabId, executedActions);
+          continue;
         }
 
         // Handle DOM interaction functions
-        else if (["click_element", "clickElement"].includes(functionName)) {
-          const index = (args as any).index;
-          if (typeof index !== "number") {
-            throw new Error(`Invalid index for ${functionName}: ${index}`);
-          }
-          await sendActionToTab(
-            {
-              id: Date.now().toString(),
-              type: "click_element", // Map to valid LocalActionType
-              data: { index },
-              description: functionName, // Keep original name here
-            },
-            tabIdRef.value
-          );
-          executedActions.push(`Clicked on element at index ${index}`);
-          lastActionType = "click"; // Keep simplified type for navigation check
-        } else if (["input_text", "inputText"].includes(functionName)) {
-          const index = (args as any).index;
-          const text = (args as any).text ?? ""; // Ensure text is string
-          if (typeof index !== "number") {
-            throw new Error(`Invalid index for ${functionName}: ${index}`);
-          }
-          await sendActionToTab(
-            {
-              id: Date.now().toString(),
-              type: "input_text", // Map to valid LocalActionType
-              data: { index, text },
-              description: functionName, // Keep original name here
-            },
-            tabIdRef.value
-          );
-          executedActions.push(`Entered text "${text}" at index ${index}`);
-        } else if (["submit_form", "submitForm"].includes(functionName)) {
-          const index = (args as any).index;
-          if (typeof index !== "number") {
-            throw new Error(`Invalid index for ${functionName}: ${index}`);
-          }
-          await sendActionToTab(
-            {
-              id: Date.now().toString(),
-              type: "submit_form", // Map to valid LocalActionType
-              data: { index },
-              description: functionName, // Keep original name here
-            },
-            tabIdRef.value
-          );
-          executedActions.push(`Submitted form at index ${index}`);
-          lastActionType = "submit_form"; // Keep simplified type for navigation check
-        } else if (["key_press", "keyPress"].includes(functionName)) {
+        else if (functionName === DOMAction.keyPress.name) {
           const index = (args as any).index;
           const key = (args as any).key;
           if (typeof index !== "number") {
@@ -629,16 +1049,14 @@ async function processCommand(
           await sendActionToTab(
             {
               id: Date.now().toString(),
-              type: "key_press", // Map to valid LocalActionType
+              type: DOMAction.keyPress.name, // Map to valid LocalActionType
               data: { index, key },
               description: functionName, // Keep original name here
             },
             tabIdRef.value
           );
           executedActions.push(`Pressed key "${key}" at index ${index}`);
-        } else if (
-          ["extract_content", "extractContent"].includes(functionName)
-        ) {
+        } else if (functionName === DOMAction.extractContent.name) {
           const index = (args as any).index;
           if (typeof index !== "number") {
             throw new Error(`Invalid index for ${functionName}: ${index}`);
@@ -646,7 +1064,7 @@ async function processCommand(
           result = await sendActionToTab(
             {
               id: Date.now().toString(),
-              type: "extract", // Map to valid LocalActionType
+              type: DOMAction.extractContent.name, // Map to valid LocalActionType
               data: { index },
               description: functionName, // Keep original name here
             },
@@ -655,17 +1073,15 @@ async function processCommand(
           executedActions.push(
             `Extracted content from element at index ${index}: "${result}"`
           );
-        } else if (
-          ["go_to_url", "goToUrl", "navigate"].includes(functionName)
-        ) {
+        } else if (functionName === DOMAction.goToUrl.name) {
           const url = (args as any).url;
           if (!url) {
             throw new Error(`No URL provided for ${functionName}`);
           }
           await navigateTab(tabIdRef.value, url);
           executedActions.push(`Navigated to ${url}`);
-          lastActionType = "navigate"; // Keep simplified type for navigation check
-        } else if (["open_tab", "openTab"].includes(functionName)) {
+          lastActionType = DOMAction.goToUrl.name;
+        } else if (functionName === DOMAction.openTab.name) {
           const url = (args as any).url;
           if (!url) {
             throw new Error(`No URL provided for ${functionName}`);
@@ -673,8 +1089,8 @@ async function processCommand(
           const newTab = await createTab(url);
           if (newTab.id) tabIdRef.value = newTab.id;
           executedActions.push(`Opened new tab with URL ${url}`);
-          lastActionType = "open_tab"; // Keep simplified type for navigation check
-        } else if (functionName === "scroll") {
+          lastActionType = DOMAction.openTab.name; // Keep simplified type for navigation check
+        } else if (functionName === DOMAction.scroll.name) {
           const direction = (args as any).direction;
           const offset = (args as any).offset;
           if (direction !== "up" && direction !== "down") {
@@ -686,21 +1102,24 @@ async function processCommand(
           await sendActionToTab(
             {
               id: Date.now().toString(),
-              type: "scroll", // Map to valid LocalActionType
+              type: DOMAction.scroll.name, // Map to valid LocalActionType
               data: { direction, offset },
               description: functionName, // Keep original name here
             },
             tabIdRef.value
           );
           executedActions.push(`Scrolled ${direction} by ${offset} pixels`);
-        } else if (functionName === "verify") {
+        } else if (functionName === DOMAction.verify.name) {
           const url = (args as any).url;
           if (!url) {
             throw new Error(`No URL provided for ${functionName}`);
           }
           await verifyOrOpenTab(url, tabIdRef);
           executedActions.push(`Verified URL contains ${url}`);
-        } else if (functionName === "ask") {
+        } else if (
+          functionName === DOMAction.ask.name ||
+          functionName === "google_workspace_ask"
+        ) {
           const question =
             (args as any).question || "Please provide instructions.";
           console.log(`[background.ts] Asking: ${question}`);
@@ -710,8 +1129,12 @@ async function processCommand(
             question: question,
           });
           executedActions.push(`Asked question: "${question}"`);
-          return "ASK_PAUSED"; // Signal that execution is paused
-        } else if (functionName === "done") {
+          automationStopped = true;
+          return "ASK_PAUSED";
+        } else if (
+          functionName === DOMAction.done.name ||
+          functionName === "google_workspace_done"
+        ) {
           console.log(`[background.ts] Tasks completed`);
           const message = (args as any).message || "Task completed.";
           const output = (args as any).output;
@@ -723,9 +1146,20 @@ async function processCommand(
           automationStopped = true;
           executedActions.push(`Completed task: ${message}`);
           return "DONE";
-        } else if (functionName === "refetch") {
+        } else if (functionName === DOMAction.refetch.name) {
           console.log("[background.ts] Refetch action detected, will loop...");
           executedActions.push("Re-fetched page elements");
+        } else if (functionName.startsWith("dom_")) {
+          await handleDomAction(
+            functionName,
+            args,
+            tabIdRef,
+            executedActions,
+            (type) => {
+              lastActionType = type;
+            }
+          );
+          continue;
         } else {
           console.warn(
             `[background.ts] Unknown function call: ${functionName}`,

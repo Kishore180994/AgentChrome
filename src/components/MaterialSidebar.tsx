@@ -156,29 +156,37 @@ export const MaterialSidebar: React.FC = () => {
       case "recording":
         return (
           <div className="d4m-flex d4m-flex-col d4m-items-center d4m-justify-center d4m-h-full d4m-p-4">
-            <RecordingMic accentColor={accentColor} textColor={textColor} />
+            <RecordingMic
+              accentColor={accentColor}
+              textColor={textColor}
+              mode={mode}
+              theme={theme}
+            />
           </div>
         );
       case "previousChats":
         return (
-          <div className="d4m-p-4">
-            <h2 className="d4m-text-xl d4m-font-semibold d4m-mb-4 d4m-text-gray-200">
+          <div className={`d4m-p-4 ${currentTheme.container}`}>
+            <h2
+              className={`d4m-text-xl d4m-font-semibold d4m-mb-4 d4m-text-${accentColor}-400 d4m-flex d4m-items-center d4m-gap-2`}
+            >
+              <MessageSquare className="d4m-w-5 d4m-h-5" />
               Previous Chats
             </h2>
             <div className="d4m-space-y-3">
               {dummyPreviousChats.map((chat) => (
                 <div
                   key={chat.id}
-                  className="d4m-bg-gray-800 d4m-rounded-lg d4m-p-3 d4m-shadow-md d4m-cursor-pointer d4m-hover:bg-gray-700 d4m-transition-colors"
+                  className={`${currentTheme.messageBubble} d4m-p-3 d4m-cursor-pointer d4m-hover:bg-opacity-90 d4m-transition-colors`}
                 >
                   <div className="d4m-flex d4m-items-center d4m-gap-3">
                     <div
-                      className={`d4m-p-2 d4m-rounded-full d4m-bg-${accentColor}-500/20 d4m-text-${accentColor}-400`}
+                      className={`d4m-p-2 d4m-rounded-full d4m-bg-${accentColor}-500/20 d4m-text-${accentColor}-400 ${currentTheme.avatar}`}
                     >
                       <MessageSquare size={16} />
                     </div>
                     <div>
-                      <h3 className="d4m-font-medium d4m-text-gray-200">
+                      <h3 className={`d4m-font-medium ${textColor}`}>
                         {chat.title}
                       </h3>
                       <p className="d4m-text-xs d4m-text-gray-400">
@@ -193,24 +201,27 @@ export const MaterialSidebar: React.FC = () => {
         );
       case "previousRecordings":
         return (
-          <div className="d4m-p-4">
-            <h2 className="d4m-text-xl d4m-font-semibold d4m-mb-4 d4m-text-gray-200">
+          <div className={`d4m-p-4 ${currentTheme.container}`}>
+            <h2
+              className={`d4m-text-xl d4m-font-semibold d4m-mb-4 d4m-text-${accentColor}-400 d4m-flex d4m-items-center d4m-gap-2`}
+            >
+              <Mic className="d4m-w-5 d4m-h-5" />
               Previous Recordings
             </h2>
             <div className="d4m-space-y-3">
               {dummyPreviousRecordings.map((recording) => (
                 <div
                   key={recording.id}
-                  className="d4m-bg-gray-800 d4m-rounded-lg d4m-p-3 d4m-shadow-md d4m-cursor-pointer d4m-hover:bg-gray-700 d4m-transition-colors"
+                  className={`${currentTheme.messageBubble} d4m-p-3 d4m-cursor-pointer d4m-hover:bg-opacity-90 d4m-transition-colors`}
                 >
                   <div className="d4m-flex d4m-items-center d4m-gap-3">
                     <div
-                      className={`d4m-p-2 d4m-rounded-full d4m-bg-${accentColor}-500/20 d4m-text-${accentColor}-400`}
+                      className={`d4m-p-2 d4m-rounded-full d4m-bg-${accentColor}-500/20 d4m-text-${accentColor}-400 ${currentTheme.avatar}`}
                     >
                       <Mic size={16} />
                     </div>
                     <div className="d4m-flex-1">
-                      <h3 className="d4m-font-medium d4m-text-gray-200">
+                      <h3 className={`d4m-font-medium ${textColor}`}>
                         {recording.title}
                       </h3>
                       <div className="d4m-flex d4m-justify-between d4m-text-xs d4m-text-gray-400">

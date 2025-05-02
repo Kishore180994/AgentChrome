@@ -8,3 +8,20 @@ export class ActionError extends Error {
     this.name = "ActionError";
   }
 }
+export class HubspotApiError extends Error {
+  status: number;
+  category?: string;
+  details?: any;
+  constructor(
+    message: string,
+    status: number,
+    category?: string,
+    details?: any
+  ) {
+    super(message);
+    this.name = "HubspotApiError";
+    this.status = status;
+    this.category = category;
+    this.details = details;
+  }
+}

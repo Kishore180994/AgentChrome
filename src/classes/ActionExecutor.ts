@@ -36,11 +36,14 @@ export class ActionExecutor {
     console.log(`[ActionExecutor] Action args:`, args);
     // Validate input for actions that require an index
     const requiresIndex = [
-      "click_element",
-      "input_text",
-      "submit_form",
-      "extract_content",
-      "key_press",
+      "dom_clickElement",
+      "dom_inputText",
+      "dom_submitForm",
+      "dom_extractContent",
+      "dom_keyPress",
+      "dom_selectRadioButton",
+      "dom_selectDropdown",
+      "dom_selectMultiDropdown",
     ].includes(name);
 
     if (requiresIndex && typeof (args as any).index !== "number") {
@@ -51,11 +54,11 @@ export class ActionExecutor {
       throw new Error(errorMsg);
     }
     if (
-      name === "input_text" &&
+      name === "dom_inputText" &&
       typeof (args as InputTextArgs).text !== "string"
     ) {
       console.warn(
-        `[ActionExecutor] inputText received non-string text:`,
+        `[ActionExecutor] dom_inputText received non-string text:`,
         (args as InputTextArgs).text,
         `- Using empty string.`
       );
@@ -66,28 +69,28 @@ export class ActionExecutor {
 
       // List of Google Workspace actions
       const googleWorkspaceActions = [
-        "createNewGoogleDoc",
-        "insertStructuredDocContent",
-        "updateDocText",
-        "appendDocText",
-        "deleteDocText",
-        "getDocContent",
-        "getDocFileName",
-        "createNewGoogleSheet",
-        "appendSheetRow",
-        "updateSheetCell",
-        "getSheetData",
-        "deleteSheetRow",
+        "google_workspace_createNewGoogleDoc",
+        "google_workspace_insertStructuredDocContent",
+        "google_workspace_updateDocText",
+        "google_workspace_appendDocText",
+        "google_workspace_deleteDocText",
+        "google_workspace_getDocContent",
+        "google_workspace_getDocFileName",
+        "google_workspace_createNewGoogleSheet",
+        "google_workspace_appendSheetRow",
+        "google_workspace_updateSheetCell",
+        "google_workspace_getSheetData",
+        "google_workspace_deleteSheetRow",
       ];
 
       // List of actions handled directly in background.ts
       const backgroundHandledActions = [
-        "goToUrl",
-        "openTab",
-        "verify",
-        "done",
-        "ask",
-        "reportCurrentState",
+        "dom_goToUrl",
+        "dom_openTab",
+        "dom_verify",
+        "dom_done",
+        "dom_ask",
+        "dom_reportCurrentState",
         ...googleWorkspaceActions,
       ];
 
@@ -100,35 +103,30 @@ export class ActionExecutor {
       } else {
         // Handle actions meant for the content script (DOM interactions)
         switch (name) {
-          case "clickElement": // Added camelCase
-          case "click_element":
+          case "dom_clickElement":
             args = args as ClickElementArgs;
             await this.handleClick(args.index as number);
             break;
-          case "inputText": // Added camelCase
-          case "input_text":
+          case "dom_inputText":
             args = args as InputTextArgs;
             await this.handleInputText(
               (args as InputTextArgs).text ?? "",
               args.index as number
             );
             break;
-          case "scroll":
+          case "dom_scroll":
             args = args as ScrollArgs;
             await this.handleScroll(args.offset, args.direction);
             break;
-          case "submitForm": // Added camelCase
-          case "submit_form":
+          case "dom_submitForm":
             args = args as SubmitFormArgs;
             await this.handleSubmitForm(args.index as number);
             break;
-          case "extractContent": // Added camelCase
-          case "extract_content":
+          case "dom_extractContent":
             args = args as ExtractContentArgs;
             result = await this.handleExtract(args.index as number);
             break;
-          case "keyPress": // Added camelCase
-          case "key_press":
+          case "dom_keyPress":
             args = args as KeyPressArgs;
             await this.handleKeyPress(
               args.index as number,
@@ -144,6 +142,34 @@ export class ActionExecutor {
             await new Promise((resolve) => setTimeout(resolve, waitDuration));
             break;
           // Removed cases for goToUrl, openTab, verify, done, ask as they are handled in background.ts
+          case "dom_selectRadioButton":
+            // args: SelectRadioButtonArgs
+            {
+              const { index, value, selector } =
+                args as import("../services/ai/interfaces").SelectRadioButtonArgs;
+              await this.domManager.selectRadioButton(index, value, selector);
+            }
+            break;
+          case "dom_selectDropdown":
+            {
+              // args: SelectDropdownArgs
+              const { index, value, selector } =
+                args as import("../services/ai/interfaces").SelectDropdownArgs;
+              await this.domManager.selectDropdown(index, value, selector);
+            }
+            break;
+          case "dom_selectMultiDropdown":
+            {
+              // args: SelectMultiDropdownArgs
+              const { index, values, selector } =
+                args as import("../services/ai/interfaces").SelectMultiDropdownArgs;
+              await this.domManager.selectMultiDropdown(
+                index,
+                values,
+                selector
+              );
+            }
+            break;
           default:
             console.warn(
               `[ActionExecutor] Received unknown or unhandled action type: ${name}`
@@ -161,48 +187,6 @@ export class ActionExecutor {
       // Re-throw the original error object to preserve stack trace if possible
       throw error instanceof Error ? error : new Error(errorMessage);
     }
-  }
-
-  /**
-   * Handles Google Workspace actions by sending them to background.ts for execution.
-   * @param functionName The name of the Google Workspace function to execute.
-   * @param args The arguments for the function call.
-   * @returns The result of the Google Workspace action.
-   */
-  private async handleGoogleWorkspaceAction(
-    functionName: string,
-    args: any
-  ): Promise<any> {
-    return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(
-        {
-          type: "EXECUTE_APPS_SCRIPT",
-          functionName,
-          args,
-        },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            reject(chrome.runtime.lastError);
-            return;
-          }
-          if (response?.success) {
-            console.log(
-              `[ActionExecutor] Successfully executed Google Workspace action ${functionName}:`,
-              response.result
-            );
-            resolve(response.result);
-          } else {
-            const errorMsg =
-              response?.error || "Failed to execute Google Workspace action";
-            console.error(
-              `[ActionExecutor] Failed Google Workspace action ${functionName}:`,
-              errorMsg
-            );
-            reject(new Error(errorMsg));
-          }
-        }
-      );
-    });
   }
 
   /**

@@ -31,6 +31,52 @@ export class DOMManager {
     this.elementMap = new Map();
     console.log("[DOMManager] Initialized (Highlight Container Model).");
   }
+  /**
+   * Selects a radio button by index or value.
+   */
+  async selectRadioButton(
+    index: number,
+    value?: string,
+    selector?: string
+  ): Promise<void> {
+    // Find the radio button element by index or selector
+    // If value is provided, select the radio button with that value in the group
+    // Otherwise, select the element at the given index
+    // Implementation needed
+    console.log("[DOMManager] selectRadioButton", { index, value, selector });
+  }
+
+  /**
+   * Selects a value in a single-select dropdown.
+   */
+  async selectDropdown(
+    index: number,
+    value: string,
+    selector?: string
+  ): Promise<void> {
+    // Find the select element by index or selector
+    // Set its value to the provided value and dispatch a change event
+    // Implementation needed
+    console.log("[DOMManager] selectDropdown", { index, value, selector });
+  }
+
+  /**
+   * Selects multiple values in a multi-select dropdown.
+   */
+  async selectMultiDropdown(
+    index: number,
+    values: string[],
+    selector?: string
+  ): Promise<void> {
+    // Find the multi-select element by index or selector
+    // Set its selected options to the provided values and dispatch a change event
+    // Implementation needed
+    console.log("[DOMManager] selectMultiDropdown", {
+      index,
+      values,
+      selector,
+    });
+  }
 
   /** Clears attributes, finds and removes highlight containers, resets map. */
   clearDebugHighlights(doc: Document = document, isInitial: boolean): void {

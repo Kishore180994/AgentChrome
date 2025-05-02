@@ -97,6 +97,32 @@ export interface ClickElementArgs {
 /**
  * Represents the arguments for a `submitForm` function call.
  */
+/**
+ * Arguments for selecting a radio button.
+ */
+export interface SelectRadioButtonArgs {
+  index: number;
+  value?: string;
+  selector?: string;
+}
+
+/**
+ * Arguments for selecting a value in a single-select dropdown.
+ */
+export interface SelectDropdownArgs {
+  index: number;
+  value: string;
+  selector?: string;
+}
+
+/**
+ * Arguments for selecting multiple values in a multi-select dropdown.
+ */
+export interface SelectMultiDropdownArgs {
+  index: number;
+  values: string[];
+  selector?: string;
+}
 export interface SubmitFormArgs {
   index: number;
   childId?: number;
@@ -247,3 +273,54 @@ export interface DiarizationRequest {
   target?: string;
   data: DiarizationData;
 }
+
+/**
+ * Represents the successful result of a HubSpot function execution.
+ */
+export interface HubSpotExecutorSuccessResult {
+  success: true;
+  /** A user-friendly message confirming the action's success. */
+  message: string;
+  /** Optional data returned by the successful operation (e.g., created object details, search results list). */
+  data?: any; // Consider refining 'any' with specific types if possible
+  /** Optional additional details, often used for summaries or non-standard results (e.g., workflow enrollment counts). */
+  details?: any;
+  /** The name of the function that was executed (useful for context). */
+  functionName: string;
+}
+
+/**
+ * Represents an error during HubSpot function execution.
+ */
+export interface HubSpotExecutorErrorResult {
+  success: false;
+  /** A user-friendly message describing the error. */
+  error: string;
+  /** A category classifying the type of error for potential specific handling. */
+  errorType:
+    | "mode"
+    | "authentication"
+    | "unknown_function"
+    | "hubspot_api"
+    | "permissions"
+    | "rate_limit"
+    | "not_found"
+    | "validation"
+    | "network"
+    | "not_implemented"
+    | "general"
+    | string; // Allows other categories
+  /** Optional detailed error information (e.g., original error message, API error details). */
+  details?: any;
+  /** Optional HTTP status code associated with the error (often from API errors). */
+  status?: number;
+  /** The name of the function that failed (useful for context). */
+  functionName: string;
+}
+
+/**
+ * The unified result type returned by the executeHubspotFunction promise.
+ */
+export type HubSpotExecutionResult =
+  | HubSpotExecutorSuccessResult
+  | HubSpotExecutorErrorResult;

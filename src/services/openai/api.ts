@@ -29,6 +29,7 @@ export async function chatWithAI(
   provider: AIProvider = currentProvider
 ): Promise<GeminiResponse | null> {
   try {
+    console.debug("[chatWithAI] userMessage", userMessage);
     // Capture screenshot if none provided and provider supports vision
     let finalScreenShotDataUrl = screenShotDataUrl;
 
@@ -55,7 +56,7 @@ export async function chatWithAI(
 
     // Validate that reportCurrentState is present (mandatory)
     const hasReportCurrentState = response.some(
-      (part) => part.functionCall.name === "reportCurrentState"
+      (part) => part.functionCall.name === "dom_reportCurrentState"
     );
     if (!hasReportCurrentState) {
       throw new Error("Missing mandatory reportCurrentState function call");
@@ -70,7 +71,7 @@ export async function chatWithAI(
 
     return response;
   } catch (err) {
-    console.error("[chatWithAI] Fatal error => null", err);
+    console.log("[chatWithAI] Fatal error => null", err);
     return null;
   }
 }
@@ -85,8 +86,8 @@ async function prepareConversation(
   provider: "gemini" | "claude"
 ): Promise<GeminiChatMessage[] | ClaudeChatMessage[]> {
   const existingHistory = await getConversationHistory();
-  const historyToUse = existingHistory.filter((m) => m.role !== "model"); // Filter out old "model" messages
-
+  // const historyToUse = existingHistory.filter((m) => m.role !== "model");
+  console.log("[prepareConversation] existingHistory", existingHistory);
   const userMsgWithState = `${userMsg} && Current DOM Elements on Page: ${JSON.stringify(
     currentState,
     null,
@@ -95,7 +96,7 @@ async function prepareConversation(
 
   switch (provider) {
     case "gemini":
-      const geminiHistory: GeminiChatMessage[] = historyToUse.map((m) => ({
+      const geminiHistory: GeminiChatMessage[] = existingHistory.map((m) => ({
         role: m.role,
         parts: [{ text: m.content }],
       }));
@@ -105,7 +106,7 @@ async function prepareConversation(
       ];
 
     case "claude":
-      const claudeHistory: ClaudeChatMessage[] = historyToUse.map((m) => ({
+      const claudeHistory: ClaudeChatMessage[] = existingHistory.map((m) => ({
         role: m.role === "model" ? "assistant" : m.role,
         content: [{ type: "text", text: m.content } as ClaudeChatContent],
       }));
@@ -144,7 +145,7 @@ async function sendWithRetry(
     if (!resp) throw new Error("Null response from AI");
     return resp;
   } catch (err) {
-    console.error(`[sendWithRetry][${sessionId}] error=`, err);
+    console.log(`[sendWithRetry][${sessionId}] error=`, err);
     if (retries > 0) {
       console.debug(
         `[sendWithRetry][${sessionId}] retrying attempts left=`,

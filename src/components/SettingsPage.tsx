@@ -102,14 +102,19 @@ export function SettingsPage({
     }
   };
 
+  // Always use the current theme from our themes.ts file for consistency
   const currentTheme = themeStyles[theme][mode];
-  const textColor =
-    mode === "light" ? "d4m-text-gray-800" : "d4m-text-gray-200";
+  // Extract text color from the currentTheme's container
+  const textColorClass = currentTheme.container.includes("d4m-text-gray-800")
+    ? "d4m-text-gray-800"
+    : "d4m-text-gray-200";
   const borderColor =
     mode === "light" ? "d4m-border-gray-300" : "d4m-border-gray-700";
 
   return (
-    <div className="d4m-p-4 d4m-overflow-y-auto d4m-h-full">
+    <div
+      className={`d4m-p-4 d4m-overflow-y-auto d4m-h-full ${currentTheme.container}`}
+    >
       <h2
         className={`d4m-text-xl d4m-font-semibold d4m-flex d4m-items-center d4m-gap-2 d4m-text-${accentColor}-400 d4m-mb-4`}
       >
@@ -117,7 +122,7 @@ export function SettingsPage({
         Settings
       </h2>
 
-      <div className="d4m-space-y-6 d4m-text-sm">
+      <div className={`d4m-space-y-6 d4m-text-sm ${textColorClass}`}>
         {/* Authentication Section */}
         <div className={`d4m-border-b ${borderColor} d4m-pb-4 d4m-mb-4`}>
           <div className="d4m-flex d4m-items-center d4m-justify-between d4m-mb-3">
@@ -129,7 +134,7 @@ export function SettingsPage({
             </h3>
             {user && "isGuest" in user ? (
               <span
-                className={`d4m-text-xs d4m-px-2 d4m-py-1 d4m-rounded-full d4m-bg-gray-700 ${textColor}`}
+                className={`d4m-text-xs d4m-px-2 d4m-py-1 d4m-rounded-full d4m-bg-gray-700 ${textColorClass}`}
               >
                 Guest Mode
               </span>
@@ -152,7 +157,7 @@ export function SettingsPage({
                 />
               )}
               <div className="d4m-flex-1 d4m-min-w-0">
-                <p className={`d4m-font-medium ${textColor} d4m-truncate`}>
+                <p className={`d4m-font-medium ${textColorClass} d4m-truncate`}>
                   {user.name}
                 </p>
                 <p className="d4m-text-gray-500 d4m-text-xs d4m-truncate">
@@ -225,26 +230,40 @@ export function SettingsPage({
             </h3>
           </div>
 
-          {/* HubSpot API Key */}
-          <div className="d4m-flex d4m-items-center d4m-gap-2 d4m-mb-3">
-            <label
-              className={`d4m-font-medium d4m-text-${accentColor}-400 d4m-w-24`}
-            >
-              HubSpot API Key
-            </label>
-            <input
-              type="password"
-              value={hubspotApiKey}
-              onChange={(e) => setHubspotApiKey(e.target.value)}
-              className={`d4m-flex-1 d4m-px-2 d4m-py-1 ${textColor} d4m-text-sm d4m-rounded-full d4m-border ${borderColor} ${
-                currentTheme.textarea
-              } d4m-focus:outline-none d4m-focus:ring-1 d4m-focus:ring-${accentColor}-500 ${
-                mode === "light"
-                  ? "d4m-placeholder-gray-400"
-                  : "d4m-placeholder-gray-500"
-              } d4m-transition-all`}
-              placeholder="HubSpot API Key"
-            />
+          {/* HubSpot API Section */}
+          <div className="d4m-mb-3">
+            <div className="d4m-flex d4m-items-center d4m-gap-2 d4m-mb-2">
+              <label
+                className={`d4m-font-medium d4m-text-${accentColor}-400 d4m-w-24`}
+              >
+                HubSpot Token
+              </label>
+              <input
+                type="password"
+                value={hubspotApiKey}
+                onChange={(e) => setHubspotApiKey(e.target.value)}
+                className={`d4m-flex-1 d4m-px-2 d4m-py-1 ${textColorClass} d4m-text-sm d4m-rounded-full d4m-border ${borderColor} ${
+                  currentTheme.textarea
+                } d4m-focus:outline-none d4m-focus:ring-1 d4m-focus:ring-${accentColor}-500 ${
+                  mode === "light"
+                    ? "d4m-placeholder-gray-400"
+                    : "d4m-placeholder-gray-500"
+                } d4m-transition-all`}
+                placeholder="Private App Access Token"
+              />
+            </div>
+            <div className="d4m-ml-24 d4m-text-xs d4m-text-amber-500 d4m-mt-1">
+              Note: Enter your Private App Access Token. Create a private app in
+              HubSpot with CRM scopes (contacts, companies, deals).
+              <a
+                href="https://developers.hubspot.com/docs/api/private-apps"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`d4m-ml-1 d4m-text-${accentColor}-400 d4m-hover:text-${accentColor}-300 d4m-underline`}
+              >
+                Learn more
+              </a>
+            </div>
           </div>
 
           {/* AI Provider Keys */}
@@ -258,7 +277,7 @@ export function SettingsPage({
               type="password"
               value={geminiKey}
               onChange={(e) => setGeminiKey(e.target.value)}
-              className={`d4m-flex-1 d4m-px-2 d4m-py-1 ${textColor} d4m-text-sm d4m-rounded-full d4m-border ${borderColor} ${
+              className={`d4m-flex-1 d4m-px-2 d4m-py-1 ${textColorClass} d4m-text-sm d4m-rounded-full d4m-border ${borderColor} ${
                 currentTheme.textarea
               } d4m-focus:outline-none d4m-focus:ring-1 d4m-focus:ring-${accentColor}-500 ${
                 mode === "light"
@@ -279,7 +298,7 @@ export function SettingsPage({
               type="password"
               value={openaiKey}
               onChange={(e) => setOpenaiKey(e.target.value)}
-              className={`d4m-flex-1 d4m-px-2 d4m-py-1 ${textColor} d4m-text-sm d4m-rounded-full d4m-border ${borderColor} ${
+              className={`d4m-flex-1 d4m-px-2 d4m-py-1 ${textColorClass} d4m-text-sm d4m-rounded-full d4m-border ${borderColor} ${
                 currentTheme.textarea
               } d4m-focus:outline-none d4m-focus:ring-1 d4m-focus:ring-${accentColor}-500 ${
                 mode === "light"
@@ -298,7 +317,7 @@ export function SettingsPage({
           >
             AI Provider
           </label>
-          <div className={`d4m-flex d4m-gap-3 ${textColor}`}>
+          <div className={`d4m-flex d4m-gap-3 ${textColorClass}`}>
             <label className="d4m-flex d4m-items-center d4m-gap-1">
               <input
                 type="radio"
@@ -340,7 +359,7 @@ export function SettingsPage({
             onChange={(e) =>
               setSelectedTheme(e.target.value as AppSettings["theme"])
             }
-            className={`d4m-flex-1 d4m-px-2 d4m-py-1 d4m-bg-transparent ${textColor} d4m-text-sm d4m-rounded-full d4m-border ${borderColor} ${currentTheme.button} d4m-focus:outline-none d4m-focus:ring-1 d4m-focus:ring-${accentColor}-500 d4m-transition-all`}
+            className={`d4m-flex-1 d4m-px-2 d4m-py-1 d4m-bg-transparent ${textColorClass} d4m-text-sm d4m-rounded-full d4m-border ${borderColor} ${currentTheme.button} d4m-focus:outline-none d4m-focus:ring-1 d4m-focus:ring-${accentColor}-500 d4m-transition-all`}
           >
             <option value="neumorphism">Neumorphism</option>
             <option value="glassmorphism">Glassmorphism</option>
@@ -362,7 +381,7 @@ export function SettingsPage({
                 e.target.value as AppSettings["accentColor"]
               )
             }
-            className={`d4m-flex-1 d4m-px-2 d4m-py-1 d4m-bg-transparent ${textColor} d4m-text-sm d4m-rounded-full d4m-border ${borderColor} ${currentTheme.button} d4m-focus:outline-none d4m-focus:ring-1 d4m-focus:ring-${accentColor}-500 d4m-transition-all`}
+            className={`d4m-flex-1 d4m-px-2 d4m-py-1 d4m-bg-transparent ${textColorClass} d4m-text-sm d4m-rounded-full d4m-border ${borderColor} ${currentTheme.button} d4m-focus:outline-none d4m-focus:ring-1 d4m-focus:ring-${accentColor}-500 d4m-transition-all`}
           >
             {ACCENT_COLORS.map((color) => (
               <option key={color} value={color}>
@@ -384,7 +403,7 @@ export function SettingsPage({
             onChange={(e) =>
               setSelectedMode(e.target.value as AppSettings["mode"])
             }
-            className={`d4m-flex-1 d4m-px-2 d4m-py-1 d4m-bg-transparent ${textColor} d4m-text-sm d4m-rounded-full d4m-border ${borderColor} ${currentTheme.button} d4m-focus:outline-none d4m-focus:ring-1 d4m-focus:ring-${accentColor}-500 d4m-transition-all`}
+            className={`d4m-flex-1 d4m-px-2 d4m-py-1 d4m-bg-transparent ${textColorClass} d4m-text-sm d4m-rounded-full d4m-border ${borderColor} ${currentTheme.button} d4m-focus:outline-none d4m-focus:ring-1 d4m-focus:ring-${accentColor}-500 d4m-transition-all`}
           >
             <option value="light">Light</option>
             <option value="dark">Dark</option>
@@ -434,13 +453,16 @@ export function SettingsPage({
             </li>
             <li>
               <a
-                href="https://developers.hubspot.com/docs/api/overview"
+                href="https://developers.hubspot.com/docs/api/private-apps"
                 target="_blank"
                 rel="noopener noreferrer"
                 className={`d4m-text-${accentColor}-400 d4m-hover:text-${accentColor}-300 d4m-underline`}
               >
-                HubSpot Developer Portal
-              </a>
+                HubSpot Private Apps
+              </a>{" "}
+              <span className="d4m-text-gray-400">
+                (Create a private app with CRM scopes)
+              </span>
             </li>
           </ul>
         </div>

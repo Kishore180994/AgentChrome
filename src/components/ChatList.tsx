@@ -1,14 +1,29 @@
 import React, { useState, useEffect } from "react";
 import api, { Chat, Message, MessageStats } from "../services/api";
+import { themeStyles } from "../utils/themes";
 
 interface ChatListProps {
   onChatSelect?: (chat: Chat) => void;
+  theme?: "neumorphism" | "glassmorphism" | "claymorphism";
+  accentColor?: string;
+  mode?: "light" | "dark";
 }
 
 /**
  * Component for displaying a list of chats from the backend
  */
-const ChatList: React.FC<ChatListProps> = ({ onChatSelect }) => {
+const ChatList: React.FC<ChatListProps> = ({
+  onChatSelect,
+  theme = "neumorphism",
+  accentColor = "rose",
+  mode = "dark",
+}) => {
+  // Get theme styles
+  const currentTheme = themeStyles[theme][mode];
+  const textColor =
+    mode === "light" ? "d4m-text-gray-800" : "d4m-text-gray-200";
+  const borderColor =
+    mode === "light" ? "d4m-border-gray-300" : "d4m-border-gray-700";
   const [chats, setChats] = useState<Chat[]>([]);
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -137,11 +152,19 @@ const ChatList: React.FC<ChatListProps> = ({ onChatSelect }) => {
   };
 
   return (
-    <div className="d4m-flex d4m-h-full d4m-border d4m-border-gray-200 d4m-rounded-lg d4m-overflow-hidden">
+    <div
+      className={`d4m-flex d4m-h-full ${currentTheme.container} d4m-rounded-lg d4m-overflow-hidden`}
+    >
       {/* Chat list sidebar */}
-      <div className="d4m-w-1/3 d4m-border-r d4m-border-gray-200 d4m-bg-gray-50 d4m-flex d4m-flex-col">
-        <div className="d4m-p-4 d4m-border-b d4m-border-gray-200">
-          <h2 className="d4m-text-lg d4m-font-semibold d4m-mb-2">Chats</h2>
+      <div
+        className={`d4m-w-1/3 d4m-border-r ${borderColor} d4m-flex d4m-flex-col ${currentTheme.messageBubble}`}
+      >
+        <div className={`d4m-p-4 d4m-border-b ${borderColor}`}>
+          <h2
+            className={`d4m-text-lg d4m-font-semibold d4m-mb-2 d4m-text-${accentColor}-400`}
+          >
+            Chats
+          </h2>
 
           {/* New chat form */}
           <form onSubmit={createChat} className="d4m-flex d4m-space-x-2">
@@ -149,13 +172,13 @@ const ChatList: React.FC<ChatListProps> = ({ onChatSelect }) => {
               type="text"
               value={newChatTitle}
               onChange={(e) => setNewChatTitle(e.target.value)}
-              className="d4m-flex-1 d4m-px-3 d4m-py-2 d4m-border d4m-border-gray-300 d4m-rounded-md d4m-shadow-sm"
+              className={`d4m-flex-1 d4m-px-3 d4m-py-2 ${currentTheme.textarea} d4m-rounded-md`}
               placeholder="New chat title (optional)"
             />
             <button
               type="submit"
               disabled={loading}
-              className="d4m-bg-blue-500 d4m-text-white d4m-px-4 d4m-py-2 d4m-rounded-md d4m-hover:bg-blue-600 d4m-transition-colors d4m-disabled:opacity-50"
+              className={`d4m-bg-${accentColor}-500 d4m-text-white d4m-px-4 d4m-py-2 d4m-rounded-md hover:d4m-bg-${accentColor}-600 d4m-transition-colors d4m-disabled:opacity-50`}
             >
               {loading ? "..." : "New"}
             </button>
@@ -177,12 +200,18 @@ const ChatList: React.FC<ChatListProps> = ({ onChatSelect }) => {
               {chats.map((chat) => (
                 <li
                   key={chat._id}
-                  className={`d4m-p-4 d4m-cursor-pointer d4m-hover:bg-gray-100 d4m-transition-colors ${
-                    selectedChat?._id === chat._id ? "d4m-bg-blue-50" : ""
+                  className={`d4m-p-4 d4m-cursor-pointer hover:d4m-bg-opacity-90 d4m-transition-colors d4m-rounded-md d4m-mb-1 ${
+                    currentTheme.messageBubble
+                  } ${
+                    selectedChat?._id === chat._id
+                      ? `d4m-border-l-4 d4m-border-${accentColor}-500`
+                      : ""
                   }`}
                   onClick={() => handleChatSelect(chat)}
                 >
-                  <h3 className="d4m-font-medium d4m-truncate">{chat.title}</h3>
+                  <h3 className={`d4m-font-medium d4m-truncate ${textColor}`}>
+                    {chat.title}
+                  </h3>
                   <p className="d4m-text-xs d4m-text-gray-500 d4m-mt-1">
                     {new Date(chat.createdAt).toLocaleString()}
                   </p>
@@ -197,12 +226,18 @@ const ChatList: React.FC<ChatListProps> = ({ onChatSelect }) => {
       </div>
 
       {/* Chat detail view */}
-      <div className="d4m-flex-1 d4m-flex d4m-flex-col d4m-bg-white">
+      <div
+        className={`d4m-flex-1 d4m-flex d4m-flex-col ${currentTheme.container}`}
+      >
         {selectedChat ? (
           <>
             {/* Chat header */}
-            <div className="d4m-p-4 d4m-border-b d4m-border-gray-200">
-              <h2 className="d4m-text-lg d4m-font-semibold">
+            <div
+              className={`d4m-p-4 d4m-border-b ${borderColor} ${currentTheme.header}`}
+            >
+              <h2
+                className={`d4m-text-lg d4m-font-semibold d4m-text-${accentColor}-400`}
+              >
                 {selectedChat.title}
               </h2>
               <p className="d4m-text-xs d4m-text-gray-500">
@@ -211,7 +246,9 @@ const ChatList: React.FC<ChatListProps> = ({ onChatSelect }) => {
             </div>
 
             {/* Messages */}
-            <div className="d4m-flex-1 d4m-overflow-y-auto d4m-p-4 d4m-space-y-4">
+            <div
+              className={`d4m-flex-1 d4m-overflow-y-auto d4m-p-4 d4m-space-y-4 ${currentTheme.textarea}`}
+            >
               {error && (
                 <div className="d4m-bg-red-100 d4m-border d4m-border-red-400 d4m-text-red-700 d4m-px-4 d4m-py-3 d4m-rounded">
                   {error}
@@ -228,8 +265,8 @@ const ChatList: React.FC<ChatListProps> = ({ onChatSelect }) => {
                     key={message._id}
                     className={`d4m-max-w-3/4 d4m-p-3 d4m-rounded-lg ${
                       message.sender === "user"
-                        ? "d4m-bg-blue-100 d4m-ml-auto"
-                        : "d4m-bg-gray-100"
+                        ? `d4m-bg-${accentColor}-100/20 d4m-ml-auto ${currentTheme.messageBubble}`
+                        : `${currentTheme.messageBubble}`
                     }`}
                   >
                     <p>{message.content}</p>
@@ -242,19 +279,24 @@ const ChatList: React.FC<ChatListProps> = ({ onChatSelect }) => {
             </div>
 
             {/* Message input */}
-            <div className="d4m-p-4 d4m-border-t d4m-border-gray-200">
+            <div
+              className={`d4m-p-4 d4m-border-t ${borderColor} ${currentTheme.form}`}
+            >
               <form onSubmit={sendMessage} className="d4m-flex d4m-space-x-2">
                 <input
                   type="text"
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
-                  className="d4m-flex-1 d4m-px-3 d4m-py-2 d4m-border d4m-border-gray-300 d4m-rounded-md d4m-shadow-sm"
+                  className={`d4m-flex-1 d4m-px-3 d4m-py-2 ${currentTheme.textarea} d4m-rounded-full`}
                   placeholder="Type your message..."
                 />
                 <button
                   type="submit"
                   disabled={!newMessage.trim()}
-                  className="d4m-bg-blue-500 d4m-text-white d4m-px-4 d4m-py-2 d4m-rounded-md d4m-hover:bg-blue-600 d4m-transition-colors d4m-disabled:opacity-50"
+                  className={`${currentTheme.sendButton.replace(
+                    "amber",
+                    accentColor
+                  )} d4m-px-4 d4m-py-2 d4m-rounded-full d4m-transition-colors d4m-disabled:opacity-50`}
                 >
                   Send
                 </button>

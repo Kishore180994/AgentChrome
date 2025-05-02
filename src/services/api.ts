@@ -86,7 +86,7 @@ async function fetchWithAuth(
 
     // Handle unauthorized responses (clear token and redirect to login)
     if (response.status === 401) {
-      console.error("Authentication failed with 401 status");
+      console.log("Authentication failed with 401 status");
 
       // Clear the invalid token and user data
       await chrome.storage.local.remove([
@@ -101,7 +101,7 @@ async function fetchWithAuth(
 
     return response;
   } catch (error) {
-    console.error("API request failed:", error);
+    console.log("API request failed:", error);
     throw error;
   }
 }
@@ -126,7 +126,7 @@ export const authApi = {
       const data = await response.json();
       return data.user;
     } catch (error) {
-      console.error("Failed to get current user:", error);
+      console.log("Failed to get current user:", error);
       return null;
     }
   },
@@ -139,7 +139,7 @@ export const authApi = {
       const response = await fetchWithAuth(config.API.ENDPOINTS.AUTH.LOGOUT);
       return response.ok;
     } catch (error) {
-      console.error("Logout failed:", error);
+      console.log("Logout failed:", error);
       return false;
     }
   },

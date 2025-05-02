@@ -10,10 +10,13 @@ import {
   DiarizationRequest,
   DiarizationSegment,
 } from "../../services/ai/interfaces";
+import { themeStyles } from "../../utils/themes";
 
 interface RecordingMicProps {
   accentColor: string;
   textColor: string;
+  mode?: "light" | "dark";
+  theme?: "neumorphism" | "glassmorphism" | "claymorphism";
   // onStop prop might still be useful for parent component cleanup/state update
   onStop?: () => void; // Changed signature as final transcript comes from backend now
 }
@@ -21,6 +24,8 @@ interface RecordingMicProps {
 export const RecordingMic: React.FC<RecordingMicProps> = ({
   accentColor,
   textColor,
+  mode = "dark",
+  theme = "neumorphism",
   onStop,
 }) => {
   // --- State for UI and Display ---
@@ -500,10 +505,13 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
     ? initializationStatus
     : "Ready"; // Default state
 
+  // Get the theme styles from themes.ts
+  const currentTheme = themeStyles[theme][mode];
+
   return (
     <div
       ref={containerRef}
-      className={`d4m-flex d4m-flex-col d4m-w-full d4m-h-full d4m-p-4 d4m-rounded-lg d4m-bg-gray-800 d4m-bg-opacity-50 d4m-backdrop-blur-sm d4m-border d4m-border-gray-700`}
+      className={`d4m-flex d4m-flex-col d4m-w-full d4m-h-full d4m-p-4 d4m-rounded-lg ${currentTheme.container}`}
     >
       {/* Header with title (remains the same) */}
       <div className="d4m-flex d4m-justify-between d4m-items-center d4m-mb-4">
@@ -594,7 +602,9 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
         </div>
 
         {/* Meeting info card - enhanced with icons and better styling */}
-        <div className="d4m-flex-1 d4m-bg-gray-800 d4m-bg-opacity-50 d4m-rounded-lg d4m-p-4 d4m-border d4m-border-gray-700 d4m-shadow-lg">
+        <div
+          className={`d4m-flex-1 ${currentTheme.messageBubble} d4m-p-4 d4m-shadow-lg`}
+        >
           {isEditingName /* Edit mode */ ? (
             <div className="d4m-flex d4m-gap-2">
               <input
@@ -769,11 +779,13 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
       </div>
 
       {/* Transcript windows */}
-      <div className="d4m-flex-1 d4m-overflow-hidden d4m-rounded-lg d4m-border d4m-border-gray-700">
+      <div
+        className={`d4m-flex-1 d4m-overflow-hidden d4m-rounded-lg ${currentTheme.executionGroup}`}
+      >
         {/* Microphone-only Live Transcript View */}
         {selectedTranscriptType === "live" && browserSupportsLiveMic ? (
           <div
-            className={`d4m-h-full d4m-overflow-y-auto d4m-p-3 d4m-bg-gray-900 d4m-bg-opacity-50 ${textColor}`}
+            className={`d4m-h-full d4m-overflow-y-auto d4m-p-3 ${currentTheme.textarea} ${textColor}`}
           >
             <h3
               className={`d4m-text-${accentColor}-400 d4m-text-sm d4m-font-medium d4m-mb-2`}
@@ -798,7 +810,7 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
           </div>
         ) : selectedTranscriptType === "live" && !browserSupportsLiveMic ? (
           <div
-            className={`d4m-h-full d4m-flex d4m-items-center d4m-justify-center d4m-p-3 d4m-bg-gray-900 d4m-bg-opacity-50 ${textColor} d4m-text-gray-500 d4m-italic text-center`}
+            className={`d4m-h-full d4m-flex d4m-items-center d4m-justify-center d4m-p-3 ${currentTheme.textarea} ${textColor} d4m-italic text-center`}
           >
             Browser does not support Live Microphone Transcription. Please use
             the Diarization view.
@@ -809,7 +821,7 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
         {selectedTranscriptType === "diarization" && (
           <div
             ref={diarizationTranscriptRef}
-            className={`d4m-h-full d4m-overflow-y-auto d4m-p-3 d4m-bg-gray-900 d4m-bg-opacity-50 ${textColor}`}
+            className={`d4m-h-full d4m-overflow-y-auto d4m-p-3 ${currentTheme.textarea} ${textColor}`}
           >
             <div className="d4m-flex d4m-justify-between d4m-items-center d4m-mb-2">
               <h3
@@ -1061,7 +1073,9 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
                     </p>
                   </div>
                 ) : (
-                  <div className="d4m-flex d4m-flex-col d4m-items-center d4m-gap-4 d4m-p-6 d4m-bg-gray-800 d4m-bg-opacity-30 d4m-rounded-lg d4m-border d4m-border-gray-700 d4m-border-opacity-50">
+                  <div
+                    className={`d4m-flex d4m-flex-col d4m-items-center d4m-gap-4 d4m-p-6 ${currentTheme.messageBubble} d4m-rounded-lg`}
+                  >
                     <div
                       className={`d4m-text-${accentColor}-400 d4m-p-3 d4m-rounded-full d4m-bg-gray-800`}
                     >
@@ -1095,7 +1109,9 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
                       </p>
                     </div>
                     <div className="d4m-flex d4m-flex-col d4m-gap-2 d4m-mt-2 d4m-w-full d4m-max-w-sm">
-                      <div className="d4m-flex d4m-items-center d4m-gap-2 d4m-text-gray-400 d4m-text-xs d4m-bg-gray-800 d4m-bg-opacity-50 d4m-px-3 d4m-py-2 d4m-rounded">
+                      <div
+                        className={`d4m-flex d4m-items-center d4m-gap-2 d4m-text-xs ${currentTheme.suggestion} d4m-px-3 d4m-py-2`}
+                      >
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
                           width="14"
@@ -1112,7 +1128,9 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
                         </svg>
                         <span>Automatically identifies different speakers</span>
                       </div>
-                      <div className="d4m-flex d4m-items-center d4m-gap-2 d4m-text-gray-400 d4m-text-xs d4m-bg-gray-800 d4m-bg-opacity-50 d4m-px-3 d4m-py-2 d4m-rounded">
+                      <div
+                        className={`d4m-flex d4m-items-center d4m-gap-2 d4m-text-xs ${currentTheme.suggestion} d4m-px-3 d4m-py-2`}
+                      >
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
                           width="14"

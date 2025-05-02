@@ -11,7 +11,7 @@
 
 export interface LocalAction {
   id: string;
-  type: LocalActionType;
+  type: LocalActionType; // Define LocalActionType below
   data: {
     index?: number; // Primary way to reference elements from PageElement
     childId?: number; // Optional child element within container
@@ -29,23 +29,71 @@ export interface LocalAction {
   description?: string;
 }
 
+// Define the action types as an object
+export const DOMAction = {
+  clickElement: {
+    name: "dom_clickElement",
+    description: "Clicks an interactive element on the page",
+  },
+  inputText: {
+    name: "dom_inputText",
+    description: "Enters text into an input element on the page",
+  },
+  selectRadioButton: {
+    name: "dom_selectRadioButton",
+    description: "Selects a radio button option by index or value",
+  },
+  selectDropdown: {
+    name: "dom_selectDropdown",
+    description: "Selects a value in a single-select dropdown",
+  },
+  selectMultiDropdown: {
+    name: "dom_selectMultiDropdown",
+    description: "Selects multiple values in a multi-select dropdown",
+  },
+  submitForm: {
+    name: "dom_submitForm",
+    description: "Submits a form by clicking the submit button/element",
+  },
+  keyPress: {
+    name: "dom_keyPress",
+    description: "Simulates a key press on an element",
+  },
+  scroll: { name: "dom_scroll", description: "Scrolls the page up or down" },
+  goToUrl: { name: "dom_goToUrl", description: "Navigates to a new URL" },
+  openTab: {
+    name: "dom_openTab",
+    description: "Opens a new tab with the specified URL",
+  },
+  extractContent: {
+    name: "dom_extractContent",
+    description: "Extracts content from an element",
+  },
+  verify: { name: "dom_verify", description: "Verifies the current URL" },
+  done: { name: "dom_done", description: "Indicates task completion" },
+  ask: {
+    name: "dom_ask",
+    description: "Asks the user a question for clarification or confirmation",
+  },
+  reportCurrentState: {
+    name: "dom_reportCurrentState",
+    description:
+      "Reports the current state of the task, mandatory for every response",
+  },
+  wait: {
+    name: "dom_wait",
+    description: "Waits for a specified duration before proceeding",
+  },
+  refetch: {
+    name: "dom_refetch",
+    description: "Refetches the current page content",
+  },
+} as const;
+
 export type LocalActionType =
-  | "click"
-  | "click_element"
-  | "input_text"
-  | "navigate"
-  | "verify"
-  | "open_tab"
-  | "go_to_url"
-  | "extract"
-  | "submit_form"
-  | "key_press"
-  | "scroll"
-  | "done"
-  | "ask"
-  | "wait"
-  | "refresh"
-  | "refetch";
+  (typeof DOMAction)[keyof typeof DOMAction]["name"];
+
+// Derive the type from the object
 
 export interface InputTextAction {
   input_text: {
