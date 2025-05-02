@@ -1,7 +1,9 @@
+// Overlay for available actions when a command is selected
 // src/components/CommandInputArea.tsx
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Send, CornerDownLeft } from "lucide-react"; // Icons used
 import { AccentColor } from "../../utils/themes"; // Adjust path as needed
+import { hubspotModularTools } from "../../services/ai/hubspotTool";
 
 // Define HubSpot Slash Commands (Keep as is)
 const hubspotSlashCommands = [
@@ -52,6 +54,8 @@ interface CommandInputAreaProps {
   historyIndex: number | null;
   selectedCommandRef: React.RefObject<HTMLDivElement>;
   onPopupSelect: (command: string) => void;
+  placeholder?: string;
+  onSlashCommandStateChange?: (active: boolean, filter: string) => void;
 }
 
 // CSS class constants (Keep as is)
@@ -78,6 +82,8 @@ export function CommandInputArea({
   historyIndex,
   selectedCommandRef,
   onPopupSelect,
+  placeholder,
+  onSlashCommandStateChange,
 }: CommandInputAreaProps) {
   // --- Refs (Keep as is) ---
   const editableDivRef = useRef<HTMLDivElement>(null);
@@ -389,6 +395,7 @@ export function CommandInputArea({
       if (selectedCommand && !chipNode) {
         // Chip was manually deleted (e.g., select all + delete)
         clearSelectedCommand();
+        if (onSlashCommandStateChange) onSlashCommandStateChange(false, "");
         return; // State change will trigger useEffect for re-render
       }
 
@@ -416,6 +423,8 @@ export function CommandInputArea({
         } else {
           currentText = textContent;
         }
+        // If chip is present, no slash command overlay
+        if (onSlashCommandStateChange) onSlashCommandStateChange(false, "");
       } else {
         // No chip, get the entire text content, try innerText for better newline handling
         currentText = element.innerText || element.textContent || "";
@@ -425,6 +434,7 @@ export function CommandInputArea({
           if (currentText === "/") {
             if (slashFilter !== "") setSlashFilter("");
             if (!showSlashPopup) setShowSlashPopup(true);
+            if (onSlashCommandStateChange) onSlashCommandStateChange(true, "");
           } else if (
             currentText.startsWith("/") &&
             !currentText.includes(" ", 1)
@@ -432,13 +442,17 @@ export function CommandInputArea({
             const potentialFilter = currentText.substring(1);
             setSlashFilter(potentialFilter);
             if (!showSlashPopup) setShowSlashPopup(true);
+            if (onSlashCommandStateChange)
+              onSlashCommandStateChange(true, potentialFilter);
           } else {
             if (showSlashPopup) setShowSlashPopup(false);
             if (slashFilter !== "") setSlashFilter("");
+            if (onSlashCommandStateChange) onSlashCommandStateChange(false, "");
           }
         } else {
           if (showSlashPopup) setShowSlashPopup(false);
           if (slashFilter !== "") setSlashFilter("");
+          if (onSlashCommandStateChange) onSlashCommandStateChange(false, "");
         }
       }
 
@@ -457,6 +471,7 @@ export function CommandInputArea({
       input, // Compare against the current state value
       setInput,
       clearSelectedCommand,
+      onSlashCommandStateChange,
     ]
   );
 
@@ -752,12 +767,11 @@ export function CommandInputArea({
           onBlur={onBlur}
           onCompositionStart={handleCompositionStart}
           onCompositionEnd={handleCompositionEnd}
-          data-placeholder={placeholderText} // Used by CSS for ::before pseudo-element
+          data-placeholder={placeholder || ""}
           className={`${EDITABLE_DIV_CLASS} d4m-flex-1 d4m-bg-transparent focus:d4m-outline-none ${textColor} d4m-text-sm d4m-max-h-32 d4m-overflow-y-auto d4m-scrollbar-thin ${
             mode === "light"
               ? "d4m-scrollbar-thumb-gray-400"
               : "d4m-scrollbar-thumb-gray-600"
-            // Add 'is-empty' class based on *visible* content for placeholder
           } ${
             (!input && !selectedCommand) || (selectedCommand && !input)
               ? "is-empty"
@@ -774,15 +788,13 @@ export function CommandInputArea({
           }}
           role="textbox"
           aria-multiline="true"
-          aria-placeholder={placeholderText}
+          aria-placeholder={placeholder || ""}
           aria-disabled={isDisabled ? "true" : "false"}
           aria-label={
             selectedCommand
               ? `Prompt for command ${selectedCommand}`
               : "Command or prompt input"
           }
-          // Consider aria-controls for popups if needed
-          // aria-activedescendant={ showSlashPopup && filteredCommands[slashSelectedIndex] ? `slash-command-${filteredCommands[slashSelectedIndex].command}` : undefined }
         >
           {/* Content managed by useEffect */}
         </div>

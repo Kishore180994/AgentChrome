@@ -63,11 +63,10 @@ export const handleSubmit = async (
   const userMsg: Message = {
     id: Date.now().toString(),
     role: "user" as const,
-    content: userMessage, // Display the full command + prompt in the UI
+    content: userMessage,
   };
   setMessages((prev) => {
     const updatedMessages = [...prev, userMsg];
-    // Save updated history to local storage immediately
     chrome.storage.local.set({ conversationHistory: updatedMessages });
     return updatedMessages;
   });
@@ -108,7 +107,6 @@ export const handleSubmit = async (
             message: "Failed to create backend chat.",
             type: "error",
           });
-          // Continue locally even if backend chat creation fails
         }
       }
 

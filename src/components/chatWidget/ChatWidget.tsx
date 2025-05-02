@@ -1,3 +1,4 @@
+// src/components/ChatWidget.tsx
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Square,
@@ -22,10 +23,9 @@ import { StepState } from "../../types/responseFormat";
 import { Message, ProcessedMessage } from "./chatInterface";
 
 import {
-  handleSubmit,
+  handleSubmit as originalHandleSubmit,
   handleStop,
   handleNewChat,
-  handlePopupSelect,
   toggleExecutionGroup,
   handleChipClick,
   handleFocus,
@@ -34,6 +34,15 @@ import {
 import { useSiriBorderWithRef } from "../../hooks/useSiriBorder";
 import HubspotSuccessCard from "../HubspotSuccessCard";
 import StarfallCascadeAnimation, { linkifyUrls } from "../../utils/helpers";
+import { Tool } from "@google/generative-ai";
+import { hubspotModularTools } from "../../services/ai/hubspotTool";
+import Overlay from "./overlay";
+
+interface ActionInfo {
+  name: string; // Original function name (e.g., "hubspot_createContact")
+  displayName: string; // User-friendly name (e.g., "Create Contact")
+  description: string; // Description from the tool definition
+}
 
 export function ChatWidget() {
   // State
@@ -58,6 +67,47 @@ export function ChatWidget() {
   >("neumorphism");
   const [accentColor, setAccentColor] = useState<AccentColor>("rose");
   const [d4mAccentColor, setD4mAccentColor] = useState<AccentColor>("rose");
+
+  // Overlay state for slash commands
+  const [slashActive, setSlashActive] = useState(false);
+  const [slashFilter, setSlashFilter] = useState("");
+
+  // HubSpot commands (should match CommandInputArea)
+  const hubspotSlashCommands = [
+    {
+      command: "contact",
+      description: "Manage Contacts (Get, Create, Update...)",
+    },
+    {
+      command: "company",
+      description: "Manage Companies (Get, Create, Update...)",
+    },
+    { command: "deal", description: "Manage Deals (Get, Create, Update...)" },
+    { command: "ticket", description: "Manage Tickets (Get, Create...)" },
+    { command: "task", description: "Manage Tasks (Get, Create...)" },
+    { command: "note", description: "Add Notes to records" },
+    { command: "meeting", description: "Schedule or Log Meetings" },
+    { command: "call", description: "Log Calls" },
+    {
+      command: "search",
+      description: "Advanced Search (Contacts, Companies...)",
+    },
+    { command: "list", description: "Get details of Contact/Company Lists" },
+    { command: "workflow", description: "Trigger Workflows or Enroll records" },
+    {
+      command: "associate",
+      description: "Associate records (e.g., Contact to Deal)",
+    },
+  ];
+  // Callback for slash command state from CommandInputArea
+
+  const handleSlashCommandStateChange = (
+    active: boolean,
+    filter: string
+  ): void => {
+    setSlashActive(active);
+    setSlashFilter(filter);
+  };
   const [mode, setMode] = useState<"light" | "dark">("dark");
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
@@ -90,7 +140,7 @@ export function ChatWidget() {
   );
 
   const handleInputSubmit = useCallback(() => {
-    handleSubmit(
+    originalHandleSubmit(
       input,
       selectedCommand,
       isLoading,
@@ -708,6 +758,172 @@ export function ChatWidget() {
           } d4m-flex d4m-flex-col-reverse d4m-relative d4m-z-0`} // flex-col-reverse displays newest at bottom
           aria-label="Chat messages"
         >
+          {/* --- Overlay for HubMode Commands/Options --- */}
+          {hubspotMode && isInputAreaFocused && selectedCommand && (
+            <Overlay
+              isVisible={true}
+              mode={mode}
+              accentColor={accentColor}
+              padding="20px 24px"
+              borderRadius="12px"
+              centerContent={false}
+              style={{
+                margin: "12px",
+                maxWidth: "96%",
+                marginLeft: "auto",
+                marginRight: "auto",
+                pointerEvents: "auto",
+              }}
+            >
+              {(() => {
+                // Format function name helper
+                const formatFunctionName = (name: string): string => {
+                  if (name.startsWith("hubspot_")) {
+                    name = name.substring(8);
+                  }
+                  name = name.replace(/_/g, " ");
+                  return name
+                    .replace(/([A-Z])/g, " $1")
+                    .replace(/^./, (str) => str.toUpperCase())
+                    .trim();
+                };
+
+                const selectedToolGroup = hubspotModularTools.find(
+                  (tool) => tool.toolGroupName === selectedCommand
+                ) as
+                  | {
+                      toolGroupName: string;
+                      functionDeclarations?: {
+                        name: string;
+                        description: string;
+                      }[];
+                    }
+                  | undefined;
+
+                if (
+                  !selectedToolGroup ||
+                  !selectedToolGroup.functionDeclarations
+                ) {
+                  return (
+                    <div>
+                      <div
+                        style={{
+                          fontWeight: "bold",
+                          marginBottom: 12,
+                          fontSize: 18,
+                        }}
+                      >
+                        No actions available for /{selectedCommand}
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div>
+                    <div
+                      style={{
+                        fontWeight: "bold",
+                        marginBottom: 12,
+                        fontSize: 18,
+                      }}
+                    >
+                      Available Actions for{" "}
+                      <span
+                        style={{
+                          color:
+                            accentColor === "white"
+                              ? "#ea580c"
+                              : `var(--${accentColor}-500)`,
+                        }}
+                      >
+                        /{selectedCommand}
+                      </span>
+                    </div>
+                    <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+                      {selectedToolGroup.functionDeclarations.map((action) => (
+                        <li key={action.name} style={{ marginBottom: 8 }}>
+                          <div style={{ fontWeight: 500, fontSize: 16 }}>
+                            {formatFunctionName(action.name)}
+                          </div>
+                          <div
+                            style={{
+                              marginLeft: 12,
+                              color: mode === "light" ? "#6b7280" : "#9ca3af",
+                              fontSize: 14,
+                            }}
+                          >
+                            {action.description}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })()}
+            </Overlay>
+          )}
+          {hubspotMode &&
+            isInputAreaFocused &&
+            !selectedCommand &&
+            slashActive && (
+              <Overlay
+                isVisible={true}
+                mode={mode}
+                accentColor={accentColor}
+                padding="20px 24px"
+                borderRadius="12px"
+                centerContent={false}
+                style={{
+                  margin: "12px",
+                  maxWidth: "96%",
+                  marginLeft: "auto",
+                  marginRight: "auto",
+                  pointerEvents: "auto",
+                }}
+              >
+                <div
+                  style={{ fontWeight: "bold", marginBottom: 12, fontSize: 18 }}
+                >
+                  Command Options for{" "}
+                  <span style={{ color: "#b91c1c" }}>
+                    / {slashFilter || "..."}
+                  </span>
+                </div>
+                <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+                  {hubspotSlashCommands
+                    .filter((cmd) => cmd.command.startsWith(slashFilter))
+                    .map((cmd) => (
+                      <li key={cmd.command} style={{ marginBottom: 6 }}>
+                        <span style={{ fontWeight: 500, fontSize: 16 }}>
+                          / {cmd.command}
+                        </span>
+                        <span
+                          style={{
+                            marginLeft: 12,
+                            color: mode === "light" ? "#666" : "#9ca3af",
+                            fontSize: 14,
+                          }}
+                        >
+                          {cmd.description}
+                        </span>
+                      </li>
+                    ))}
+                  {hubspotSlashCommands.filter((cmd) =>
+                    cmd.command.startsWith(slashFilter)
+                  ).length === 0 && (
+                    <li
+                      style={{
+                        color: mode === "light" ? "#999" : "#6b7280",
+                        fontSize: 14,
+                      }}
+                    >
+                      No matching commands
+                    </li>
+                  )}
+                </ul>
+              </Overlay>
+            )}
           {/* Render Empty State */}
           {processedMessages.length === 0 && !isLoading && (
             <div className="d4m-flex d4m-flex-col d4m-items-center d4m-justify-center d4m-text-center d4m-p-6 d4m-animate-fade-in d4m-h-full d4m-text-gray-500 dark:d4m-text-gray-400">
@@ -1075,8 +1291,6 @@ export function ChatWidget() {
 
         {/* Input Area Section */}
         <div className="d4m-flex-shrink-0 d4m-relative d4m-z-20 d4m-border-t d4m-border-black/10 dark:d4m-border-white/10">
-          {" "}
-          {/* Added border */}
           {isLoading ? (
             // --- Loading Indicator ---
             <div
@@ -1089,7 +1303,7 @@ export function ChatWidget() {
                 textColor={textColor}
               />
               <button
-                onClick={handleStopClick} // Use stop handler
+                onClick={handleStopClick}
                 className={`d4m-p-2 d4m-rounded-full d4m-transition-colors d4m-duration-200 d4m-active:scale-95 ${
                   accentColor === "white"
                     ? "d4m-bg-red-500 hover:d4m-bg-red-600 d4m-text-white" // Red stop button in HS mode
@@ -1123,6 +1337,12 @@ export function ChatWidget() {
               accentColor={accentColor}
               textColor={textColor}
               mode={mode}
+              placeholder={
+                hubspotMode
+                  ? "Type / for HubSpot commands (e.g. /contact, /deal...)"
+                  : "Type your message here..."
+              }
+              onSlashCommandStateChange={handleSlashCommandStateChange}
             />
           )}
         </div>
