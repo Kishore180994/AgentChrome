@@ -1563,98 +1563,6 @@ const allHubspotFunctionDeclarations: FunctionDeclaration[] = [
       required: ["ids"],
     },
   },
-  // --- DOM Action / Internal State ---
-  {
-    name: "reportCurrentState",
-    description: "Reports the current state of the DOM interaction task",
-    parameters: {
-      type: SchemaType.OBJECT,
-      properties: {
-        current_state: {
-          type: SchemaType.OBJECT,
-          description: "Current state of the task...",
-          properties: {
-            page_summary: {
-              type: SchemaType.STRING,
-              description: "Summary...",
-            },
-            evaluation_previous_goal: {
-              type: SchemaType.STRING,
-              description: "Evaluation...",
-            },
-            memory: {
-              type: SchemaType.OBJECT,
-              description: "Memory...",
-              properties: {
-                steps: {
-                  type: SchemaType.ARRAY,
-                  description: "Steps...",
-                  items: {
-                    type: SchemaType.OBJECT,
-                    properties: {
-                      step_number: { type: SchemaType.STRING },
-                      description: { type: SchemaType.STRING },
-                      status: {
-                        type: SchemaType.STRING,
-                        enum: ["PENDING", "IN_PROGRESS", "PASS", "FAIL"],
-                      },
-                    },
-                    required: ["step_number", "description", "status"],
-                  },
-                },
-              },
-              required: ["steps"],
-            },
-            current_goal: { type: SchemaType.STRING, description: "Goal..." },
-          },
-          required: [
-            "page_summary",
-            "evaluation_previous_goal",
-            "memory",
-            "current_goal",
-          ],
-        },
-      },
-      required: ["current_state"],
-    },
-  },
-
-  // --- Add FULL parameter definitions for hubspot_navigateTo here ---
-  {
-    name: "hubspot_navigateTo",
-    description: "Navigate to a specific section in HubSpot UI",
-    parameters: {
-      type: SchemaType.OBJECT,
-      properties: {
-        section: {
-          type: SchemaType.STRING,
-          enum: [
-            "contacts",
-            "companies",
-            "deals",
-            "tickets",
-            "marketing",
-            "sales",
-            "service",
-            "automation",
-            "reports",
-            "settings",
-            "dashboard",
-          ],
-          description: "Required section to navigate to in HubSpot",
-        },
-        subsection: {
-          type: SchemaType.STRING,
-          description: "Optional subsection (e.g., 'emails' under 'marketing')",
-        },
-        recordId: {
-          type: SchemaType.STRING,
-          description: "Optional specific record ID to navigate to",
-        },
-      },
-      required: ["section"],
-    },
-  },
   // --- Add other missing full parameter definitions if any ---
 ]; // End of master list
 
@@ -1727,7 +1635,6 @@ const toolGroups: { [key: string]: string[] } = {
     "hubspot_batchUpdateContacts",
     "hubspot_batchReadContacts",
     "hubspot_batchArchiveContacts",
-    "reportCurrentState",
   ],
 };
 
