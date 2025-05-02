@@ -66,10 +66,16 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
                   mode === "light" ? "d4m-bg-gray-100" : "d4m-bg-gray-700"
                 } ${textColor}`; // Model/other bubble style
 
+          // Use full width for AI messages, keep user messages at the current width
+          const widthClass =
+            message.role === "user"
+              ? "d4m-max-w-[85%] md:d4m-max-w-[75%]"
+              : "d4m-w-full";
+
           return (
             <div
               key={itemKey}
-              className={`d4m-flex d4m-max-w-[85%] md:d4m-max-w-[75%] ${alignment} d4m-mb-3`}
+              className={`d4m-flex ${widthClass} ${alignment} d4m-mb-3`}
             >
               <div
                 className={`d4m-text-sm d4m-p-2.5 d4m-rounded-lg ${bubbleStyle} d4m-shadow-sm`}

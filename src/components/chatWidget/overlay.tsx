@@ -96,9 +96,9 @@ const Overlay: React.FC<OverlayProps> = ({
   const textColorClass =
     mode === "light" ? "d4m-text-gray-800" : "d4m-text-gray-200";
 
-  // Default background color based on mode if not provided
+  // Default background color based on mode if not provided - now more transparent with blur effect
   const defaultBackgroundColor =
-    mode === "light" ? "rgba(255, 255, 255, 0.97)" : "rgba(31, 41, 55, 0.97)";
+    mode === "light" ? "rgba(255, 255, 255, 0.75)" : "rgba(31, 41, 55, 0.75)";
 
   const handleBackgroundClick = () => {
     if (closeOnBackgroundClick && onBackgroundClick) {
@@ -126,7 +126,7 @@ const Overlay: React.FC<OverlayProps> = ({
         boxShadow: "0 2px 16px rgba(0,0,0,0.10)",
         ...style,
       }}
-      className={`d4m-animate-fade-in ${textColorClass} d4m-text-sm ${className}`}
+      className={`d4m-animate-fade-in ${textColorClass} d4m-text-sm d4m-backdrop-blur-md ${className}`}
       onClick={handleBackgroundClick}
       role="dialog"
       aria-modal="true"

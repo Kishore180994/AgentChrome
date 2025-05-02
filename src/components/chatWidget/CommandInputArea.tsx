@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Send, CornerDownLeft } from "lucide-react"; // Icons used
 import { AccentColor } from "../../utils/themes"; // Adjust path as needed
-import { hubspotModularTools } from "../../services/ai/hubspotTool";
 
 // Define HubSpot Slash Commands (Keep as is)
 const hubspotSlashCommands = [
@@ -362,6 +361,52 @@ export function CommandInputArea({
 
   // --- Event Handlers ---
 
+  // Handle focus event to show Hubspot overlay when in Hubspot mode
+  useEffect(() => {
+    // When the input is focused in Hubspot mode, and no command is selected yet,
+    // show the slash commands popup to help users get started
+    if (
+      hubspotMode &&
+      isInputAreaFocused.current &&
+      !selectedCommand &&
+      !showSlashPopup
+    ) {
+      setShowSlashPopup(true);
+      if (onSlashCommandStateChange) onSlashCommandStateChange(true, "");
+    }
+  }, [hubspotMode, selectedCommand, showSlashPopup, onSlashCommandStateChange]);
+
+  // Track input area focus state with a ref
+  const isInputAreaFocused = useRef(false);
+  const handleActualFocus = useCallback(() => {
+    isInputAreaFocused.current = true;
+    // Show slash popup for Hubspot mode on focus
+    if (hubspotMode && !selectedCommand && !showSlashPopup) {
+      setShowSlashPopup(true);
+      if (onSlashCommandStateChange) onSlashCommandStateChange(true, "");
+    }
+    onFocus(); // Call the parent component's onFocus handler
+  }, [
+    hubspotMode,
+    selectedCommand,
+    showSlashPopup,
+    onFocus,
+    onSlashCommandStateChange,
+  ]);
+
+  const handleActualBlur = useCallback(() => {
+    isInputAreaFocused.current = false;
+
+    // When blur occurs, reset slash state when appropriate
+    if (showSlashPopup && !selectedCommand) {
+      // Only clear slash UI state if we're not transferring to command selection
+      setShowSlashPopup(false);
+      if (onSlashCommandStateChange) onSlashCommandStateChange(false, "");
+    }
+
+    onBlur(); // Call the parent component's onBlur handler
+  }, [onBlur, showSlashPopup, selectedCommand, onSlashCommandStateChange]);
+
   // Clears the command chip and the text input (Keep as is, but refocus is handled by useEffect)
   const clearSelectedCommand = useCallback(() => {
     setSelectedCommand(null);
@@ -435,16 +480,44 @@ export function CommandInputArea({
             if (slashFilter !== "") setSlashFilter("");
             if (!showSlashPopup) setShowSlashPopup(true);
             if (onSlashCommandStateChange) onSlashCommandStateChange(true, "");
-          } else if (
-            currentText.startsWith("/") &&
-            !currentText.includes(" ", 1)
-          ) {
-            const potentialFilter = currentText.substring(1);
-            setSlashFilter(potentialFilter);
-            if (!showSlashPopup) setShowSlashPopup(true);
-            if (onSlashCommandStateChange)
-              onSlashCommandStateChange(true, potentialFilter);
+          } else if (currentText.startsWith("/")) {
+            // Check if it contains a space (e.g., "/contact ")
+            const spaceIndex = currentText.indexOf(" ");
+            if (spaceIndex > 1) {
+              // Extract command without slash and check if it's valid
+              const extractedCommand = currentText.substring(1, spaceIndex);
+              const validCommand = hubspotSlashCommands.find(
+                (cmd) => cmd.command === extractedCommand
+              );
+
+              if (validCommand) {
+                // Valid command with space - automatically select it
+                setSelectedCommand(extractedCommand);
+                setInput(""); // Clear input as we're switching to command mode
+                setShowSlashPopup(false);
+                setSlashFilter("");
+                if (onSlashCommandStateChange)
+                  onSlashCommandStateChange(false, "");
+                return; // Early return as we'll re-render with command chip
+              }
+            }
+
+            // No space yet, or not a valid command - show popup with filter
+            if (!currentText.includes(" ", 1)) {
+              const potentialFilter = currentText.substring(1);
+              setSlashFilter(potentialFilter);
+              if (!showSlashPopup) setShowSlashPopup(true);
+              if (onSlashCommandStateChange)
+                onSlashCommandStateChange(true, potentialFilter);
+            } else {
+              // Has space but not a valid command - hide popup
+              if (showSlashPopup) setShowSlashPopup(false);
+              if (slashFilter !== "") setSlashFilter("");
+              if (onSlashCommandStateChange)
+                onSlashCommandStateChange(false, "");
+            }
           } else {
+            // No slash, hide popup
             if (showSlashPopup) setShowSlashPopup(false);
             if (slashFilter !== "") setSlashFilter("");
             if (onSlashCommandStateChange) onSlashCommandStateChange(false, "");
@@ -763,8 +836,8 @@ export function CommandInputArea({
           suppressContentEditableWarning={true}
           onInput={handleContentEditableInput}
           onKeyDown={handleContentEditableKeyDown}
-          onFocus={onFocus}
-          onBlur={onBlur}
+          onFocus={handleActualFocus}
+          onBlur={handleActualBlur}
           onCompositionStart={handleCompositionStart}
           onCompositionEnd={handleCompositionEnd}
           data-placeholder={placeholder || ""}
