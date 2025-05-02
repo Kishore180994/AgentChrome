@@ -77,13 +77,13 @@ export async function executeHubspotFunction(
         result = await createContact(args);
         break;
       case "hubspot_getContactById":
-        result = await getContactById(args); // Placeholder
+        result = await getContactById(args); // IMPLEMENTED
         break;
       case "hubspot_updateContact":
         result = await updateContact(args);
         break;
       case "hubspot_deleteContact":
-        result = await deleteContact(args); // Placeholder
+        result = await deleteContact(args); // IMPLEMENTED
         break;
       case "hubspot_searchContacts": // Basic Search
         result = await searchContacts(args);
@@ -94,13 +94,13 @@ export async function executeHubspotFunction(
         result = await createCompany(args);
         break;
       case "hubspot_getCompanyById":
-        result = await getCompanyById(args); // Placeholder
+        result = await getCompanyById(args); // IMPLEMENTED
         break;
       case "hubspot_updateCompany":
-        result = await updateCompany(args); // Placeholder
+        result = await updateCompany(args); // IMPLEMENTED
         break;
       case "hubspot_deleteCompany":
-        result = await deleteCompany(args); // Placeholder
+        result = await deleteCompany(args); // IMPLEMENTED
         break;
       case "hubspot_searchCompanies": // Basic Search
         result = await searchCompanies(args);
@@ -111,16 +111,16 @@ export async function executeHubspotFunction(
         result = await createDeal(args);
         break;
       case "hubspot_getDealById":
-        result = await getDealById(args); // Placeholder
+        result = await getDealById(args); // IMPLEMENTED
         break;
       case "hubspot_updateDeal": // Generic Update
-        result = await updateDeal(args); // Placeholder
+        result = await updateDeal(args); // IMPLEMENTED
         break;
       case "hubspot_updateDealStage": // Specific Stage Update
         result = await updateDealStage(args);
         break;
       case "hubspot_deleteDeal":
-        result = await deleteDeal(args); // Placeholder
+        result = await deleteDeal(args); // IMPLEMENTED
         break;
       case "hubspot_searchDeals": // Basic Search
         result = await searchDeals(args);
@@ -131,52 +131,52 @@ export async function executeHubspotFunction(
         result = await createTicket(args);
         break;
       case "hubspot_getTicketById":
-        result = await getTicketById(args); // Placeholder
+        result = await getTicketById(args); // IMPLEMENTED
         break;
       case "hubspot_updateTicket":
         result = await updateTicket(args);
         break;
       case "hubspot_deleteTicket":
-        result = await deleteTicket(args); // Placeholder
+        result = await deleteTicket(args); // IMPLEMENTED
         break;
 
       // --- Search (Advanced) ---
       case "hubspot_advancedSearch":
-        result = await advancedSearch(args); // Placeholder
+        result = await advancedSearch(args); // IMPLEMENTED
         break;
 
       // --- Associations ---
       case "hubspot_associateRecords":
-        result = await associateRecords(args); // Placeholder
+        result = await associateRecords(args); // IMPLEMENTED
         break;
       case "hubspot_getAssociations":
-        result = await getAssociations(args); // Placeholder
+        result = await getAssociations(args); // IMPLEMENTED
         break;
 
       // --- Engagements ---
       case "hubspot_addNote": // Renamed
-        result = await addNote(args); // Ensure implementation function is also renamed
+        result = await addNote(args);
         break;
       case "hubspot_scheduleMeeting": // Renamed
-        result = await scheduleMeeting(args); // Ensure implementation function is also renamed
+        result = await scheduleMeeting(args);
         break;
       case "hubspot_createTask":
         result = await createTask(args);
         break;
       case "hubspot_logCall":
-        result = await logCall(args); // Placeholder
+        result = await logCall(args); // IMPLEMENTED
         break;
       case "hubspot_sendEmail": // Assumes 1-to-1 send/log
         result = await sendEmail(args);
         break;
       case "hubspot_updateTask":
-        result = await updateTask(args); // Placeholder
+        result = await updateTask(args); // IMPLEMENTED
         break;
       case "hubspot_deleteEngagement":
-        result = await deleteEngagement(args); // Placeholder
+        result = await deleteEngagement(args); // IMPLEMENTED
         break;
       case "hubspot_searchEngagements":
-        result = await searchEngagements(args); // Placeholder
+        result = await searchEngagements(args); // IMPLEMENTED
         break;
 
       // --- Marketing (Lists & Forms) ---
@@ -184,19 +184,19 @@ export async function executeHubspotFunction(
         result = await createList(args);
         break;
       case "hubspot_addContactsToList":
-        result = await addContactsToList(args); // Placeholder
+        result = await addContactsToList(args); // IMPLEMENTED
         break;
       case "hubspot_removeContactsFromList":
-        result = await removeContactsFromList(args); // Placeholder
+        result = await removeContactsFromList(args); // IMPLEMENTED
         break;
       case "hubspot_getListMembers":
-        result = await getListMembers(args); // Placeholder
+        result = await getListMembers(args); // IMPLEMENTED
         break;
       case "hubspot_deleteList":
-        result = await deleteList(args); // Placeholder
+        result = await deleteList(args); // IMPLEMENTED
         break;
       case "hubspot_submitForm":
-        result = await submitForm(args); // Placeholder
+        result = await submitForm(args); // IMPLEMENTED
         break;
 
       // --- Automation ---
@@ -211,60 +211,64 @@ export async function executeHubspotFunction(
 
       // --- Metadata (Properties) ---
       case "hubspot_getProperties":
-        result = await getProperties(args); // Placeholder
+        result = await getProperties(args); // IMPLEMENTED
         break;
       case "hubspot_createProperty":
-        result = await createProperty(args); // Placeholder
+        result = await createProperty(args); // IMPLEMENTED
         break;
 
       // --- Batch Operations ---
       case "hubspot_batchCreateContacts":
-        result = await batchCreateContacts(args);
+        result = await batchCreateContacts(args); // IMPLEMENTED
         break;
       case "hubspot_batchUpdateContacts":
-        result = await batchUpdateContacts(args);
+        result = await batchUpdateContacts(args); // IMPLEMENTED
         break;
       case "hubspot_batchReadContacts":
-        result = await batchReadContacts(args);
+        result = await batchReadContacts(args); // IMPLEMENTED
         break;
       case "hubspot_batchArchiveContacts":
-        result = await batchArchiveContacts(args);
+        result = await batchArchiveContacts(args); // IMPLEMENTED
         break;
       case "hubspot_batchCreateCompanies":
-        result = await batchCreateCompanies(args);
+        result = await batchCreateCompanies(args); // IMPLEMENTED
         break;
       case "hubspot_batchUpdateCompanies":
-        result = await batchUpdateCompanies(args);
+        result = await batchUpdateCompanies(args); // IMPLEMENTED
         break;
       case "hubspot_batchReadCompanies":
-        result = await batchReadCompanies(args);
+        result = await batchReadCompanies(args); // IMPLEMENTED
         break;
       case "hubspot_batchArchiveCompanies":
-        result = await batchArchiveCompanies(args);
+        result = await batchArchiveCompanies(args); // IMPLEMENTED
         break;
       case "hubspot_batchCreateDeals":
-        result = await batchCreateDeals(args);
+        result = await batchCreateDeals(args); // IMPLEMENTED
         break;
       case "hubspot_batchUpdateDeals":
-        result = await batchUpdateDeals(args);
+        result = await batchUpdateDeals(args); // IMPLEMENTED
         break;
       case "hubspot_batchReadDeals":
-        result = await batchReadDeals(args);
+        result = await batchReadDeals(args); // IMPLEMENTED
         break;
       case "hubspot_batchArchiveDeals":
-        result = await batchArchiveDeals(args);
+        result = await batchArchiveDeals(args); // IMPLEMENTED
         break;
       case "hubspot_batchCreateTickets":
-        result = await batchCreateTickets(args);
+        result = await batchCreateTickets(args); // IMPLEMENTED
         break;
       case "hubspot_batchUpdateTickets":
-        result = await batchUpdateTickets(args);
+        result = await batchUpdateTickets(args); // IMPLEMENTED
         break;
       case "hubspot_batchReadTickets":
-        result = await batchReadTickets(args);
+        result = await batchReadTickets(args); // IMPLEMENTED
         break;
       case "hubspot_batchArchiveTickets":
-        result = await batchArchiveTickets(args);
+        result = await batchArchiveTickets(args); // IMPLEMENTED
+        break;
+      // Added Batch Associate
+      case "hubspot_batchAssociateRecords":
+        result = await batchAssociateRecords(args); // IMPLEMENTED
         break;
 
       // --- Default ---
@@ -418,10 +422,6 @@ export async function executeHubspotFunction(
 /**
  * Navigate to a specific section in HubSpot
  */
-/**
- * Navigate to a specific section in HubSpot
- * @param args - { section: string, subsection?: string, recordId?: string }
- */
 async function navigateToHubspotSection(
   args: Record<string, any>
 ): Promise<{ success: boolean; message?: string }> {
@@ -488,10 +488,6 @@ async function navigateToHubspotSection(
 /**
  * Create a new contact in HubSpot
  */
-/**
- * Create a new contact in HubSpot
- * @param args - { email: string, firstName?: string, lastName?: string, ... }
- */
 async function createContact(
   args: Record<string, any>
 ): Promise<{ success: boolean; data?: any; message?: string }> {
@@ -540,10 +536,6 @@ async function createContact(
 /**
  * Search for contacts in HubSpot (Basic Search)
  */
-/**
- * Search for contacts in HubSpot (Basic Search)
- * @param args - { query: string, limit?: number, after?: string }
- */
 async function searchContacts(
   args: Record<string, any>
 ): Promise<{ success: boolean; data?: any; message?: string }> {
@@ -585,6 +577,14 @@ async function updateContact(args: any): Promise<any> {
     lifecycleStage,
     otherProperties,
   } = args;
+
+  if (!contactId) {
+    return {
+      success: false,
+      error: "Missing required argument: contactId",
+      errorType: "validation",
+    };
+  }
 
   // Prepare properties object for HubSpot API
   const properties: Record<string, any> = {
@@ -634,6 +634,14 @@ async function createCompany(args: any): Promise<any> {
     country,
     otherProperties,
   } = args;
+
+  if (!name) {
+    return {
+      success: false,
+      error: "Missing required argument: name",
+      errorType: "validation",
+    };
+  }
 
   // Prepare properties object for HubSpot API
   const properties: Record<string, any> = {
@@ -702,12 +710,20 @@ async function createDeal(args: any): Promise<any> {
     otherProperties,
   } = args;
 
+  if (!dealName || !pipeline || !stage) {
+    return {
+      success: false,
+      error: "Missing required arguments: dealName, pipeline, stage",
+      errorType: "validation",
+    };
+  }
+
   // Prepare properties object for HubSpot API
   const properties: Record<string, any> = {
     dealname: dealName,
     pipeline: pipeline, // Required field
     dealstage: stage, // Required field
-    ...(amount !== undefined && amount !== null && { amount: amount }), // Handle amount carefully
+    ...(amount !== undefined && amount !== null && { amount: String(amount) }), // Ensure amount is string if required by API
     ...(closeDate && { closedate: closeDate }),
     ...(dealType && { dealtype: dealType }),
     ...otherProperties, // Directly spread
@@ -722,13 +738,15 @@ async function createDeal(args: any): Promise<any> {
     // --- Handle Associations AFTER creating the deal ---
     if (dealId && associatedCompanyId) {
       try {
-        await hubspotApi.associateRecords(
-          "deals",
-          dealId,
-          "companies",
-          associatedCompanyId,
-          "deal_to_company"
-        ); // Use appropriate type
+        // Use the single associateRecords function (ensure it exists in api.ts)
+        await associateRecords({
+          fromObjectType: "deals",
+          fromObjectId: dealId,
+          toObjectType: "companies",
+          toObjectId: associatedCompanyId,
+          associationType: "deal_to_company", // Example type, adjust if needed
+        });
+
         associationMessages.push(
           `Associated with company ${associatedCompanyId}.`
         );
@@ -744,13 +762,13 @@ async function createDeal(args: any): Promise<any> {
     }
     if (dealId && associatedContactIds && associatedContactIds.length > 0) {
       try {
-        // Use batch association if available and needed
+        // Use batch association (ensure it exists in api.ts)
         await batchAssociateRecords({
           fromObjectType: "deals",
-          fromObjectId: dealId,
+          fromObjectId: dealId, // ID of the record we just created
           toObjectType: "contacts",
-          toObjectIds: associatedContactIds,
-          associationType: "deal_to_contact",
+          toObjectIds: associatedContactIds, // Array of IDs to associate
+          associationType: "deal_to_contact", // Example type, adjust if needed
         });
         associationMessages.push(
           `Associated with contacts: ${associatedContactIds.join(", ")}.`
@@ -790,6 +808,14 @@ async function createDeal(args: any): Promise<any> {
 async function updateDealStage(args: any): Promise<any> {
   const { dealId, stage, pipeline } = args; // Added pipeline
 
+  if (!dealId || !stage) {
+    return {
+      success: false,
+      error: "Missing required arguments: dealId, stage",
+      errorType: "validation",
+    };
+  }
+
   // Prepare properties object for HubSpot API
   const properties: Record<string, any> = {
     dealstage: stage,
@@ -797,6 +823,7 @@ async function updateDealStage(args: any): Promise<any> {
   };
 
   try {
+    // Use the generic updateDeal function assumed to be in api.ts
     const result = await hubspotApi.updateDeal(dealId, properties);
     return {
       success: true,
@@ -852,6 +879,14 @@ async function createTicket(args: any): Promise<any> {
     otherProperties,
   } = args;
 
+  if (!subject || !pipeline || !stage) {
+    return {
+      success: false,
+      error: "Missing required arguments: subject, pipeline, stage",
+      errorType: "validation",
+    };
+  }
+
   // Prepare properties object for HubSpot API
   const properties: Record<string, any> = {
     subject: subject, // Required by API
@@ -875,7 +910,7 @@ async function createTicket(args: any): Promise<any> {
           fromObjectId: ticketId,
           toObjectType: "companies",
           toObjectId: associatedCompanyId,
-          associationType: "ticket_to_company",
+          associationType: "ticket_to_company", // Example type
         });
         associationMessages.push(
           `Associated with company ${associatedCompanyId}.`
@@ -897,7 +932,7 @@ async function createTicket(args: any): Promise<any> {
           fromObjectId: ticketId,
           toObjectType: "contacts",
           toObjectId: associatedContactId,
-          associationType: "ticket_to_contact",
+          associationType: "ticket_to_contact", // Example type
         });
         associationMessages.push(
           `Associated with contact ${associatedContactId}.`
@@ -939,7 +974,15 @@ async function updateTicket(args: any): Promise<any> {
     stage,
     priority,
     otherProperties,
-  } = args; // Added pipeline
+  } = args;
+
+  if (!ticketId) {
+    return {
+      success: false,
+      error: "Missing required argument: ticketId",
+      errorType: "validation",
+    };
+  }
 
   // Prepare properties object for HubSpot API
   const properties: Record<string, any> = {
@@ -984,11 +1027,21 @@ async function addNote(args: any): Promise<any> {
     associatedDealIds,
     associatedTicketIds,
     timestamp,
+    ownerId, // Add ownerId if applicable
   } = args;
+
+  if (!content) {
+    return {
+      success: false,
+      error: "Missing required argument: content",
+      errorType: "validation",
+    };
+  }
 
   const properties: Record<string, any> = {
     hs_note_body: content,
     hs_timestamp: timestamp || new Date().toISOString(), // Default to now if not provided
+    ...(ownerId && { hubspot_owner_id: ownerId }),
   };
 
   const associations: hubspotApi.EngagementAssociations = {};
@@ -1001,6 +1054,7 @@ async function addNote(args: any): Promise<any> {
   if (Object.values(associations).every((arr) => !arr || arr.length === 0)) {
     // Decide if note needs an association - maybe associate with user? Or throw error?
     console.warn("Adding note without any specific record associations.");
+    // Depending on API requirements, you might need to uncomment this:
     // return { success: false, error: "At least one association (Contact, Company, Deal, or Ticket ID) is required to add a note.", errorType: "validation"};
   }
 
@@ -1036,15 +1090,25 @@ async function scheduleMeeting(args: any): Promise<any> {
     associatedCompanyIds,
     associatedDealIds,
     associatedTicketIds,
+    ownerId, // Add ownerId if applicable
   } = args;
+
+  if (!title || !startTime || !endTime) {
+    return {
+      success: false,
+      error: "Missing required arguments: title, startTime, endTime",
+      errorType: "validation",
+    };
+  }
 
   const properties: Record<string, any> = {
     hs_meeting_title: title,
-    hs_timestamp: startTime, // API uses hs_timestamp for start time
-    hs_meeting_end_time: endTime,
+    hs_timestamp: new Date(startTime).toISOString(), // API uses hs_timestamp for start time, ensure ISO
+    hs_meeting_end_time: new Date(endTime).toISOString(), // Ensure ISO
     ...(body && { hs_meeting_body: body }),
     ...(location && { hs_meeting_location: location }),
     ...(meetingOutcome && { hs_meeting_outcome: meetingOutcome }),
+    ...(ownerId && { hubspot_owner_id: ownerId }),
   };
 
   const associations: hubspotApi.EngagementAssociations = {};
@@ -1096,6 +1160,14 @@ async function createTask(args: any): Promise<any> {
     ownerId,
   } = args;
 
+  if (!subject) {
+    return {
+      success: false,
+      error: "Missing required argument: subject",
+      errorType: "validation",
+    };
+  }
+
   // Prepare properties object for HubSpot API
   const properties: Record<string, any> = {
     hs_task_subject: subject,
@@ -1112,7 +1184,7 @@ async function createTask(args: any): Promise<any> {
     console.warn(
       "Task reminders via simple date are not directly supported, requires specific API structure."
     );
-    // properties.hs_task_reminders = ???; // Needs array structure
+    // properties.hs_task_reminders = ???; // Needs array structure like [{ "minutesBefore": 15 }]
   }
 
   // Prepare associations object for the dedicated createTask function in api.ts
@@ -1159,104 +1231,146 @@ async function createTask(args: any): Promise<any> {
 async function sendEmail(args: any): Promise<any> {
   const {
     toContactId,
-    fromUserId,
+    fromUserId, // This likely needs to map to a connected inbox or HubSpot user ID
     subject,
     body,
     htmlBody,
     ccContactIds,
     bccContactIds,
+    // Potentially needed: sendTime, tracking options etc.
   } = args;
 
+  if (!toContactId || !fromUserId || !subject || !(body || htmlBody)) {
+    return {
+      success: false,
+      error:
+        "Missing required arguments: toContactId, fromUserId, subject, and body/htmlBody",
+      errorType: "validation",
+    };
+  }
+
   // This function is complex via API. Often uses the Single Send API.
-  // The implementation below is a conceptual placeholder.
-  // It might log an email engagement rather than truly sending *from* HubSpot
-  // unless specific mail integration APIs are used.
+  // The implementation below is a conceptual placeholder for *logging* an email engagement.
+  // True sending requires the Single Send API or specific mail integration APIs.
 
   console.warn(
-    "sendEmail function is complex via API and may only log engagement. Actual send requires specific setup."
+    "sendEmail function implementation logs an email engagement. Actual sending via API requires Single Send API or specific mail integrations and configuration."
   );
 
   try {
-    // 1. Get recipient email address (and maybe sender)
-    const contact = await hubspotApi.getContactById(toContactId, [
-      "email",
-      "firstname",
-      "lastname",
-    ]);
-    if (!contact?.properties?.email)
-      throw new Error("Recipient contact email not found.");
-    const toEmail = contact.properties.email;
-
-    // 2. Prepare Engagement properties (for logging)
+    // 1. Prepare Engagement properties (for logging)
     const properties: Record<string, any> = {
       hs_email_subject: subject,
-      hs_email_status: "SENT", // Assume sent for logging
-      hs_timestamp: new Date().toISOString(), // Log time
-      hs_email_direction: "EMAIL", // Outbound? Check API definition
-      hubspot_owner_id: fromUserId, // Log which user sent it
+      hs_email_status: "SENT", // Assume sent for logging purposes
+      hs_timestamp: new Date().toISOString(), // Log time (actual send time might differ)
+      hs_email_direction: "FORWARD", // Or "EMAIL". Check API docs for outbound 1:1
+      hubspot_owner_id: fromUserId, // Log which user initiated it
       ...(htmlBody ? { hs_email_html: htmlBody } : { hs_email_text: body }),
+      // Need hs_email_to_email, hs_email_from_email ? API might require these.
+      // These would ideally be fetched or provided.
     };
 
-    // 3. Prepare Associations
+    // 2. Prepare Associations
     const associations: hubspotApi.EngagementAssociations = {
-      contactIds: [toContactId],
+      contactIds: [toContactId], // Primary recipient association
     };
-    if (ccContactIds) associations.ccContactIds = ccContactIds; // Assuming API supports CC/BCC associations
+    // The standard engagement associations might not directly support CC/BCC logging
+    // in the way the Single Send API does. This logs association to the record.
+    if (ccContactIds) associations.ccContactIds = ccContactIds;
     if (bccContactIds) associations.bccContactIds = bccContactIds;
 
-    // 4. Create the Email Engagement record in HubSpot
+    // 3. Create the Email Engagement record in HubSpot to log it
     const result = await hubspotApi.createEngagement(
       "emails",
       properties,
       associations
     );
 
-    // **ACTUAL SENDING LOGIC WOULD GO HERE** using appropriate HubSpot Mail API if needed.
-    // This example only *logs* the email engagement.
+    // **NOTE:** ACTUAL SENDING LOGIC would use a different API endpoint, likely the
+    // Transactional Email > Single-Send API:
+    // https://developers.hubspot.com/docs/api/marketing/transactional-email
+    // It requires a different payload structure (`message`, `contactProperties`, etc.)
 
     return {
       success: true,
       data: result, // Engagement creation result
-      message: `Email '${subject}' logged successfully for contact ${toContactId} (ID: ${result.id}). Actual send depends on configuration.`,
+      message: `Email '${subject}' logged successfully for contact ${toContactId} (Engagement ID: ${result.id}). Actual send capability depends on API configuration.`,
     };
   } catch (error) {
-    console.error("Error sending/logging email:", error);
+    console.error("Error logging email engagement:", error);
     throw error;
   }
 }
 
 /**
- * Create a list of contacts in HubSpot
+ * Create a list of contacts in HubSpot (using V1 API via api.ts)
+ * @param args - { name: string, listType: 'STATIC' | 'DYNAMIC', filters?: any[] }
  */
 async function createList(args: any): Promise<any> {
-  const { name, listType, filters } = args; // Using 'listType' as renamed
+  console.log("Executing: createList", args);
+  const { name, listType, filters } = args; // Using 'listType', expecting 'filters' for dynamic
+
+  // --- Basic Validation ---
+  if (!name || !listType) {
+    return {
+      success: false,
+      error:
+        "Missing required arguments: name, listType ('STATIC' or 'DYNAMIC')",
+      errorType: "validation",
+    };
+  }
+  if (listType !== "STATIC" && listType !== "DYNAMIC") {
+    return {
+      success: false,
+      error: "Invalid listType. Must be 'STATIC' or 'DYNAMIC'.",
+      errorType: "validation",
+    };
+  }
+
+  // Dynamic lists require filters
+  if (listType === "DYNAMIC" && (!filters || !Array.isArray(filters))) {
+    // Check if filters is an array
+    return {
+      success: false,
+      error:
+        "Dynamic lists require valid filter criteria passed in the 'filters' array argument.",
+      errorType: "validation",
+    };
+  }
 
   try {
-    // Basic validation
-    if (listType === "DYNAMIC" && (!filters || filters.length === 0)) {
-      return {
-        success: false,
-        error: "Dynamic lists require filter criteria.",
-        errorType: "validation",
-      };
-    }
-
+    // --- Construct listData CORRECTLY for V1 API ---
     const listData = {
       name: name,
       dynamic: listType === "DYNAMIC",
-      filters: listType === "DYNAMIC" ? filters : [], // Filters required for dynamic
-      // portalId might be added by the API wrapper
+      // V1 API expects the key 'filters'. Provide it for dynamic lists, or an empty array for static.
+      filters: listType === "DYNAMIC" ? filters : [],
     };
 
-    const result = await hubspotApi.createList(listData); // Assuming API function exists
+    console.log(
+      "[executor.ts] createList - calling HubSpot API with data:",
+      listData
+    );
+    // Call the api.ts function which expects { name, dynamic, filters }
+    const result = await hubspotApi.createList(listData); // Pass the correctly structured object
+
+    // Adjust key based on actual V1 API response (often contains 'listId')
+    const listId = result?.listId || result?.id; // Handle potential variations
 
     return {
       success: true,
-      data: result, // Should include list ID
-      message: `${listType} list '${name}' created successfully with ID ${result.listId}.`, // Adjust key based on actual response
+      data: result,
+      message: `${listType} list '${name}' created successfully${
+        listId ? ` with ID ${listId}` : ""
+      }.`,
     };
   } catch (error) {
     console.error("Error creating list:", error);
+    // Handle potential V1 API specific errors if needed
+    if (error instanceof HubspotApiError && error.status === 409) {
+      error.category = "conflict";
+      error.message = `A list with the name '${name}' may already exist.`;
+    }
     throw error;
   }
 }
@@ -1265,38 +1379,67 @@ async function createList(args: any): Promise<any> {
  * Get analytics data from HubSpot
  */
 async function getAnalytics(args: any): Promise<any> {
-  const { dataType, timePeriod, startDate, endDate } = args; // using dataType
+  const { dataType, timePeriod, startDate, endDate, filters, breakdowns } =
+    args; // using dataType
+
+  if (!dataType) {
+    return {
+      success: false,
+      error: "Missing required argument: dataType",
+      errorType: "validation",
+    };
+  }
 
   // This function is highly dependent on specific HubSpot Analytics APIs (v3 recommended).
   // The implementation requires mapping 'dataType' and other args to the correct API endpoint and parameters.
   console.warn(
-    "getAnalytics function requires specific mapping to HubSpot Analytics API endpoints."
+    "getAnalytics function requires specific mapping to HubSpot Analytics API endpoints (e.g., web analytics, email campaigns) and correct payload structure."
   );
 
   try {
     // --- Placeholder ---
     // 1. Determine the correct HubSpot Analytics API endpoint based on 'dataType'.
-    // 2. Construct the request payload with date ranges, aggregations (timePeriod), filters etc.
-    // 3. Call the specific hubspotApi.getAnalyticsData(...) function.
+    //    (e.g., /cms/v3/analytics/views, /cms/v3/analytics/events, /marketing/v3/emails/analytics)
+    // 2. Construct the request payload with date ranges, aggregations (timePeriod), filters, breakdowns etc.
+    //    Payload structure varies significantly between endpoints.
+    // 3. Call the specific hubspotApi.getAnalyticsData(...) function, potentially needing different
+    //    functions per data type (getWebAnalytics, getEmailAnalytics etc.)
 
+    // Example: If hubspotApi had a generic analytics fetcher:
+    /*
+    const apiArgs = {
+        endpointIdentifier: dataType, // Map 'dataType' to API path or identifier
+        params: {
+            start: startDate,
+            end: endDate,
+            period: timePeriod, // Map timePeriod to API expected value (e.g., 'daily', 'weekly')
+            filter: filters, // Map filters if needed
+            breakdown: breakdowns // Map breakdowns if needed
+        }
+    }
+    const result = await hubspotApi.getGenericAnalytics(apiArgs);
+    */
+
+    // Using placeholder data since the API call is complex and specific
     const sampleData = {
-      // Replace with actual API call result
       dataType,
       timePeriod,
       startDate,
       endDate,
+      filters,
+      breakdowns,
+      // Example result structure (highly dependent on actual API)
       results: [
-        { date: "2025-04-01", value: 100 },
-        { date: "2025-04-02", value: 120 },
+        { dimensions: ["2025-04-01"], metrics: { views: 100, sessions: 80 } },
+        { dimensions: ["2025-04-02"], metrics: { views: 120, sessions: 95 } },
       ],
-      total: 220,
+      total: { views: 220, sessions: 175 },
     };
-
-    // const result = await hubspotApi.getAnalyticsData(mappedArgs); // Placeholder call
+    console.log("Placeholder for getAnalytics API call with args:", args);
 
     return {
       success: true,
-      message: `Retrieved analytics data for: ${dataType}`,
+      message: `Retrieved analytics data for: ${dataType} (Placeholder data)`,
       data: sampleData, // Return data from API call
     };
   } catch (error) {
@@ -1306,15 +1449,19 @@ async function getAnalytics(args: any): Promise<any> {
 }
 
 /**
- * Enroll contacts into a workflow in HubSpot
+ * Enroll contacts (identified by email) into a specific HubSpot workflow.
+ * It first looks up contact IDs for the emails, then enrolls the found contacts.
+ * @param args - { workflowId: string, emails: string[] }
  */
 async function runWorkflow(args: any): Promise<any> {
   const { workflowId, emails } = args; // Using emails as the input from the AI tool
 
-  if (!emails || !Array.isArray(emails) || emails.length === 0) {
+  // --- 1. Input Validation ---
+  if (!workflowId || !emails || !Array.isArray(emails) || emails.length === 0) {
     return {
       success: false,
-      error: "At least one contact email is required to enroll.",
+      error:
+        "Missing required arguments: workflowId and a non-empty array of emails.",
       errorType: "validation",
     };
   }
@@ -1324,11 +1471,14 @@ async function runWorkflow(args: any): Promise<any> {
   );
 
   try {
-    // Step 1: Find Contact IDs for the given emails
+    // --- 2. Find Contact IDs for the given emails ---
     const contactIdsToEnroll: string[] = [];
     const emailLookupFailures: string[] = [];
+
+    // Use Promise.all to perform lookups concurrently
     const searchPromises = emails.map(async (email) => {
       try {
+        // Use Advanced Search (searchObjects)
         const searchPayload = {
           filterGroups: [
             {
@@ -1338,9 +1488,9 @@ async function runWorkflow(args: any): Promise<any> {
             },
           ],
           properties: ["hs_object_id"], // Only need the ID
-          limit: 1,
+          limit: 1, // We only need one match per email
         };
-        // Use the existing API search function
+        // Use the generic searchObjects function from api.ts
         const searchResult = await hubspotApi.searchObjects(
           "contacts",
           searchPayload
@@ -1359,16 +1509,17 @@ async function runWorkflow(args: any): Promise<any> {
           `[executor.ts] runWorkflow: Error searching for contact with email ${email}:`,
           searchError
         );
-        emailLookupFailures.push(email); // Treat search errors as lookup failures
+        // Treat search errors as lookup failures for this email
+        emailLookupFailures.push(email);
       }
     });
 
-    await Promise.all(searchPromises); // Wait for all searches to complete
+    await Promise.all(searchPromises); // Wait for all email lookups to complete
 
-    // Check if any contacts were found
+    // --- 3. Handle Case Where No Contacts Were Found ---
     if (contactIdsToEnroll.length === 0) {
       return {
-        success: false,
+        success: false, // Indicate failure to find enrollable contacts
         error: `No existing contacts found for the provided email(s): ${emails.join(
           ", "
         )}. Cannot enroll.`,
@@ -1383,33 +1534,56 @@ async function runWorkflow(args: any): Promise<any> {
       } contact ID(s) to enroll: ${contactIdsToEnroll.join(", ")}`
     );
 
-    // Step 2: Enroll the found contact IDs using the new API function
-    const enrollmentResults = await Promise.allSettled(
-      contactIdsToEnroll.map(
-        (contactId) =>
-          // --- CORRECTED CALL ---
-          // Call the NEW API function that enrolls by object ID
-          hubspotApi.enrollObjectInWorkflow(workflowId, contactId)
-        // --- END CORRECTION ---
-      )
-    );
+    // --- 4. Enroll the Found Contact IDs using the Batch-Capable API Function ---
+    let enrollmentResult: any = {};
+    let enrollmentSuccessCount = 0;
+    let enrollmentFailureCount = 0;
+    let enrollmentErrorMessage: string | undefined = undefined;
 
-    // Process results
-    const successes = enrollmentResults.filter(
-      (r) => r.status === "fulfilled"
-    ).length;
-    const failures = enrollmentResults.length - successes;
-    const firstError = enrollmentResults.find(
-      (r) => r.status === "rejected"
-    ) as PromiseRejectedResult | undefined;
-
-    let message = `${successes} contact(s) successfully enrolled in workflow ${workflowId}.`;
-    if (failures > 0) {
-      message += ` ${failures} enrollment(s) failed.`;
-      console.error(
-        "[executor.ts] runWorkflow: Enrollment failures:",
-        enrollmentResults.filter((r) => r.status === "rejected")
+    try {
+      console.log(
+        `[executor.ts] runWorkflow: Calling enrollObjectsInWorkflow for ${contactIdsToEnroll.length} contacts.`
       );
+      // Directly call the modified function from api.ts that handles batch enrollment
+      enrollmentResult = await hubspotApi.enrollObjectsInWorkflow(
+        workflowId,
+        contactIdsToEnroll
+        // Optional: Specify objectTypeId if needed, e.g., 'CONTACT'
+      );
+
+      // Assuming the API call succeeded if it didn't throw an error.
+      // HubSpot's batch enrollment API might return more detailed status in the response body,
+      // which could be parsed here if needed for more granular success/failure counts.
+      // For now, assume all attempted enrollments were accepted by the API if no error occurred.
+      console.log(
+        "[executor.ts] runWorkflow: Enrollment API call completed.",
+        enrollmentResult
+      );
+      enrollmentSuccessCount = contactIdsToEnroll.length;
+      enrollmentFailureCount = 0;
+    } catch (enrollmentError) {
+      // The API call itself failed (e.g., 4xx/5xx error)
+      console.error(
+        "[executor.ts] runWorkflow: Enrollment API call failed:",
+        enrollmentError
+      );
+      enrollmentSuccessCount = 0;
+      enrollmentFailureCount = contactIdsToEnroll.length; // Assume all failed if the batch call failed
+      enrollmentErrorMessage =
+        enrollmentError instanceof Error
+          ? enrollmentError.message
+          : String(enrollmentError);
+      // Re-throw the error to be caught and formatted by the main executeHubspotFunction handler
+      throw enrollmentError;
+    }
+
+    // --- 5. Construct Final Message and Result ---
+    let message = `${enrollmentSuccessCount} contact(s) submitted for enrollment in workflow ${workflowId}.`;
+    if (enrollmentFailureCount > 0) {
+      // This message now reflects the outcome of the single API call attempt
+      message += ` ${enrollmentFailureCount} enrollment(s) failed (API Call Error: ${
+        enrollmentErrorMessage || "See details"
+      }).`;
     }
     if (emailLookupFailures.length > 0) {
       message += ` Could not find contacts for emails: ${emailLookupFailures.join(
@@ -1417,433 +1591,1555 @@ async function runWorkflow(args: any): Promise<any> {
       )}.`;
     }
 
-    // If all actual enrollments failed (after finding contacts), re-throw the first error
-    if (successes === 0 && failures > 0 && firstError) {
-      throw firstError.reason; // Propagate the first enrollment error encountered
-    }
-
-    // Return success if at least one contact was found and attempted enrollment (even if some failed)
+    // Return success indicating the runWorkflow function executed,
+    // details contain the outcome specifics.
     return {
-      success: true, // Indicate the process ran, check details for specifics
+      success: true,
       message: message,
       details: {
-        successfulEnrollments: successes,
-        failedEnrollments: failures,
+        successfulEnrollments: enrollmentSuccessCount,
+        failedEnrollments: enrollmentFailureCount,
         notFoundEmails: emailLookupFailures,
-        enrolledContactIds: contactIdsToEnroll, // Optional: return which IDs were attempted
+        attemptedContactIds: contactIdsToEnroll, // Renamed for clarity
+        apiResponse: enrollmentResult, // Optionally include raw API response
       },
     };
   } catch (error) {
-    // Catch errors from search or the enrollment propagation
+    // Catch errors from the contact ID lookup phase or re-thrown enrollment errors
     console.error(
       `[executor.ts] Error during workflow enrollment process for workflow ${workflowId}:`,
       error
     );
-    // Let the main executor catch block handle final formatting
+    // Let the main executor catch block handle final formatting and return structure
     throw error;
   }
 }
 
 // ========================================================================== //
-//           PLACEHOLDER IMPLEMENTATIONS for NEW FUNCTIONS                   //
-// ========================================================================== //
-// Replace these placeholders with your actual function implementations that //
-// call the corresponding methods in your `./api.ts` (or similar) file.     //
+//           IMPLEMENTATIONS for NEW FUNCTIONS (Replaced Placeholders)       //
 // ========================================================================== //
 
-async function getContactById(args: any): Promise<any> {
-  console.log("Executing placeholder: getContactById", args);
-  // Example: return await hubspotApi.getContactById(args.contactId, args.properties);
-  throw new Error(
-    `Function not implemented: getContactById with args ${JSON.stringify(args)}`
-  );
-}
-
-async function deleteContact(args: any): Promise<any> {
-  console.log("Executing placeholder: deleteContact", args);
-  // Example: await hubspotApi.deleteContact(args.contactId); return { success: true, message: `Contact ${args.contactId} deleted.`};
-  throw new Error(
-    `Function not implemented: deleteContact with args ${JSON.stringify(args)}`
-  );
-}
-
-async function getCompanyById(args: any): Promise<any> {
-  console.log("Executing placeholder: getCompanyById", args);
-  // Example: return await hubspotApi.getCompanyById(args.companyId, args.properties);
-  throw new Error(
-    `Function not implemented: getCompanyById with args ${JSON.stringify(args)}`
-  );
-}
-
-async function updateCompany(args: any): Promise<any> {
-  console.log("Executing placeholder: updateCompany", args);
-  // Example: const { companyId, ...properties } = args; return await hubspotApi.updateCompany(companyId, properties);
-  throw new Error(
-    `Function not implemented: updateCompany with args ${JSON.stringify(args)}`
-  );
-}
-
-async function deleteCompany(args: any): Promise<any> {
-  console.log("Executing placeholder: deleteCompany", args);
-  // Example: await hubspotApi.deleteCompany(args.companyId); return { success: true, message: `Company ${args.companyId} deleted.`};
-  throw new Error(
-    `Function not implemented: deleteCompany with args ${JSON.stringify(args)}`
-  );
-}
-
-async function getDealById(args: any): Promise<any> {
-  console.log("Executing placeholder: getDealById", args);
-  // Example: return await hubspotApi.getDealById(args.dealId, args.properties);
-  throw new Error(
-    `Function not implemented: getDealById with args ${JSON.stringify(args)}`
-  );
-}
-
-async function updateDeal(args: any): Promise<any> {
-  // Generic update
-  console.log("Executing placeholder: updateDeal", args);
-  // Example: const { dealId, ...properties } = args; return await hubspotApi.updateDeal(dealId, properties);
-  throw new Error(
-    `Function not implemented: updateDeal with args ${JSON.stringify(args)}`
-  );
-}
-
-async function deleteDeal(args: any): Promise<any> {
-  console.log("Executing placeholder: deleteDeal", args);
-  // Example: await hubspotApi.deleteDeal(args.dealId); return { success: true, message: `Deal ${args.dealId} deleted.`};
-  throw new Error(
-    `Function not implemented: deleteDeal with args ${JSON.stringify(args)}`
-  );
-}
-
-async function getTicketById(args: any): Promise<any> {
-  console.log("Executing placeholder: getTicketById", args);
-  // Example: return await hubspotApi.getTicketById(args.ticketId, args.properties);
-  throw new Error(
-    `Function not implemented: getTicketById with args ${JSON.stringify(args)}`
-  );
-}
-
-async function deleteTicket(args: any): Promise<any> {
-  console.log("Executing placeholder: deleteTicket", args);
-  // Example: await hubspotApi.deleteTicket(args.ticketId); return { success: true, message: `Ticket ${args.ticketId} deleted.`};
-  throw new Error(
-    `Function not implemented: deleteTicket with args ${JSON.stringify(args)}`
-  );
-}
-
-async function advancedSearch(args: any): Promise<any> {
-  console.log("Executing placeholder: advancedSearch", args);
-  // Advanced search is not implemented in the API module
-  throw new Error(
-    `Function not implemented: advancedSearch with args ${JSON.stringify(args)}`
-  );
-}
-
-async function associateRecords(args: any): Promise<any> {
-  console.log("Executing placeholder: associateRecords", args);
-  // Example: await hubspotApi.associateRecords(args.fromObjectType, args.fromObjectId, args.toObjectType, args.toObjectId, args.associationType || 'primary'); // Adjust type/label logic
-  // return { success: true, message: `Associated ${args.fromObjectType} ${args.fromObjectId} with ${args.toObjectType} ${args.toObjectId}.`};
-  throw new Error(
-    `Function not implemented: associateRecords with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-
-async function getAssociations(args: any): Promise<any> {
-  console.log("Executing placeholder: getAssociations", args);
-  // Example: return await hubspotApi.getAssociations(args.objectType, args.objectId, args.associatedObjectType, args.after, args.limit);
-  throw new Error(
-    `Function not implemented: getAssociations with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-
-async function logCall(args: any): Promise<any> {
-  console.log("Executing placeholder: logCall", args);
-  // Example: const { associatedContactIds, associatedCompanyIds, ...properties } = args;
-  // const associations = { contactIds: associatedContactIds, companyIds: associatedCompanyIds };
-  // return await hubspotApi.createEngagement('calls', properties, associations);
-  throw new Error(
-    `Function not implemented: logCall with args ${JSON.stringify(args)}`
-  );
-}
-
-async function updateTask(args: any): Promise<any> {
-  console.log("Executing placeholder: updateTask", args);
-  // Example: const { taskId, ...properties } = args; return await hubspotApi.updateEngagement('tasks', taskId, properties);
-  throw new Error(
-    `Function not implemented: updateTask with args ${JSON.stringify(args)}`
-  );
-}
-
-async function deleteEngagement(args: any): Promise<any> {
-  console.log("Executing placeholder: deleteEngagement", args);
-  // Example: await hubspotApi.deleteEngagement(args.engagementType, args.engagementId); return { success: true, message: `${args.engagementType} ${args.engagementId} deleted.`};
-  throw new Error(
-    `Function not implemented: deleteEngagement with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-
-async function searchEngagements(args: any): Promise<any> {
-  console.log("Executing placeholder: searchEngagements", args);
-  // Example: return await hubspotApi.searchEngagements(args); // Pass args directly or map them
-  throw new Error(
-    `Function not implemented: searchEngagements with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-
-async function addContactsToList(args: any): Promise<any> {
-  console.log("Executing placeholder: addContactsToList", args);
-  // Example: await hubspotApi.addContactsToList(args.listId, args.contactIds); return { success: true, message: `Contacts added to list ${args.listId}.`};
-  throw new Error(
-    `Function not implemented: addContactsToList with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-
-async function removeContactsFromList(args: any): Promise<any> {
-  console.log("Executing placeholder: removeContactsFromList", args);
-  // Example: await hubspotApi.removeContactsFromList(args.listId, args.contactIds); return { success: true, message: `Contacts removed from list ${args.listId}.`};
-  throw new Error(
-    `Function not implemented: removeContactsFromList with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-
-async function getListMembers(args: any): Promise<any> {
-  console.log("Executing placeholder: getListMembers", args);
-  // Example: return await hubspotApi.getListMembers(args.listId, args.limit, args.offset, args.includeProperties);
-  throw new Error(
-    `Function not implemented: getListMembers with args ${JSON.stringify(args)}`
-  );
-}
-
-async function deleteList(args: any): Promise<any> {
-  console.log("Executing placeholder: deleteList", args);
-  // Example: await hubspotApi.deleteList(args.listId); return { success: true, message: `List ${args.listId} deleted.`};
-  throw new Error(
-    `Function not implemented: deleteList with args ${JSON.stringify(args)}`
-  );
-}
-
-async function submitForm(args: any): Promise<any> {
-  console.log("Executing placeholder: submitForm", args);
-  // Example: await hubspotApi.submitForm(args.formGuid, args.fields, args.context); return { success: true, message: `Form ${args.formGuid} submitted.`};
-  throw new Error(
-    `Function not implemented: submitForm with args ${JSON.stringify(args)}`
-  );
-}
-
-async function getProperties(args: any): Promise<any> {
-  console.log("Executing placeholder: getProperties", args);
-  // Example: return await hubspotApi.getProperties(args.objectType, args.archived);
-  throw new Error(
-    `Function not implemented: getProperties with args ${JSON.stringify(args)}`
-  );
-}
-
-async function createProperty(args: any): Promise<any> {
-  console.log("Executing placeholder: createProperty", args);
-  // Example: return await hubspotApi.createProperty(args.objectType, args); // Pass mapped args
-  throw new Error(
-    `Function not implemented: createProperty with args ${JSON.stringify(args)}`
-  );
-}
-
-// --- Batch Placeholders ---
-async function batchCreateContacts(args: any): Promise<any> {
-  console.log("Executing placeholder: batchCreateContacts", args);
-  // Example: return await hubspotApi.batchCreateContacts(args.inputs);
-  throw new Error(
-    `Function not implemented: batchCreateContacts with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-async function batchUpdateContacts(args: any): Promise<any> {
-  console.log("Executing placeholder: batchUpdateContacts", args);
-  // Example: return await hubspotApi.batchUpdateContacts(args.inputs);
-  throw new Error(
-    `Function not implemented: batchUpdateContacts with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-async function batchReadContacts(args: any): Promise<any> {
-  console.log("Executing placeholder: batchReadContacts", args);
-  // Example: return await hubspotApi.batchReadContacts(args.ids, args.properties);
-  throw new Error(
-    `Function not implemented: batchReadContacts with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-async function batchArchiveContacts(args: any): Promise<any> {
-  console.log("Executing placeholder: batchArchiveContacts", args);
-  // Example: return await hubspotApi.batchArchiveContacts(args.ids);
-  throw new Error(
-    `Function not implemented: batchArchiveContacts with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-async function batchCreateCompanies(args: any): Promise<any> {
-  console.log("Executing placeholder: batchCreateCompanies", args);
-  // Example: return await hubspotApi.batchCreateCompanies(args.inputs);
-  throw new Error(
-    `Function not implemented: batchCreateCompanies with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
 /**
- * @todo Implement batchUpdateCompanies
+ * Get a contact by its ID
+ * @param args - { contactId: string, properties?: string[] }
+ */
+async function getContactById(args: any): Promise<any> {
+  console.log("Executing: getContactById", args);
+  const { contactId, properties } = args;
+  if (!contactId) {
+    return {
+      success: false,
+      error: "Missing required argument: contactId",
+      errorType: "validation",
+    };
+  }
+  try {
+    const result = await hubspotApi.getContactById(contactId, properties);
+    return {
+      success: true,
+      message: `Retrieved contact ${contactId}.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error(`Error getting contact ${contactId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Delete (archive) a contact by its ID
+ * @param args - { contactId: string }
+ */
+async function deleteContact(args: any): Promise<any> {
+  console.log("Executing: deleteContact", args);
+  const { contactId } = args;
+  if (!contactId) {
+    return {
+      success: false,
+      error: "Missing required argument: contactId",
+      errorType: "validation",
+    };
+  }
+  try {
+    await hubspotApi.deleteContact(contactId); // Assumes API function handles archiving
+    return {
+      success: true,
+      message: `Contact ${contactId} archived successfully.`,
+    };
+  } catch (error) {
+    console.error(`Error deleting contact ${contactId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Get a company by its ID
+ * @param args - { companyId: string, properties?: string[] }
+ */
+async function getCompanyById(args: any): Promise<any> {
+  console.log("Executing: getCompanyById", args);
+  const { companyId, properties } = args;
+  if (!companyId) {
+    return {
+      success: false,
+      error: "Missing required argument: companyId",
+      errorType: "validation",
+    };
+  }
+  try {
+    const result = await hubspotApi.getCompanyById(companyId, properties);
+    return {
+      success: true,
+      message: `Retrieved company ${companyId}.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error(`Error getting company ${companyId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Update an existing company
+ * @param args - { companyId: string, name?: string, domain?: string, ...otherProperties }
+ */
+async function updateCompany(args: any): Promise<any> {
+  console.log("Executing: updateCompany", args);
+  const { companyId, ...properties } = args; // Destructure ID, rest are properties
+
+  if (!companyId) {
+    return {
+      success: false,
+      error: "Missing required argument: companyId",
+      errorType: "validation",
+    };
+  }
+  if (Object.keys(properties).length === 0) {
+    return {
+      success: false,
+      error: "No properties provided to update.",
+      errorType: "validation",
+    };
+  }
+
+  try {
+    const result = await hubspotApi.updateCompany(companyId, properties);
+    return {
+      success: true,
+      message: `Company ${companyId} updated successfully.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error(`Error updating company ${companyId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Delete (archive) a company by its ID
+ * @param args - { companyId: string }
+ */
+async function deleteCompany(args: any): Promise<any> {
+  console.log("Executing: deleteCompany", args);
+  const { companyId } = args;
+  if (!companyId) {
+    return {
+      success: false,
+      error: "Missing required argument: companyId",
+      errorType: "validation",
+    };
+  }
+  try {
+    await hubspotApi.deleteCompany(companyId); // Assumes API function handles archiving
+    return {
+      success: true,
+      message: `Company ${companyId} archived successfully.`,
+    };
+  } catch (error) {
+    console.error(`Error deleting company ${companyId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Get a deal by its ID
+ * @param args - { dealId: string, properties?: string[] }
+ */
+async function getDealById(args: any): Promise<any> {
+  console.log("Executing: getDealById", args);
+  const { dealId, properties } = args;
+  if (!dealId) {
+    return {
+      success: false,
+      error: "Missing required argument: dealId",
+      errorType: "validation",
+    };
+  }
+  try {
+    const result = await hubspotApi.getDealById(dealId, properties);
+    return {
+      success: true,
+      message: `Retrieved deal ${dealId}.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error(`Error getting deal ${dealId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Update an existing deal (generic properties)
+ * @param args - { dealId: string, dealname?: string, amount?: number, ...otherProperties }
+ */
+async function updateDeal(args: any): Promise<any> {
+  console.log("Executing: updateDeal", args);
+  const { dealId, ...properties } = args; // Destructure ID, rest are properties
+
+  if (!dealId) {
+    return {
+      success: false,
+      error: "Missing required argument: dealId",
+      errorType: "validation",
+    };
+  }
+  if (Object.keys(properties).length === 0) {
+    return {
+      success: false,
+      error: "No properties provided to update.",
+      errorType: "validation",
+    };
+  }
+
+  // Ensure amount is handled correctly (e.g., converted to string if needed)
+  if (properties.amount !== undefined && properties.amount !== null) {
+    properties.amount = String(properties.amount);
+  }
+
+  try {
+    const result = await hubspotApi.updateDeal(dealId, properties);
+    return {
+      success: true,
+      message: `Deal ${dealId} updated successfully.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error(`Error updating deal ${dealId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Delete (archive) a deal by its ID
+ * @param args - { dealId: string }
+ */
+async function deleteDeal(args: any): Promise<any> {
+  console.log("Executing: deleteDeal", args);
+  const { dealId } = args;
+  if (!dealId) {
+    return {
+      success: false,
+      error: "Missing required argument: dealId",
+      errorType: "validation",
+    };
+  }
+  try {
+    await hubspotApi.deleteDeal(dealId); // Assumes API function handles archiving
+    return { success: true, message: `Deal ${dealId} archived successfully.` };
+  } catch (error) {
+    console.error(`Error deleting deal ${dealId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Get a ticket by its ID
+ * @param args - { ticketId: string, properties?: string[] }
+ */
+async function getTicketById(args: any): Promise<any> {
+  console.log("Executing: getTicketById", args);
+  const { ticketId, properties } = args;
+  if (!ticketId) {
+    return {
+      success: false,
+      error: "Missing required argument: ticketId",
+      errorType: "validation",
+    };
+  }
+  try {
+    const result = await hubspotApi.getTicketById(ticketId, properties);
+    return {
+      success: true,
+      message: `Retrieved ticket ${ticketId}.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error(`Error getting ticket ${ticketId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Delete (archive) a ticket by its ID
+ * @param args - { ticketId: string }
+ */
+async function deleteTicket(args: any): Promise<any> {
+  console.log("Executing: deleteTicket", args);
+  const { ticketId } = args;
+  if (!ticketId) {
+    return {
+      success: false,
+      error: "Missing required argument: ticketId",
+      errorType: "validation",
+    };
+  }
+  try {
+    await hubspotApi.deleteTicket(ticketId); // Assumes API function handles archiving
+    return {
+      success: true,
+      message: `Ticket ${ticketId} archived successfully.`,
+    };
+  } catch (error) {
+    console.error(`Error deleting ticket ${ticketId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Perform an advanced search for CRM objects using filters
+ * @param args - { objectType: string, filterGroups: any[], properties?: string[], limit?: number, after?: string, sorts?: any[] }
+ */
+async function advancedSearch(args: any): Promise<any> {
+  console.log("Executing: advancedSearch", args);
+  const {
+    objectType,
+    filterGroups,
+    properties,
+    limit = 10,
+    after,
+    sorts,
+  } = args;
+
+  if (!objectType || !filterGroups) {
+    return {
+      success: false,
+      error: "Missing required arguments: objectType, filterGroups",
+      errorType: "validation",
+    };
+  }
+
+  // Default properties if none are provided, adjust per object type as needed
+  let defaultProps: string[] = [];
+  switch (objectType.toLowerCase()) {
+    case "contacts":
+      defaultProps = ["firstname", "lastname", "email"];
+      break;
+    case "companies":
+      defaultProps = ["name", "domain"];
+      break;
+    case "deals":
+      defaultProps = ["dealname", "dealstage", "amount"];
+      break;
+    case "tickets":
+      defaultProps = ["subject", "hs_pipeline_stage"];
+      break;
+    // Add cases for other object types if needed
+  }
+
+  const searchPayload = {
+    filterGroups: filterGroups,
+    properties: properties || defaultProps,
+    limit: limit,
+    after: after,
+    sorts: sorts || [{ propertyName: "createdate", direction: "DESCENDING" }], // Default sort
+  };
+
+  try {
+    // Use the generic searchObjects function assumed to exist in api.ts
+    const result = await hubspotApi.searchObjects(objectType, searchPayload);
+    return {
+      success: true,
+      message: `Advanced search completed for ${objectType}. Found ${
+        result.total || 0
+      } results.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error(`Error performing advanced search for ${objectType}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Associate two records
+ * @param args - { fromObjectType: string, fromObjectId: string, toObjectType: string, toObjectId: string, associationType: string | number }
+ * Note: associationType might be a predefined string label ("contact_to_company") or a numeric ID pair ("0-1")
+ */
+async function associateRecords(args: any): Promise<any> {
+  console.log("Executing: associateRecords", args);
+  const {
+    fromObjectType,
+    fromObjectId,
+    toObjectType,
+    toObjectId,
+    associationType, // This is crucial, could be a label or ID
+  } = args;
+
+  if (
+    !fromObjectType ||
+    !fromObjectId ||
+    !toObjectType ||
+    !toObjectId ||
+    !associationType
+  ) {
+    return {
+      success: false,
+      error:
+        "Missing required arguments: fromObjectType, fromObjectId, toObjectType, toObjectId, associationType",
+      errorType: "validation",
+    };
+  }
+
+  try {
+    // Assuming hubspotApi.associateRecords handles mapping the string type/label to the correct API format if needed
+    const result = await hubspotApi.associateRecords(
+      fromObjectType,
+      fromObjectId,
+      toObjectType,
+      toObjectId,
+      associationType // Pass the type/label directly
+    );
+    return {
+      success: true,
+      message: `Successfully associated ${fromObjectType} ${fromObjectId} with ${toObjectType} ${toObjectId} (Type: ${associationType}).`,
+      data: result, // API might return the updated record or association details
+    };
+  } catch (error) {
+    console.error(
+      `Error associating ${fromObjectType} ${fromObjectId} with ${toObjectType} ${toObjectId}:`,
+      error
+    );
+    throw error;
+  }
+}
+
+/**
+ * Get associations for a record
+ * @param args - { objectType: string, objectId: string, associatedObjectType: string, after?: string, limit?: number }
+ */
+async function getAssociations(args: any): Promise<any> {
+  console.log("Executing: getAssociations", args);
+  const {
+    objectType,
+    objectId,
+    associatedObjectType,
+    after,
+    limit = 100, // Default limit, adjust as needed
+  } = args;
+
+  if (!objectType || !objectId || !associatedObjectType) {
+    return {
+      success: false,
+      error:
+        "Missing required arguments: objectType, objectId, associatedObjectType",
+      errorType: "validation",
+    };
+  }
+
+  try {
+    // Assuming hubspotApi.getAssociations handles the API call
+    const result = await hubspotApi.getAssociations(
+      objectType,
+      objectId,
+      associatedObjectType,
+      after,
+      limit
+    );
+    return {
+      success: true,
+      message: `Retrieved associations between ${objectType} ${objectId} and ${associatedObjectType}. Found ${
+        result?.results?.length || 0
+      } associations.`,
+      data: result, // API likely returns { results: [{ id, type }], paging: { next: { after } } }
+    };
+  } catch (error) {
+    console.error(
+      `Error getting associations for ${objectType} ${objectId} to ${associatedObjectType}:`,
+      error
+    );
+    throw error;
+  }
+}
+
+/**
+ * Log a call engagement
+ * @param args - { subject?: string, body?: string, timestamp?: string, durationMilliseconds?: number, status: string ('COMPLETED', 'BUSY' etc.), ownerId?: string, associatedContactIds?: string[], ... }
+ */
+async function logCall(args: any): Promise<any> {
+  console.log("Executing: logCall", args);
+  const {
+    subject, // Recommended: hs_call_title
+    body, // hs_call_body
+    timestamp, // hs_timestamp (when the call occurred)
+    durationMilliseconds, // hs_call_duration
+    status, // hs_call_status (REQUIRED - e.g., COMPLETED, NO_ANSWER)
+    ownerId, // hubspot_owner_id
+    associatedContactIds,
+    associatedCompanyIds,
+    associatedDealIds,
+    associatedTicketIds,
+    // Potentially hs_call_disposition (REQUIRED if logging completed call)
+    disposition, // hs_call_disposition
+  } = args;
+
+  if (!status) {
+    return {
+      success: false,
+      error: "Missing required argument: status (e.g., 'COMPLETED')",
+      errorType: "validation",
+    };
+  }
+  if (status === "COMPLETED" && !disposition) {
+    return {
+      success: false,
+      error:
+        "Missing required argument: disposition (when status is 'COMPLETED')",
+      errorType: "validation",
+    };
+  }
+
+  const properties: Record<string, any> = {
+    hs_timestamp: timestamp || new Date().toISOString(),
+    hs_call_status: status,
+    ...(subject && { hs_call_title: subject }), // Map to HubSpot property names
+    ...(body && { hs_call_body: body }),
+    ...(durationMilliseconds && { hs_call_duration: durationMilliseconds }),
+    ...(ownerId && { hubspot_owner_id: ownerId }),
+    ...(disposition && { hs_call_disposition: disposition }),
+  };
+
+  const associations: hubspotApi.EngagementAssociations = {};
+  if (associatedContactIds) associations.contactIds = associatedContactIds;
+  if (associatedCompanyIds) associations.companyIds = associatedCompanyIds;
+  if (associatedDealIds) associations.dealIds = associatedDealIds;
+  if (associatedTicketIds) associations.ticketIds = associatedTicketIds;
+
+  if (Object.values(associations).every((arr) => !arr || arr.length === 0)) {
+    console.warn("Logging call without specific record associations.");
+  }
+
+  try {
+    const result = await hubspotApi.createEngagement(
+      "calls",
+      properties,
+      associations
+    );
+    return {
+      success: true,
+      message: `Call logged successfully with ID ${result.id}.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error("Error logging call:", error);
+    throw error;
+  }
+}
+
+/**
+ * Update an existing task engagement
+ * @param args - { taskId: string, subject?: string, body?: string, status?: string, ...otherProperties }
+ */
+async function updateTask(args: any): Promise<any> {
+  console.log("Executing: updateTask", args);
+  const {
+    taskId,
+    subject,
+    body,
+    status,
+    dueDate,
+    priority,
+    ownerId,
+    ...otherProperties
+  } = args; // Destructure known task properties
+
+  if (!taskId) {
+    return {
+      success: false,
+      error: "Missing required argument: taskId",
+      errorType: "validation",
+    };
+  }
+
+  // Map friendly names to HubSpot internal names
+  const properties: Record<string, any> = {
+    ...(subject && { hs_task_subject: subject }),
+    ...(body && { hs_task_body: body }),
+    ...(status && { hs_task_status: status }),
+    ...(dueDate && { hs_timestamp: new Date(dueDate).toISOString() }), // Due date maps to hs_timestamp
+    ...(priority && { hs_task_priority: priority }),
+    ...(ownerId && { hubspot_owner_id: ownerId }),
+    ...otherProperties, // Pass through any other properties provided
+  };
+
+  if (Object.keys(properties).length === 0) {
+    return {
+      success: false,
+      error: "No properties provided to update.",
+      errorType: "validation",
+    };
+  }
+
+  try {
+    // Assuming hubspotApi.updateEngagement exists and takes type, id, properties
+    const result = await hubspotApi.updateEngagement(
+      "tasks",
+      taskId,
+      properties
+    );
+    return {
+      success: true,
+      message: `Task ${taskId} updated successfully.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error(`Error updating task ${taskId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Delete an engagement (Note, Task, Call, Meeting, Email)
+ * @param args - { engagementId: string, engagementType: string ('notes', 'tasks', 'calls', 'meetings', 'emails') }
+ */
+async function deleteEngagement(args: any): Promise<any> {
+  console.log("Executing: deleteEngagement", args);
+  const { engagementId, engagementType } = args;
+
+  if (!engagementId || !engagementType) {
+    return {
+      success: false,
+      error: "Missing required arguments: engagementId, engagementType",
+      errorType: "validation",
+    };
+  }
+
+  // Optional: Validate engagementType is one of the allowed values
+  const validTypes = ["notes", "tasks", "calls", "meetings", "emails"];
+  if (!validTypes.includes(engagementType.toLowerCase())) {
+    return {
+      success: false,
+      error: `Invalid engagementType: ${engagementType}. Must be one of: ${validTypes.join(
+        ", "
+      )}`,
+      errorType: "validation",
+    };
+  }
+
+  try {
+    // Assuming hubspotApi.deleteEngagement exists
+    await hubspotApi.deleteEngagement(engagementType, engagementId);
+    return {
+      success: true,
+      message: `Engagement (${engagementType}) ${engagementId} deleted successfully.`,
+    };
+  } catch (error) {
+    console.error(
+      `Error deleting engagement ${engagementType} ${engagementId}:`,
+      error
+    );
+    throw error;
+  }
+}
+
+/**
+ * Search for engagements using filters
+ * @param args - { filterGroups: any[], properties?: string[], limit?: number, after?: string, sorts?: any[] }
+ * Note: Searching engagements might have different API endpoint/structure than CRM objects.
+ */
+async function searchEngagements(args: any): Promise<any> {
+  console.log("Executing: searchEngagements", args);
+  const { filterGroups, properties, limit = 10, after, sorts } = args;
+
+  if (!filterGroups) {
+    return {
+      success: false,
+      error: "Missing required argument: filterGroups",
+      errorType: "validation",
+    };
+  }
+
+  // Default properties for engagements (adjust as needed)
+  const defaultProps = [
+    "hs_engagement_type",
+    "hs_timestamp",
+    "hubspot_owner_id",
+    // Add type-specific properties if useful (e.g., hs_task_subject, hs_note_body)
+  ];
+
+  const searchPayload = {
+    filterGroups: filterGroups,
+    properties: properties || defaultProps,
+    limit: limit,
+    after: after,
+    sorts: sorts || [{ propertyName: "hs_timestamp", direction: "DESCENDING" }], // Default sort by creation/activity time
+  };
+
+  try {
+    // Assuming hubspotApi.searchEngagements exists and handles the specific API call
+    const result = await hubspotApi.searchEngagements(searchPayload);
+    return {
+      success: true,
+      message: `Engagement search completed. Found ${
+        result.total || 0
+      } results.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error("Error searching engagements:", error);
+    throw error;
+  }
+}
+
+/**
+ * Add contacts to a static list
+ * @param args - { listId: number | string, contactIds: string[] }
+ */
+async function addContactsToList(args: any): Promise<any> {
+  console.log("Executing: addContactsToList", args);
+  const { listId, contactIds } = args;
+
+  if (
+    !listId ||
+    !contactIds ||
+    !Array.isArray(contactIds) ||
+    contactIds.length === 0
+  ) {
+    return {
+      success: false,
+      error:
+        "Missing required arguments: listId and a non-empty array of contactIds",
+      errorType: "validation",
+    };
+  }
+
+  try {
+    // Assuming hubspotApi.addContactsToList takes listId and an array of contact IDs
+    await hubspotApi.addContactsToList(listId, contactIds);
+    return {
+      success: true,
+      message: `Successfully added ${contactIds.length} contact(s) to list ${listId}.`,
+    };
+  } catch (error) {
+    console.error(`Error adding contacts to list ${listId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Remove contacts from a static list
+ * @param args - { listId: number | string, contactIds: string[] }
+ */
+async function removeContactsFromList(args: any): Promise<any> {
+  console.log("Executing: removeContactsFromList", args);
+  const { listId, contactIds } = args;
+
+  if (
+    !listId ||
+    !contactIds ||
+    !Array.isArray(contactIds) ||
+    contactIds.length === 0
+  ) {
+    return {
+      success: false,
+      error:
+        "Missing required arguments: listId and a non-empty array of contactIds",
+      errorType: "validation",
+    };
+  }
+
+  try {
+    // Assuming hubspotApi.removeContactsFromList takes listId and an array of contact IDs
+    await hubspotApi.removeContactsFromList(listId, contactIds);
+    return {
+      success: true,
+      message: `Successfully removed ${contactIds.length} contact(s) from list ${listId}.`,
+    };
+  } catch (error) {
+    console.error(`Error removing contacts from list ${listId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Get members (contacts) of a list
+ * @param args - { listId: number | string, limit?: number, after?: string (or offset), includeProperties?: string[] }
+ */
+async function getListMembers(args: any): Promise<any> {
+  console.log("Executing: getListMembers", args);
+  const { listId, limit = 100, after, includeProperties } = args; // Use 'after' for V3 API paging
+
+  if (!listId) {
+    return {
+      success: false,
+      error: "Missing required argument: listId",
+      errorType: "validation",
+    };
+  }
+
+  try {
+    // Assuming hubspotApi.getListMembers takes listId and optional params
+    // Note: HubSpot API v3 uses 'after' for paging, v1 used 'offset'. Adapt hubspotApi function accordingly.
+    const result = await hubspotApi.getListMembers(
+      listId,
+      limit,
+      after, // Pass 'after' for paging
+      includeProperties
+    );
+    return {
+      success: true,
+      message: `Retrieved members for list ${listId}. Found ${
+        result?.contacts?.length || 0
+      } members in this page.`, // Adjust based on actual response structure ('contacts' or 'vids')
+      data: result, // Structure like { contacts: [...], paging: { next: { after } }, has-more: boolean }
+    };
+  } catch (error) {
+    console.error(`Error getting members for list ${listId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Delete a list
+ * @param args - { listId: number | string }
+ */
+async function deleteList(args: any): Promise<any> {
+  console.log("Executing: deleteList", args);
+  const { listId } = args;
+
+  if (!listId) {
+    return {
+      success: false,
+      error: "Missing required argument: listId",
+      errorType: "validation",
+    };
+  }
+
+  try {
+    // Assuming hubspotApi.deleteList takes listId
+    await hubspotApi.deleteList(listId);
+    return {
+      success: true,
+      message: `List ${listId} deleted successfully.`,
+    };
+  } catch (error) {
+    console.error(`Error deleting list ${listId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Submit data to a HubSpot form
+ * @param args - { formGuid: string, fields: { name: string, value: any }[], context?: { pageUri?: string, pageName?: string, hutk?: string } }
+ */
+async function submitForm(args: any): Promise<any> {
+  console.log("Executing: submitForm", args);
+  const { formGuid, fields, context } = args;
+
+  if (!formGuid || !fields || !Array.isArray(fields) || fields.length === 0) {
+    return {
+      success: false,
+      error:
+        "Missing required arguments: formGuid and a non-empty array of fields",
+      errorType: "validation",
+    };
+  }
+
+  // Optional: Validate fields structure if needed
+  if (
+    !fields.every(
+      (f) => typeof f === "object" && f !== null && "name" in f && "value" in f
+    )
+  ) {
+    return {
+      success: false,
+      error:
+        "Invalid fields structure. Each field must be an object with 'name' and 'value'.",
+      errorType: "validation",
+    };
+  }
+
+  try {
+    // Assuming hubspotApi.submitForm takes formGuid, fields array, and optional context object
+    const result = await hubspotApi.submitForm(formGuid, fields, context);
+    // Successful submissions often return 200 OK or 204 No Content, or sometimes an inline thank you message.
+    let message = `Form ${formGuid} submitted successfully.`;
+    if (result && result.inlineMessage) {
+      // Check if API returns specific message
+      message += ` Response: ${result.inlineMessage}`;
+    }
+    return {
+      success: true,
+      message: message,
+      data: result, // Include response data if any (like redirect URL or message)
+    };
+  } catch (error) {
+    // Handle specific form submission errors (e.g., validation errors on fields)
+    console.error(`Error submitting form ${formGuid}:`, error);
+    if (error instanceof HubspotApiError && error.status === 400) {
+      // It's likely a validation error from HubSpot
+      error.category = "validation"; // Re-categorize for better frontend handling
+      error.message = `Form validation failed: ${error.message}`; // Enhance message
+    } else if (error instanceof HubspotApiError && error.status === 404) {
+      error.category = "not_found";
+      error.message = `Form with GUID ${formGuid} not found.`;
+    }
+    throw error; // Propagate the potentially modified error
+  }
+}
+
+/**
+ * Get properties for a specific object type
+ * @param args - { objectType: string, archived?: boolean }
+ */
+async function getProperties(args: any): Promise<any> {
+  console.log("Executing: getProperties", args);
+  const { objectType, archived = false } = args; // Default to not including archived
+
+  if (!objectType) {
+    return {
+      success: false,
+      error: "Missing required argument: objectType",
+      errorType: "validation",
+    };
+  }
+
+  try {
+    // Assuming hubspotApi.getProperties takes objectType and optional archived flag
+    const result = await hubspotApi.getProperties(objectType, archived);
+    return {
+      success: true,
+      message: `Retrieved ${
+        result?.length || 0
+      } properties for object type ${objectType}.`,
+      data: result, // API likely returns an array of property definitions
+    };
+  } catch (error) {
+    console.error(`Error getting properties for ${objectType}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Create a new custom property
+ * @param args - { objectType: string, name: string, label: string, groupName: string, type: string ('string', 'number', 'date', 'enumeration' etc.), fieldType: string ('text', 'select', 'radio' etc.), options?: any[], ...otherDefinitionProps }
+ */
+async function createProperty(args: any): Promise<any> {
+  console.log("Executing: createProperty", args);
+  const {
+    objectType,
+    name,
+    label,
+    groupName,
+    type,
+    fieldType,
+    // Extract other relevant definition properties from args
+    ...propertyDefinitionArgs
+  } = args;
+
+  // Core requirements for creating a property
+  if (!objectType || !name || !label || !groupName || !type || !fieldType) {
+    return {
+      success: false,
+      error:
+        "Missing required arguments: objectType, name, label, groupName, type, fieldType",
+      errorType: "validation",
+    };
+  }
+
+  // Construct the property definition object for the API
+  const propertyDefinition = {
+    name,
+    label,
+    groupName, // Internal name of the property group
+    type, // Data type
+    fieldType, // How it appears in UI
+    ...propertyDefinitionArgs, // Include options, description, displayOrder etc. from args
+  };
+
+  // Validate options for enumeration types
+  if (
+    (type === "enumeration" || type === "bool") &&
+    (!propertyDefinition.options ||
+      !Array.isArray(propertyDefinition.options) ||
+      propertyDefinition.options.length === 0)
+  ) {
+    return {
+      success: false,
+      error: `Properties of type '${type}' require a non-empty 'options' array.`,
+      errorType: "validation",
+    };
+  }
+
+  try {
+    // Assuming hubspotApi.createProperty takes objectType and the definition object
+    const result = await hubspotApi.createProperty(
+      objectType,
+      propertyDefinition
+    );
+    return {
+      success: true,
+      message: `Custom property '${label}' (${name}) created successfully for ${objectType}.`,
+      data: result, // API returns the full definition of the created property
+    };
+  } catch (error) {
+    console.error(
+      `Error creating property '${name}' for ${objectType}:`,
+      error
+    );
+    // Handle potential naming conflicts (409 error)
+    if (error instanceof HubspotApiError && error.status === 409) {
+      error.category = "conflict";
+      error.message = `A property with the name '${name}' already exists for ${objectType}.`;
+    }
+    throw error;
+  }
+}
+
+// --- Batch Implementations ---
+
+/**
+ * Batch create contacts
+ * @param args - { inputs: { properties: Record<string, any> }[] }
+ */
+async function batchCreateContacts(args: any): Promise<any> {
+  console.log("Executing: batchCreateContacts", args);
+  const { inputs } = args;
+
+  if (!inputs || !Array.isArray(inputs) || inputs.length === 0) {
+    return {
+      success: false,
+      error: "Missing required argument: inputs (non-empty array)",
+      errorType: "validation",
+    };
+  }
+  // Optional: Add validation for the structure of each item in inputs
+
+  try {
+    const result = await hubspotApi.batchCreateContacts(inputs);
+    // Batch API results often have 'results', 'status', 'errors' fields
+    const createdCount = result?.results?.length || 0; // Adjust based on actual API response
+    const status = result?.status || "UNKNOWN";
+    return {
+      success: status === "COMPLETE", // Consider it success if the batch job completed, even with errors
+      message: `Batch create contacts request completed with status: ${status}. Processed ${createdCount} records.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error("Error in batch create contacts:", error);
+    throw error;
+  }
+}
+
+/**
+ * Batch update contacts
+ * @param args - { inputs: { id: string, properties: Record<string, any> }[] }
+ */
+async function batchUpdateContacts(args: any): Promise<any> {
+  console.log("Executing: batchUpdateContacts", args);
+  const { inputs } = args;
+
+  if (!inputs || !Array.isArray(inputs) || inputs.length === 0) {
+    return {
+      success: false,
+      error: "Missing required argument: inputs (non-empty array)",
+      errorType: "validation",
+    };
+  }
+  // Optional: Add validation for the structure of each item in inputs (must have 'id' and 'properties')
+
+  try {
+    const result = await hubspotApi.batchUpdateContacts(inputs);
+    const updatedCount = result?.results?.length || 0;
+    const status = result?.status || "UNKNOWN";
+    return {
+      success: status === "COMPLETE",
+      message: `Batch update contacts request completed with status: ${status}. Processed ${updatedCount} records.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error("Error in batch update contacts:", error);
+    throw error;
+  }
+}
+
+/**
+ * Batch read contacts by ID
+ * @param args - { ids: string[], properties?: string[] }
+ */
+async function batchReadContacts(args: any): Promise<any> {
+  console.log("Executing: batchReadContacts", args);
+  const { ids, properties } = args;
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return {
+      success: false,
+      error: "Missing required argument: ids (non-empty array)",
+      errorType: "validation",
+    };
+  }
+
+  try {
+    const result = await hubspotApi.batchReadContacts(ids, properties);
+    const foundCount = result?.results?.length || 0;
+    const status = result?.status || "UNKNOWN"; // May or may not have status
+    return {
+      success: status !== "FAILED", // Adjust logic based on API response
+      message: `Batch read contacts request completed. Found ${foundCount} of ${ids.length} requested contacts.`,
+      data: result, // Contains 'results' array with contact data
+    };
+  } catch (error) {
+    console.error("Error in batch read contacts:", error);
+    throw error;
+  }
+}
+
+/**
+ * Batch archive (delete) contacts by ID
+ * @param args - { ids: string[] }
+ */
+async function batchArchiveContacts(args: any): Promise<any> {
+  console.log("Executing: batchArchiveContacts", args);
+  const { ids } = args;
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return {
+      success: false,
+      error: "Missing required argument: ids (non-empty array)",
+      errorType: "validation",
+    };
+  }
+
+  try {
+    // Batch archive usually returns 204 No Content on success
+    await hubspotApi.batchArchiveContacts(ids);
+    return {
+      success: true,
+      message: `Batch archive contacts request completed successfully for ${ids.length} IDs.`,
+    };
+  } catch (error) {
+    console.error("Error in batch archive contacts:", error);
+    throw error;
+  }
+}
+
+/**
+ * Batch create companies
+ * @param args - { inputs: { properties: Record<string, any> }[] }
+ */
+async function batchCreateCompanies(args: any): Promise<any> {
+  console.log("Executing: batchCreateCompanies", args);
+  const { inputs } = args;
+
+  if (!inputs || !Array.isArray(inputs) || inputs.length === 0) {
+    return {
+      success: false,
+      error: "Missing required argument: inputs (non-empty array)",
+      errorType: "validation",
+    };
+  }
+  try {
+    const result = await hubspotApi.batchCreateCompanies(inputs);
+    const createdCount = result?.results?.length || 0;
+    const status = result?.status || "UNKNOWN";
+    return {
+      success: status === "COMPLETE",
+      message: `Batch create companies request completed with status: ${status}. Processed ${createdCount} records.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error("Error in batch create companies:", error);
+    throw error;
+  }
+}
+
+/**
+ * Batch update companies
+ * @param args - { inputs: { id: string, properties: Record<string, any> }[] }
  */
 async function batchUpdateCompanies(args: Record<string, any>): Promise<any> {
-  console.log("Executing placeholder: batchUpdateCompanies", args);
-  // Example: return await hubspotApi.batchUpdateCompanies(args.inputs);
-  throw new Error(
-    `Function not implemented: batchUpdateCompanies with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-/**
- * @todo Implement batchReadCompanies
- */
-async function batchReadCompanies(args: Record<string, any>): Promise<any> {
-  console.log("Executing placeholder: batchReadCompanies", args);
-  // Example: return await hubspotApi.batchReadCompanies(args.ids, args.properties);
-  throw new Error(
-    `Function not implemented: batchReadCompanies with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-/**
- * @todo Implement batchArchiveCompanies
- */
-async function batchArchiveCompanies(args: Record<string, any>): Promise<any> {
-  console.log("Executing placeholder: batchArchiveCompanies", args);
-  // Example: return await hubspotApi.batchArchiveCompanies(args.ids);
-  throw new Error(
-    `Function not implemented: batchArchiveCompanies with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-/**
- * @todo Implement batchCreateDeals
- */
-async function batchCreateDeals(args: Record<string, any>): Promise<any> {
-  console.log("Executing placeholder: batchCreateDeals", args);
-  // Example: return await hubspotApi.batchCreateDeals(args.inputs);
-  throw new Error(
-    `Function not implemented: batchCreateDeals with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-/**
- * @todo Implement batchUpdateDeals
- */
-async function batchUpdateDeals(args: Record<string, any>): Promise<any> {
-  console.log("Executing placeholder: batchUpdateDeals", args);
-  // Example: return await hubspotApi.batchUpdateDeals(args.inputs);
-  throw new Error(
-    `Function not implemented: batchUpdateDeals with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-/**
- * @todo Implement batchReadDeals
- */
-async function batchReadDeals(args: Record<string, any>): Promise<any> {
-  console.log("Executing placeholder: batchReadDeals", args);
-  // Example: return await hubspotApi.batchReadDeals(args.ids, args.properties);
-  throw new Error(
-    `Function not implemented: batchReadDeals with args ${JSON.stringify(args)}`
-  );
-}
-/**
- * @todo Implement batchArchiveDeals
- */
-async function batchArchiveDeals(args: Record<string, any>): Promise<any> {
-  console.log("Executing placeholder: batchArchiveDeals", args);
-  // Example: return await hubspotApi.batchArchiveDeals(args.ids);
-  throw new Error(
-    `Function not implemented: batchArchiveDeals with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-/**
- * @todo Implement batchCreateTickets
- */
-async function batchCreateTickets(args: Record<string, any>): Promise<any> {
-  console.log("Executing placeholder: batchCreateTickets", args);
-  // Example: return await hubspotApi.batchCreateTickets(args.inputs);
-  throw new Error(
-    `Function not implemented: batchCreateTickets with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-/**
- * @todo Implement batchUpdateTickets
- */
-async function batchUpdateTickets(args: Record<string, any>): Promise<any> {
-  console.log("Executing placeholder: batchUpdateTickets", args);
-  // Example: return await hubspotApi.batchUpdateTickets(args.inputs);
-  throw new Error(
-    `Function not implemented: batchUpdateTickets with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-/**
- * @todo Implement batchReadTickets
- */
-async function batchReadTickets(args: Record<string, any>): Promise<any> {
-  console.log("Executing placeholder: batchReadTickets", args);
-  // Example: return await hubspotApi.batchReadTickets(args.ids, args.properties);
-  throw new Error(
-    `Function not implemented: batchReadTickets with args ${JSON.stringify(
-      args
-    )}`
-  );
-}
-/**
- * @todo Implement batchArchiveTickets
- */
-async function batchArchiveTickets(args: Record<string, any>): Promise<any> {
-  console.log("Executing placeholder: batchArchiveTickets", args);
-  // Example: return await hubspotApi.batchArchiveTickets(args.ids);
-  throw new Error(
-    `Function not implemented: batchArchiveTickets with args ${JSON.stringify(
-      args
-    )}`
-  );
+  console.log("Executing: batchUpdateCompanies", args);
+  const { inputs } = args;
+
+  if (!inputs || !Array.isArray(inputs) || inputs.length === 0) {
+    return {
+      success: false,
+      error: "Missing required argument: inputs (non-empty array)",
+      errorType: "validation",
+    };
+  }
+  try {
+    const result = await hubspotApi.batchUpdateCompanies(inputs);
+    const updatedCount = result?.results?.length || 0;
+    const status = result?.status || "UNKNOWN";
+    return {
+      success: status === "COMPLETE",
+      message: `Batch update companies request completed with status: ${status}. Processed ${updatedCount} records.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error("Error in batch update companies:", error);
+    throw error;
+  }
 }
 
 /**
- * @todo Implement batchAssociateRecords
+ * Batch read companies by ID
+ * @param args - { ids: string[], properties?: string[] }
+ */
+async function batchReadCompanies(args: Record<string, any>): Promise<any> {
+  console.log("Executing: batchReadCompanies", args);
+  const { ids, properties } = args;
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return {
+      success: false,
+      error: "Missing required argument: ids (non-empty array)",
+      errorType: "validation",
+    };
+  }
+  try {
+    const result = await hubspotApi.batchReadCompanies(ids, properties);
+    const foundCount = result?.results?.length || 0;
+    const status = result?.status || "UNKNOWN";
+    return {
+      success: status !== "FAILED",
+      message: `Batch read companies request completed. Found ${foundCount} of ${ids.length} requested companies.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error("Error in batch read companies:", error);
+    throw error;
+  }
+}
+
+/**
+ * Batch archive (delete) companies by ID
+ * @param args - { ids: string[] }
+ */
+async function batchArchiveCompanies(args: Record<string, any>): Promise<any> {
+  console.log("Executing: batchArchiveCompanies", args);
+  const { ids } = args;
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return {
+      success: false,
+      error: "Missing required argument: ids (non-empty array)",
+      errorType: "validation",
+    };
+  }
+  try {
+    await hubspotApi.batchArchiveCompanies(ids);
+    return {
+      success: true,
+      message: `Batch archive companies request completed successfully for ${ids.length} IDs.`,
+    };
+  } catch (error) {
+    console.error("Error in batch archive companies:", error);
+    throw error;
+  }
+}
+
+/**
+ * Batch create deals
+ * @param args - { inputs: { properties: Record<string, any> }[] }
+ */
+async function batchCreateDeals(args: Record<string, any>): Promise<any> {
+  console.log("Executing: batchCreateDeals", args);
+  const { inputs } = args;
+
+  if (!inputs || !Array.isArray(inputs) || inputs.length === 0) {
+    return {
+      success: false,
+      error: "Missing required argument: inputs (non-empty array)",
+      errorType: "validation",
+    };
+  }
+  try {
+    const result = await hubspotApi.batchCreateDeals(inputs);
+    const createdCount = result?.results?.length || 0;
+    const status = result?.status || "UNKNOWN";
+    return {
+      success: status === "COMPLETE",
+      message: `Batch create deals request completed with status: ${status}. Processed ${createdCount} records.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error("Error in batch create deals:", error);
+    throw error;
+  }
+}
+
+/**
+ * Batch update deals
+ * @param args - { inputs: { id: string, properties: Record<string, any> }[] }
+ */
+async function batchUpdateDeals(args: Record<string, any>): Promise<any> {
+  console.log("Executing: batchUpdateDeals", args);
+  const { inputs } = args;
+
+  if (!inputs || !Array.isArray(inputs) || inputs.length === 0) {
+    return {
+      success: false,
+      error: "Missing required argument: inputs (non-empty array)",
+      errorType: "validation",
+    };
+  }
+  try {
+    const result = await hubspotApi.batchUpdateDeals(inputs);
+    const updatedCount = result?.results?.length || 0;
+    const status = result?.status || "UNKNOWN";
+    return {
+      success: status === "COMPLETE",
+      message: `Batch update deals request completed with status: ${status}. Processed ${updatedCount} records.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error("Error in batch update deals:", error);
+    throw error;
+  }
+}
+
+/**
+ * Batch read deals by ID
+ * @param args - { ids: string[], properties?: string[] }
+ */
+async function batchReadDeals(args: Record<string, any>): Promise<any> {
+  console.log("Executing: batchReadDeals", args);
+  const { ids, properties } = args;
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return {
+      success: false,
+      error: "Missing required argument: ids (non-empty array)",
+      errorType: "validation",
+    };
+  }
+  try {
+    const result = await hubspotApi.batchReadDeals(ids, properties);
+    const foundCount = result?.results?.length || 0;
+    const status = result?.status || "UNKNOWN";
+    return {
+      success: status !== "FAILED",
+      message: `Batch read deals request completed. Found ${foundCount} of ${ids.length} requested deals.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error("Error in batch read deals:", error);
+    throw error;
+  }
+}
+
+/**
+ * Batch archive (delete) deals by ID
+ * @param args - { ids: string[] }
+ */
+async function batchArchiveDeals(args: Record<string, any>): Promise<any> {
+  console.log("Executing: batchArchiveDeals", args);
+  const { ids } = args;
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return {
+      success: false,
+      error: "Missing required argument: ids (non-empty array)",
+      errorType: "validation",
+    };
+  }
+  try {
+    await hubspotApi.batchArchiveDeals(ids);
+    return {
+      success: true,
+      message: `Batch archive deals request completed successfully for ${ids.length} IDs.`,
+    };
+  } catch (error) {
+    console.error("Error in batch archive deals:", error);
+    throw error;
+  }
+}
+
+/**
+ * Batch create tickets
+ * @param args - { inputs: { properties: Record<string, any> }[] }
+ */
+async function batchCreateTickets(args: Record<string, any>): Promise<any> {
+  console.log("Executing: batchCreateTickets", args);
+  const { inputs } = args;
+
+  if (!inputs || !Array.isArray(inputs) || inputs.length === 0) {
+    return {
+      success: false,
+      error: "Missing required argument: inputs (non-empty array)",
+      errorType: "validation",
+    };
+  }
+  try {
+    const result = await hubspotApi.batchCreateTickets(inputs);
+    const createdCount = result?.results?.length || 0;
+    const status = result?.status || "UNKNOWN";
+    return {
+      success: status === "COMPLETE",
+      message: `Batch create tickets request completed with status: ${status}. Processed ${createdCount} records.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error("Error in batch create tickets:", error);
+    throw error;
+  }
+}
+
+/**
+ * Batch update tickets
+ * @param args - { inputs: { id: string, properties: Record<string, any> }[] }
+ */
+async function batchUpdateTickets(args: Record<string, any>): Promise<any> {
+  console.log("Executing: batchUpdateTickets", args);
+  const { inputs } = args;
+
+  if (!inputs || !Array.isArray(inputs) || inputs.length === 0) {
+    return {
+      success: false,
+      error: "Missing required argument: inputs (non-empty array)",
+      errorType: "validation",
+    };
+  }
+  try {
+    const result = await hubspotApi.batchUpdateTickets(inputs);
+    const updatedCount = result?.results?.length || 0;
+    const status = result?.status || "UNKNOWN";
+    return {
+      success: status === "COMPLETE",
+      message: `Batch update tickets request completed with status: ${status}. Processed ${updatedCount} records.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error("Error in batch update tickets:", error);
+    throw error;
+  }
+}
+
+/**
+ * Batch read tickets by ID
+ * @param args - { ids: string[], properties?: string[] }
+ */
+async function batchReadTickets(args: Record<string, any>): Promise<any> {
+  console.log("Executing: batchReadTickets", args);
+  const { ids, properties } = args;
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return {
+      success: false,
+      error: "Missing required argument: ids (non-empty array)",
+      errorType: "validation",
+    };
+  }
+  try {
+    const result = await hubspotApi.batchReadTickets(ids, properties);
+    const foundCount = result?.results?.length || 0;
+    const status = result?.status || "UNKNOWN";
+    return {
+      success: status !== "FAILED",
+      message: `Batch read tickets request completed. Found ${foundCount} of ${ids.length} requested tickets.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error("Error in batch read tickets:", error);
+    throw error;
+  }
+}
+
+/**
+ * Batch archive (delete) tickets by ID
+ * @param args - { ids: string[] }
+ */
+async function batchArchiveTickets(args: Record<string, any>): Promise<any> {
+  console.log("Executing: batchArchiveTickets", args);
+  const { ids } = args;
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return {
+      success: false,
+      error: "Missing required argument: ids (non-empty array)",
+      errorType: "validation",
+    };
+  }
+  try {
+    await hubspotApi.batchArchiveTickets(ids);
+    return {
+      success: true,
+      message: `Batch archive tickets request completed successfully for ${ids.length} IDs.`,
+    };
+  } catch (error) {
+    console.error("Error in batch archive tickets:", error);
+    throw error;
+  }
+}
+
+/**
+ * Batch associate multiple records to a single source record.
+ * Used within createDeal/createTicket.
+ * @param args - { fromObjectType: string, fromObjectId: string, toObjectType: string, toObjectIds: string[], associationType: string | number }
  */
 async function batchAssociateRecords(args: Record<string, any>): Promise<any> {
-  console.log("Executing placeholder: batchAssociateRecords", args);
-  throw new Error(
-    `Function not implemented: batchAssociateRecords with args ${JSON.stringify(
-      args
-    )}`
+  console.log(
+    "Executing: batchAssociateRecords (helper for create flows)",
+    args
   );
+  const {
+    fromObjectType,
+    fromObjectId,
+    toObjectType,
+    toObjectIds,
+    associationType,
+  } = args;
+
+  if (
+    !fromObjectType ||
+    !fromObjectId ||
+    !toObjectType ||
+    !toObjectIds ||
+    !Array.isArray(toObjectIds) ||
+    toObjectIds.length === 0 ||
+    !associationType
+  ) {
+    return {
+      success: false,
+      error:
+        "Missing required arguments for batch association: fromObjectType, fromObjectId, toObjectType, toObjectIds (array), associationType",
+      errorType: "validation",
+    };
+  }
+
+  try {
+    // Assuming hubspotApi.batchAssociateRecords exists and handles mapping the associationType if needed
+    // It likely takes the source object details and an array of target IDs
+    const result = await hubspotApi.batchAssociateRecords(
+      fromObjectType,
+      fromObjectId,
+      toObjectType,
+      toObjectIds,
+      associationType
+    );
+
+    // Batch association API might return detailed results or just success/failure
+    return {
+      success: true, // Assume success if no error is thrown; adjust based on API response
+      message: `Batch association requested for ${fromObjectType} ${fromObjectId} to ${toObjectIds.length} ${toObjectType}(s) with type ${associationType}.`,
+      data: result, // Include API response if available
+    };
+  } catch (error) {
+    console.error(
+      `Error in batch associating ${fromObjectType} ${fromObjectId} to ${toObjectType}s:`,
+      error
+    );
+    throw error; // Propagate the error
+  }
 }

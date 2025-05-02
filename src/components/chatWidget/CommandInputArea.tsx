@@ -364,35 +364,24 @@ export function CommandInputArea({
   // Handle focus event to show Hubspot overlay when in Hubspot mode
   useEffect(() => {
     // When the input is focused in Hubspot mode, and no command is selected yet,
-    // show the slash commands popup to help users get started
-    if (
-      hubspotMode &&
-      isInputAreaFocused.current &&
-      !selectedCommand &&
-      !showSlashPopup
-    ) {
-      setShowSlashPopup(true);
+    // notify parent about slash state (to show help overlay) but don't show popup
+    if (hubspotMode && isInputAreaFocused.current && !selectedCommand) {
+      // Only update the state for overlay via callback, but don't show popup
       if (onSlashCommandStateChange) onSlashCommandStateChange(true, "");
     }
-  }, [hubspotMode, selectedCommand, showSlashPopup, onSlashCommandStateChange]);
+  }, [hubspotMode, selectedCommand, onSlashCommandStateChange]);
 
   // Track input area focus state with a ref
   const isInputAreaFocused = useRef(false);
   const handleActualFocus = useCallback(() => {
     isInputAreaFocused.current = true;
-    // Show slash popup for Hubspot mode on focus
-    if (hubspotMode && !selectedCommand && !showSlashPopup) {
-      setShowSlashPopup(true);
+    // On focus, notify parent about slash state (to show help overlay)
+    // but don't show the actual popup yet
+    if (hubspotMode && !selectedCommand) {
       if (onSlashCommandStateChange) onSlashCommandStateChange(true, "");
     }
     onFocus(); // Call the parent component's onFocus handler
-  }, [
-    hubspotMode,
-    selectedCommand,
-    showSlashPopup,
-    onFocus,
-    onSlashCommandStateChange,
-  ]);
+  }, [hubspotMode, selectedCommand, onFocus, onSlashCommandStateChange]);
 
   const handleActualBlur = useCallback(() => {
     isInputAreaFocused.current = false;
@@ -407,8 +396,12 @@ export function CommandInputArea({
     onBlur(); // Call the parent component's onBlur handler
   }, [onBlur, showSlashPopup, selectedCommand, onSlashCommandStateChange]);
 
-  // Clears the command chip and the text input (Keep as is, but refocus is handled by useEffect)
+  // Clears the command chip and the text input
   const clearSelectedCommand = useCallback(() => {
+    // Remove from storage
+    chrome.storage.local.remove("selectedHubspotCommand");
+    console.log("[CommandInputArea] Cleared command from storage");
+
     setSelectedCommand(null);
     setInput("");
     // No explicit refocus here, let the useEffect handle it based on state change
@@ -418,6 +411,13 @@ export function CommandInputArea({
   const handleSlashCommandSelect = useCallback(
     (command: string) => {
       if (!command) return;
+
+      // Store in browser storage for use by providers.ts
+      chrome.storage.local.set({ selectedHubspotCommand: command });
+      console.log(
+        `[CommandInputArea] Selected command: ${command}, saved to storage`
+      );
+
       setSelectedCommand(command); // Set the command chip state
       setInput(""); // Clear the prompt input area
       setShowSlashPopup(false); // Hide the slash popup
@@ -474,10 +474,11 @@ export function CommandInputArea({
         // No chip, get the entire text content, try innerText for better newline handling
         currentText = element.innerText || element.textContent || "";
 
-        // Handle slash command triggering (logic remains similar)
+        // Handle slash command triggering - only show popup when / is typed
         if (hubspotMode) {
           if (currentText === "/") {
             if (slashFilter !== "") setSlashFilter("");
+            // Show popup ONLY when / is typed
             if (!showSlashPopup) setShowSlashPopup(true);
             if (onSlashCommandStateChange) onSlashCommandStateChange(true, "");
           } else if (currentText.startsWith("/")) {
@@ -517,10 +518,11 @@ export function CommandInputArea({
                 onSlashCommandStateChange(false, "");
             }
           } else {
-            // No slash, hide popup
+            // No slash - hide popup but keep overlay active
             if (showSlashPopup) setShowSlashPopup(false);
             if (slashFilter !== "") setSlashFilter("");
-            if (onSlashCommandStateChange) onSlashCommandStateChange(false, "");
+            // Don't toggle off the overlay (don't call onSlashCommandStateChange(false))
+            // This keeps the overlay stable while typing normal text
           }
         } else {
           if (showSlashPopup) setShowSlashPopup(false);
@@ -852,7 +854,7 @@ export function CommandInputArea({
           }`}
           style={{
             minHeight: "24px",
-            whiteSpace: "pre-wrap", // Important for preserving spaces/newlines
+            whiteSpace: "pre-wrap",
             wordBreak: "break-word",
             outline: "none",
             WebkitUserModify: !isDisabled
@@ -872,7 +874,6 @@ export function CommandInputArea({
           {/* Content managed by useEffect */}
         </div>
 
-        {/* Send Button (Keep as is) */}
         <button /* ... props ... */>
           {hubspotMode ? (
             <img

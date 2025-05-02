@@ -155,7 +155,7 @@ export const handleSubmit = async (
     chrome.runtime.sendMessage(
       {
         type: "PROCESS_COMMAND",
-        command: command, // The selected slash command (e.g., 'contact') or null
+        slashCommand: command, // The selected slash command (e.g., 'contact') or null
         prompt: messageToSend, // The text part typed by the user
         fullInput: userMessage, // The combined original input for context
         model: selectedModel,

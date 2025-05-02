@@ -665,6 +665,23 @@ export const createEngagement = async (
   return makeRequest(`/objects/${engagementType}`, "POST", payload);
 };
 
+export const enrollObjectInWorkflow = async (
+  workflowId: string,
+  objectId: string // <<< Accepts only ONE objectId
+): Promise<any> => {
+  const endpoint = `/automation/v3/workflows/${workflowId}/enrollments`;
+  // V3 enrollment endpoint expects object ID in the payload
+  const payload = {
+    inputs: [
+      // <<< BUT the payload structure is an ARRAY OF INPUTS
+      {
+        objectId: objectId,
+      },
+    ],
+  };
+  return makeRequest(endpoint, "POST", payload);
+};
+
 /**
  * Update an Engagement (Note, Meeting, Call, Task, Email Metadata)
  */
@@ -1406,26 +1423,38 @@ export const refreshAccessToken = async (
 };
 
 /**
- * Enroll a single object (by ID) into a specific workflow
+ * Enroll one or more objects (by ID) into a specific workflow using the V3 batch endpoint.
  * @param workflowId The ID of the workflow.
- * @param objectId The ID of the object (e.g., Contact ID) to enroll.
+ * @param objectIds An array of object IDs (e.g., Contact IDs) to enroll.
+ * @param objectTypeId Optional - specify if enrolling objects other than contacts (e.g., 'COMPANY', 'DEAL'). Defaults typically work for contacts.
  * @returns The API response.
  */
-export const enrollObjectInWorkflow = async (
+export const enrollObjectsInWorkflow = async (
+  // Renamed for clarity
   workflowId: string,
-  objectId: string
+  objectIds: string[], // Changed to accept an array
+  objectTypeId?: string // Optional parameter for non-contact objects
 ): Promise<any> => {
+  if (!objectIds || objectIds.length === 0) {
+    // Avoid making an API call with no objects
+    return Promise.resolve({
+      message: "No object IDs provided for enrollment.",
+    });
+  }
+
   const endpoint = `/automation/v3/workflows/${workflowId}/enrollments`;
-  // V3 enrollment endpoint expects object ID in the payload
+  // Build the inputs array from the objectIds array
   const payload = {
-    inputs: [
-      {
-        objectId: objectId,
-        // If enrolling non-contacts, you might need objectTypeId here too
-      },
-    ],
+    inputs: objectIds.map((id) => ({
+      objectId: id,
+      ...(objectTypeId && { objectTypeId: objectTypeId }), // Add objectTypeId if provided
+    })),
   };
+
   // makeRequest uses BASE_URL_V3 by default
+  console.log(
+    `[api.ts] Enrolling ${objectIds.length} objects into workflow ${workflowId}`
+  );
   return makeRequest(endpoint, "POST", payload);
 };
 

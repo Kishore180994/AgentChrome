@@ -15,17 +15,15 @@ import {
   Role,
   GeminiResponse,
 } from "./interfaces";
-import Anthropic from "@anthropic-ai/sdk";
-import { googleTools, HSTools } from "./tools";
+import { googleTools, HSTools, hubspotModularTools } from "./tools";
+import { getAPICompatibleTools, HubspotFunctionTool } from "./hubspotTool";
+import { commonTools } from "./commonTools";
 
 // Global references
 let geminiClient: GoogleGenerativeAI | null = null;
 let geminiModel: GenerativeModel | null = null;
-let claudeClient: Anthropic | null = null;
 // Flag for background context to know if this is a HubSpot-related command
-let global_isHubspotCommand = false;
 // Track the last HubSpot system prompt state to detect changes
-let lastUseHubspotSystemPrompt: boolean | undefined = undefined;
 
 export type AIProvider = "gemini" | "claude";
 
@@ -160,6 +158,8 @@ function parseDataUrl(
 export async function callGemini(
   messages: GeminiChatMessage[],
   geminiKey: string,
+  selectedTool: string,
+  isHubSpotModeOn: boolean,
   screenShotDataUrl?: string
 ): Promise<GeminiResponse | null> {
   if (!geminiKey) {
@@ -168,24 +168,6 @@ export async function callGemini(
   }
 
   try {
-    const useHubspotSystemPrompt = await shouldUseHubspotSystemPrompt();
-
-    // Reset the model if we're switching between HubSpot and regular mode
-    // This ensures we use the correct system prompt
-    if (
-      lastUseHubspotSystemPrompt !== undefined &&
-      lastUseHubspotSystemPrompt !== useHubspotSystemPrompt
-    ) {
-      // console.debug(
-      //   `[callGemini] System prompt changed from ${
-      //     lastUseHubspotSystemPrompt ? "HubSpot" : "default"
-      //   } to ${useHubspotSystemPrompt ? "HubSpot" : "default"}, resetting model`
-      // );
-      geminiClient = null;
-      geminiModel = null;
-    }
-    lastUseHubspotSystemPrompt = useHubspotSystemPrompt;
-
     // Initialize or reinitialize the model if needed
     if (!geminiClient || !geminiModel) {
       console.debug(
@@ -193,9 +175,7 @@ export async function callGemini(
       );
       geminiClient = new GoogleGenerativeAI(geminiKey);
 
-      const systemPrompt = useHubspotSystemPrompt
-        ? hubspotSystemPrompt
-        : agentPrompt;
+      const systemPrompt = isHubSpotModeOn ? hubspotSystemPrompt : agentPrompt;
 
       geminiModel = geminiClient.getGenerativeModel({
         model: "gemini-2.0-flash",
@@ -203,7 +183,7 @@ export async function callGemini(
       });
       console.debug(
         `[callGemini] Gemini client and model initialized with ${
-          useHubspotSystemPrompt ? "HubSpot" : "default"
+          isHubSpotModeOn ? "HubSpot" : "default"
         } system prompt.`
       );
     } else {
@@ -216,7 +196,7 @@ export async function callGemini(
       topK: 64,
       maxOutputTokens: 8192,
     };
-
+    let HSTools: HubspotFunctionTool[] = [];
     // Process history messages
     const processedHistoryMessages = processTextData(messages.slice(0, -1));
     const sdkHistory: Content[] = processedHistoryMessages
@@ -231,10 +211,63 @@ export async function callGemini(
       })
       .filter((content) => content.parts.length > 0);
 
-    const finalTools = (await shouldUseHubspotSystemPrompt())
-      ? HSTools
-      : googleTools;
-    console.log({ finalTools });
+    // Check if there's a selected command stored in chrome storage
+    try {
+      if (selectedTool) {
+        console.log(
+          `[callGemini] Using tools for selected command: ${selectedTool}`
+        );
+
+        // Find the tool group matching the selected command
+        const matchingToolGroup = hubspotModularTools.find(
+          (tool) => tool.toolGroupName === selectedTool
+        );
+
+        console.log({ matchingToolGroup });
+
+        if (matchingToolGroup) {
+          // Use only the tools for this specific command
+          HSTools = [matchingToolGroup];
+          // Use type assertion to access functionDeclarations property safely
+          const funcDecls = (matchingToolGroup as any).functionDeclarations;
+          const funcCount = Array.isArray(funcDecls) ? funcDecls.length : 0;
+          console.log(
+            `[callGemini] Found matching tool group with ${funcCount} functions`
+          );
+        } else {
+          console.log(
+            `[callGemini] No matching tool group found for: ${selectedTool}`
+          );
+        }
+      }
+    } catch (e) {
+      console.error("[callGemini] Error getting selected command:", e);
+    }
+
+    // Make sure we always have tools to send to the AI
+    let finalTools = googleTools;
+
+    if (isHubSpotModeOn) {
+      if (HSTools && HSTools.length > 0) {
+        // Only send the specific selected tool to the API, not all tools
+        finalTools = getAPICompatibleTools(HSTools);
+        finalTools.push(...commonTools);
+        console.log("[callGemini] Using selected tool only:", HSTools.length);
+      } else {
+        // IMPORTANT: Only send DOM tools when no specific tool is selected
+        // This prevents sending the entire HubSpot toolset which is too large for the API
+        finalTools = googleTools;
+        console.log("[callGemini] No tool selected, using minimal tools");
+      }
+    }
+
+    console.log("Final tools being sent to AI:", {
+      toolsCount: finalTools.length,
+      isHubspotMode: await shouldUseHubspotSystemPrompt(),
+      selectedCommand:
+        HSTools.length > 0 ? (HSTools[0] as any).toolGroupName : "none",
+    });
+
     // Initialize chat session
     const chatSession = geminiModel.startChat({
       generationConfig,
@@ -248,10 +281,10 @@ export async function callGemini(
     });
     // Prepare last message
     let lastMsg = messages[messages.length - 1];
-    console.log("[callGemini] useHubspotSystemPrompt:", useHubspotSystemPrompt);
+    console.log("[callGemini] useHubspotSystemPrompt:", isHubSpotModeOn);
 
     if (
-      useHubspotSystemPrompt &&
+      isHubSpotModeOn &&
       lastMsg &&
       lastMsg.parts &&
       lastMsg.parts.length > 0 &&
@@ -405,6 +438,8 @@ export async function callGemini(
 export async function callAI(
   provider: AIProvider,
   messages: (GeminiChatMessage | ClaudeChatMessage)[],
+  isHubspotMode: boolean,
+  selectedTool: string,
   screenShotDataUrl?: string
 ): Promise<GeminiResponse | null> {
   // Filter messages based on Role, keeping only 'user' and 'model'/'assistant'
@@ -420,30 +455,11 @@ export async function callAI(
     return null;
   }
 
-  // First, check if we're in HubSpot mode
-  let isHubspotMode = false;
-  try {
-    // Try to get HubSpot mode from localStorage (UI context)
-    isHubspotMode = await shouldUseHubspotSystemPrompt();
-  } catch (e) {
-    console.debug("[callAI] Error accessing localStorage:", e);
-  }
-
   // No longer checking message content for HubSpot keywords
   // We now only consider HubSpot mode for determining if we should use the HubSpot system prompt
 
-  // A message is HubSpot-related ONLY if we're in HubSpot mode
-  console.debug("[callAI] Based on isHubspotMode:", isHubspotMode);
-
   if (isHubspotMode) {
-    // Set the global flag for the shouldUseHubspotSystemPrompt function to use
-    global_isHubspotCommand = true;
-    console.debug("[callAI] Set global_isHubspotCommand to true");
     screenShotDataUrl = undefined;
-  } else {
-    // Reset the flag for non-HubSpot commands
-    global_isHubspotCommand = false;
-    console.debug("[callAI] Set global_isHubspotCommand to false");
   }
 
   switch (provider) {
@@ -473,7 +489,13 @@ export async function callAI(
       // Call Gemini with the consistently formatted messages
       const geminiKey =
         process.env.GEMINI_API_KEY || "AIzaSyDcDTlmwYLVRflcPIR9oklm5IlTUNzhu0Q";
-      return await callGemini(geminiMessages, geminiKey, screenShotDataUrl);
+      return await callGemini(
+        geminiMessages,
+        geminiKey,
+        selectedTool,
+        isHubspotMode,
+        screenShotDataUrl
+      );
     }
 
     case "claude": {

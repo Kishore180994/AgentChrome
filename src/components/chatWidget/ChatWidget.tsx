@@ -1,22 +1,11 @@
 // src/components/ChatWidget.tsx
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import {
-  Square,
-  Plus,
-  ChevronUp,
-  ChevronDown,
-  Check,
-  X,
-  HelpCircle,
-} from "lucide-react";
+import { Square, Plus } from "lucide-react";
 
 import { CommandInputArea } from "./CommandInputArea";
 import WelcomeScreen from "./WelcomeScreen";
 import MessageRenderer from "./MessageRenderer";
 import HubspotModularOptions from "./HubspotModularOptions";
-import HubspotErrorCard from "../HubspotErrorCard";
-import HubspotSuccessCard from "../HubspotSuccessCard";
-import MarkdownWrapper from "../MarkDownWrapper";
 import { ToastNotification } from "../ToastNotifications";
 // import SettingsModal from "../SettingsModal";
 
@@ -36,16 +25,8 @@ import {
   handleBlur,
 } from "./chatHandlers";
 import { useSiriBorderWithRef } from "../../hooks/useSiriBorder";
-import StarfallCascadeAnimation, { linkifyUrls } from "../../utils/helpers";
-import { Tool } from "@google/generative-ai";
+import StarfallCascadeAnimation from "../../utils/helpers";
 import { hubspotModularTools } from "../../services/ai/hubspotTool";
-import Overlay from "./overlay";
-
-interface ActionInfo {
-  name: string; // Original function name (e.g., "hubspot_createContact")
-  displayName: string; // User-friendly name (e.g., "Create Contact")
-  description: string; // Description from the tool definition
-}
 
 export function ChatWidget() {
   // State
@@ -54,7 +35,26 @@ export function ChatWidget() {
     ProcessedMessage[]
   >([]);
   const [input, setInput] = useState("");
-  const [selectedCommand, setSelectedCommand] = useState<string | null>(null);
+  // Wrapped setSelectedCommand to also update the tools.ts file and storage
+  const [selectedCommand, setSelectedCommandRaw] = useState<string | null>(
+    null
+  );
+
+  // Create a wrapper to update tools when command changes
+  const setSelectedCommand = useCallback((command: string | null) => {
+    // Update state with the raw setter
+    setSelectedCommandRaw(command);
+
+    // Store the command in localStorage for the providers.ts to access
+    if (command) {
+      chrome.storage.local.set({ selectedHubspotCommand: command });
+      console.log(`[ChatWidget] Saved selected command to storage: ${command}`);
+    } else {
+      // If command is null, remove it from storage
+      chrome.storage.local.remove("selectedHubspotCommand");
+      console.log("[ChatWidget] Cleared selected command from storage");
+    }
+  }, []);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedExecutions, setExpandedExecutions] = useState<Set<number>>(
@@ -430,7 +430,81 @@ export function ChatWidget() {
           if (responseData) {
             // Check if responseData exists
             let newMessage: Message | null = null;
-            if (typeof responseData === "object") {
+
+            // Check if it's a HubSpot API response that needs to be displayed as a card
+            const isHubspotResult =
+              typeof responseData === "object" &&
+              (responseData.success === true ||
+                responseData.success === false) &&
+              (responseData.functionName?.includes("hubspot") ||
+                message.source === "hubspot" ||
+                (responseData.details &&
+                  typeof responseData.details === "object"));
+
+            if (isHubspotResult) {
+              console.log(
+                "[ChatWidget] Processing HubSpot API response:",
+                responseData
+              );
+              // Force the response into the right structure for a card
+              if (responseData.success === true) {
+                // Create a structured message for HubSpot success
+                newMessage = {
+                  id: Date.now().toString(),
+                  role: "model",
+                  type: "hubspot_success",
+                  content: responseData as HubSpotExecutionResult, // Store the whole object
+                };
+                console.log(
+                  `[ChatWidget] Created hubspot_success card message.`
+                );
+              } else {
+                // Create a properly structured message for HubSpot error
+                // For debugging
+                console.log(
+                  "[ChatWidget] Creating hubspot_error with data:",
+                  responseData
+                );
+
+                // Extract details and ensure it's a string for display
+                let detailsString = "";
+                try {
+                  if (responseData.details) {
+                    detailsString =
+                      typeof responseData.details === "string"
+                        ? responseData.details
+                        : JSON.stringify(responseData.details, null, 2);
+                  } else {
+                    // If no details, use the full response for debugging
+                    detailsString = JSON.stringify(responseData, null, 2);
+                  }
+                } catch (err) {
+                  console.error("Error stringifying details:", err);
+                  detailsString = "Error parsing details";
+                }
+
+                // Create message with properly formatted properties
+                newMessage = {
+                  id: Date.now().toString(),
+                  role: "model",
+                  type: "hubspot_error",
+                  // Ensure all required properties are explicitly set
+                  errorType: responseData.errorType || "general",
+                  message:
+                    responseData.error ||
+                    "An error occurred with the HubSpot operation",
+                  details: detailsString,
+                  status: responseData.status || 0,
+                  // Use undefined instead of null to comply with the type definition
+                  content: undefined,
+                };
+
+                console.log(
+                  `[ChatWidget] Created hubspot_error card message:`,
+                  newMessage
+                );
+              }
+            } else if (typeof responseData === "object") {
               // Check for specific message types
               if (responseData.type === "question") {
                 // This is an "ask" action from AI
@@ -456,32 +530,82 @@ export function ChatWidget() {
                 console.log(
                   `[ChatWidget] Created completion message: "${responseData.message}"`
                 );
-              }
-              // Determine if it's a structured success/error (e.g., HubSpotExecutionResult)
-              else if (responseData.success === true) {
-                // Create a structured message for HubSpot success
-                newMessage = {
-                  id: Date.now().toString(),
-                  role: "model",
-                  type: "hubspot_success",
-                  content: responseData as HubSpotExecutionResult, // Store the whole object
-                };
-                console.log(
-                  `[ChatWidget] Created structured hubspot_success message.`
-                );
               } else if (
                 responseData.success === false ||
                 !!responseData.error
               ) {
-                // Create a structured message for HubSpot error
+                // Create a properly structured message for HubSpot error
                 newMessage = {
                   id: Date.now().toString(),
                   role: "model",
                   type: "hubspot_error",
-                  content: responseData as HubSpotExecutionResult, // Store the whole object
+                  // Ensure all required properties are present for HubspotErrorCard
+                  errorType: responseData.errorType || "general",
+                  message: responseData.error || "An error occurred",
+                  details: responseData.details || responseData,
+                  status: responseData.status || 0,
+                  content: responseData as HubSpotExecutionResult, // Also store the full object
                 };
                 console.log(
-                  `[ChatWidget] Created structured hubspot_error message.`
+                  `[ChatWidget] Created structured hubspot_error message:`,
+                  newMessage
+                );
+              } else if (
+                Array.isArray(responseData) &&
+                responseData.length > 0 &&
+                responseData[0]?.functionCall
+              ) {
+                // This is a raw function call array from Gemini - don't display as raw JSON
+                console.log(
+                  "[ChatWidget] Detected raw function call array:",
+                  responseData
+                );
+
+                // Extract a user-friendly message
+                let friendlyMessage = "Processing your request...";
+
+                // Look for Hubspot actions specifically
+                const hubspotAction = responseData.find((item) =>
+                  item?.functionCall?.name?.includes("hubspot_")
+                );
+
+                if (hubspotAction) {
+                  const functionName = hubspotAction.functionCall.name.replace(
+                    "hubspot_",
+                    ""
+                  );
+                  const args = hubspotAction.functionCall.args;
+
+                  // Create a friendly message based on the action
+                  if (functionName.includes("create")) {
+                    const entityType = functionName
+                      .replace("create", "")
+                      .toLowerCase();
+                    friendlyMessage = `Creating ${entityType} with the provided information...`;
+                  } else if (functionName.includes("get")) {
+                    const entityType = functionName
+                      .replace("get", "")
+                      .toLowerCase();
+                    friendlyMessage = `Retrieving ${entityType} information...`;
+                  } else if (functionName.includes("update")) {
+                    const entityType = functionName
+                      .replace("update", "")
+                      .toLowerCase();
+                    friendlyMessage = `Updating ${entityType} with the provided information...`;
+                  } else {
+                    friendlyMessage = `Processing ${functionName
+                      .replace(/([A-Z])/g, " $1")
+                      .toLowerCase()} request...`;
+                  }
+                }
+
+                newMessage = {
+                  id: Date.now().toString(),
+                  role: "model",
+                  content: friendlyMessage,
+                };
+                console.log(
+                  `[ChatWidget] Created friendly model message: "${friendlyMessage}"`
                 );
               } else {
                 // Fallback for other object structures - try to get meaningful text
@@ -489,7 +613,10 @@ export function ChatWidget() {
                   responseData.message ||
                   responseData.output ||
                   responseData.text ||
-                  JSON.stringify(responseData);
+                  (typeof responseData === "object"
+                    ? "Processing your request..." // Don't stringify objects
+                    : JSON.stringify(responseData));
+
                 newMessage = {
                   id: Date.now().toString(),
                   role: "model",
@@ -537,11 +664,56 @@ export function ChatWidget() {
         } else if (message?.type === "FINISH_PROCESS_COMMAND") {
           console.log("[ChatWidget] Handling FINISH_PROCESS_COMMAND");
           setIsLoading(false); // Ensure loading stops
-          const msg =
-            typeof message.response === "string"
-              ? message.response
-              : message.response?.message || "Task completed";
-          setToast({ message: msg, type: "success" });
+
+          // Process the response
+          const response = message.response;
+
+          // Handle HubSpot success response with card view
+          if (
+            typeof response === "object" &&
+            response.success === true &&
+            (response.functionName?.includes("hubspot") ||
+              message.source === "hubspot")
+          ) {
+            console.log(
+              "[ChatWidget] Processing HubSpot success response as card:",
+              response
+            );
+
+            // Create a data structure that HubspotSuccessCard can properly display
+            const hubspotResponse = {
+              success: true,
+              functionName: response.functionName || "hubspot_operation",
+              message: response.message || "Operation completed successfully",
+              // Ensure we have a details object with the full API response
+              details: response.data || response.details || response,
+            };
+
+            // Add a structured message for display in the chat
+            setMessages((prev) => {
+              // Create a properly typed message with correct structure
+              const newMessage: Message = {
+                id: Date.now().toString(),
+                role: "model", // Must be 'model' not just string
+                type: "hubspot_success", // This must be a valid type
+                content: hubspotResponse as HubSpotExecutionResult, // Ensure proper typing
+              };
+              const updated = [...prev, newMessage];
+              chrome.storage.local.set({ conversationHistory: updated });
+              return updated;
+            });
+
+            // Skip toast since we're showing a card
+            console.log("[ChatWidget] Added hubspot_success card to messages");
+          } else {
+            // For non-card responses, just show a toast
+            const msg =
+              typeof response === "string"
+                ? response
+                : response?.message || "Task completed";
+            setToast({ message: msg, type: "success" });
+          }
+
           messageHandled = true;
         }
         // Handle UPDATE_SIDEPANEL messages sent by the background script

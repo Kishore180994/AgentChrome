@@ -607,6 +607,7 @@ async function processCommand(
   initialCommand: string,
   actionHistory: string[] = [],
   model: string = "gemini",
+  selectedSlashCommand: string,
   retryCount: number = 0
 ) {
   const isHubspotMode = await getIsHubspotMode();
@@ -719,7 +720,6 @@ async function processCommand(
         }
       }));
 
-    console.log("CHECKPOINT 1");
     try {
       allTabs = await getAllTabs();
       tabUrl = await getTabUrl(tabId);
@@ -748,7 +748,7 @@ async function processCommand(
         return;
       }
     }
-    console.log("CHECKPOINT 2");
+
     // --- Call AI ---
     // First check if we're in HubSpot mode from storage
     // HubSpot mode already determined at top of function, use isHubspotMode directly.
@@ -793,6 +793,8 @@ async function processCommand(
       fullContextMessage,
       "session-id",
       isHubspotMode ? [] : aiCurrentState,
+      isHubspotMode,
+      selectedSlashCommand,
       screenshotDataUrl || undefined,
       model as "gemini" | "claude"
     );
@@ -904,6 +906,7 @@ async function processCommand(
           initialCommand,
           actionHistory,
           model,
+          selectedSlashCommand,
           retryCount + 1
         );
       } else {
@@ -944,6 +947,7 @@ async function processCommand(
           initialCommand,
           actionHistory,
           model,
+          selectedSlashCommand,
           retryCount + 1
         );
       } else {
@@ -1003,6 +1007,7 @@ async function processCommand(
           initialCommand,
           actionHistory,
           model,
+          selectedSlashCommand,
           retryCount + 1
         );
       } else {
@@ -1252,7 +1257,9 @@ async function processCommand(
         promptParts,
         initialCommand,
         recentActionsMap[tabId],
-        model
+        model,
+        selectedSlashCommand,
+        retryCount
       );
     }
   } catch (err) {
@@ -1299,7 +1306,8 @@ async function handleError(
             contextMessage,
             initialCommand,
             actionHistory,
-            model
+            model,
+            ""
           ),
         60000
       );
@@ -1569,14 +1577,23 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
 
     // Always send immediate success response to prevent "Error starting command processing" toast
     sendResponse({ success: true });
-
+    const selectedSlashCommand = msg.slashCommand;
     // Then process the command asynchronously
+    /**
+
+
+
+
+  retryCount: number = 0,
+  selectedSlashCommand: string
+     */
     processCommand(
       activeTab.id,
       msg.command,
       msg.command,
       [],
-      msg.model || "gemini"
+      msg.model || "gemini",
+      selectedSlashCommand
     ).catch((err) => {
       console.error("Error during processCommand:", err);
       // Real errors will be sent via FINISH_PROCESS_COMMAND

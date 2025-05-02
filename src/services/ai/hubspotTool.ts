@@ -1638,40 +1638,56 @@ const toolGroups: { [key: string]: string[] } = {
   ],
 };
 
-// --- Create the final array of distinct Tool objects, ready for selection ---
-// Each object in this array represents a potential toolset to provide to the AI
-export const hubspotModularTools: (Tool & { toolGroupName: string })[] =
-  Object.entries(toolGroups)
-    .map(([groupName, functionNames]) => {
-      // Retrieve the full declarations for the names in this group
-      const declarations = functionNames
-        .map((name) => findDecl(name)) // Find the full object from the master list
-        .filter((decl): decl is FunctionDeclaration => decl !== undefined); // Ensure it's found and satisfy TypeScript
+// Define our specific tool interface to avoid TypeScript errors
+export interface HubspotFunctionTool {
+  toolGroupName: string;
+  functionDeclarations: FunctionDeclaration[];
+}
 
-      // Safety check: If for some reason no functions were found, warn and return null
-      if (declarations.length === 0) {
-        console.warn(
-          `No function declarations found for tool group: ${groupName}`
-        );
-        return null;
-      }
+// --- Create the internal array with extra metadata for working with the tools ---
+export const hubspotModularTools: HubspotFunctionTool[] = Object.entries(
+  toolGroups
+)
+  .map(([groupName, functionNames]) => {
+    // Retrieve the full declarations for the names in this group
+    const declarations = functionNames
+      .map((name) => findDecl(name)) // Find the full object from the master list
+      .filter((decl): decl is FunctionDeclaration => decl !== undefined); // Ensure it's found and satisfy TypeScript
 
-      // Create the Tool object for this specific group
+    // Safety check: If for some reason no functions were found, warn and return null
+    if (declarations.length === 0) {
+      console.warn(
+        `No function declarations found for tool group: ${groupName}`
+      );
+      return null;
+    }
+
+    // Create the Tool object for this specific group with the additional metadata
+    return {
+      // Store the group name (matching the slash command or 'utility')
+      // on the tool object itself for easier lookup based on user selection
+      toolGroupName: groupName,
+      functionDeclarations: declarations, // The array of functions for THIS group only
+    };
+  })
+  .filter((tool): tool is HubspotFunctionTool => tool !== null);
+
+// --- Generate API-safe tools without the custom toolGroupName property ---
+// This creates a clean version of the tools that can be safely sent to the Gemini API
+export const getAPICompatibleTools = (
+  tools: HubspotFunctionTool[] | Tool[]
+): Tool[] => {
+  return tools.map((tool) => {
+    // For HubspotFunctionTool, extract only the API compatible properties
+    if ("toolGroupName" in tool) {
       return {
-        // Store the group name (matching the slash command or 'utility')
-        // on the tool object itself for easier lookup based on user selection
-        toolGroupName: groupName,
-        functionDeclarations: declarations, // The array of functions for THIS group only
+        functionDeclarations: tool.functionDeclarations,
       };
-    })
-    .filter(
-      (
-        tool
-      ): tool is Tool & {
-        toolGroupName: string;
-        functionDeclarations: FunctionDeclaration[];
-      } => tool !== null && tool.functionDeclarations !== undefined
-    );
+    }
+    // For regular Tool objects, return as is - already API compatible
+    return tool;
+  });
+};
 
 /*
 // Somewhere in your application logic where you handle the user's command:

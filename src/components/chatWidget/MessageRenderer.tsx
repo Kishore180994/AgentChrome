@@ -82,30 +82,36 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
               >
                 {message.role === "model" ? (
                   // --- Model Message Content ---
-                  "type" in message &&
-                  message.type === "hubspot_error" &&
-                  typeof message.content === "object" ? (
+                  "type" in message && message.type === "hubspot_error" ? (
+                    // The Message type can have both standalone props and content
+                    // Try to use the top-level props first, then fall back to content
                     <HubspotErrorCard
                       errorType={
-                        (message.content as HubSpotExecutionResult) &&
+                        message.errorType ||
+                        (message.content &&
+                        typeof message.content === "object" &&
                         "errorType" in message.content
                           ? message.content.errorType
-                          : "hubspot_api"
+                          : "general")
                       }
                       message={
-                        (message.content as HubSpotExecutionResult) &&
+                        message.message ||
+                        (message.content &&
+                        typeof message.content === "object" &&
                         "error" in message.content
                           ? message.content.error
-                          : "Unknown HubSpot error"
+                          : "An error occurred")
                       }
-                      details={
-                        (message.content as HubSpotExecutionResult)?.details
-                      }
-                      status={
-                        (message.content as HubSpotExecutionResult)?.success
-                          ? 1 // Map true to 1
-                          : 0 // Map false to 0
-                      }
+                      details={JSON.stringify(
+                        message.details ||
+                          (message.content &&
+                          typeof message.content === "object"
+                            ? message.content
+                            : {}),
+                        null,
+                        2
+                      )}
+                      status={message.status || 0}
                       mode={mode}
                     />
                   ) : "type" in message &&
@@ -147,10 +153,31 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
                   ) : typeof message.content === "string" ? (
                     // Standard markdown for string content
                     <MarkdownWrapper content={message.content} />
+                  ) : typeof message.content === "object" &&
+                    message.content !== null &&
+                    !Array.isArray(message.content) &&
+                    "success" in message.content ? (
+                    // Handle HubSpot result that wasn't properly typed
+                    message.content.success === true ? (
+                      <HubspotSuccessCard
+                        result={message.content as HubSpotExecutionResult}
+                        mode={mode}
+                        accentColor={accentColor}
+                        currentTheme={currentTheme}
+                      />
+                    ) : (
+                      <HubspotErrorCard
+                        errorType={message.content.errorType || "general"}
+                        message={message.content.error || "Unknown error"}
+                        details={message.content.details}
+                        status={0}
+                        mode={mode}
+                      />
+                    )
                   ) : (
                     // Fallback for unknown model content - display as JSON
-                    <pre className="d4m-text-xs d4m-whitespace-pre-wrap">
-                      {JSON.stringify(message.content, null, 2)}
+                    <pre className="d4m-text-xs d4m-whitespace-pre-wrap d4m-bg-gray-800 d4m-p-2 d4m-rounded-md d4m-overflow-auto d4m-max-h-[300px]">
+                      <code>{JSON.stringify(message.content, null, 2)}</code>
                     </pre>
                   )
                 ) : (
@@ -180,10 +207,35 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
                   {typeof msg.content === "string" ? (
                     <MarkdownWrapper content={msg.content} />
                   ) : // Handle potential objects within model groups too
-                  "type" in msg &&
-                    msg.type === "hubspot_error" &&
-                    typeof msg.content === "object" ? (
-                    <HubspotErrorCard {...(msg.content as any)} mode={mode} />
+                  "type" in msg && msg.type === "hubspot_error" ? (
+                    <HubspotErrorCard
+                      errorType={
+                        msg.errorType ||
+                        (msg.content &&
+                        typeof msg.content === "object" &&
+                        "errorType" in msg.content
+                          ? msg.content.errorType
+                          : "general")
+                      }
+                      message={
+                        msg.message ||
+                        (msg.content &&
+                        typeof msg.content === "object" &&
+                        "error" in msg.content
+                          ? msg.content.error
+                          : "An error occurred")
+                      }
+                      details={JSON.stringify(
+                        msg.details ||
+                          (msg.content && typeof msg.content === "object"
+                            ? msg.content
+                            : {}),
+                        null,
+                        2
+                      )}
+                      status={msg.status || 0}
+                      mode={mode}
+                    />
                   ) : "type" in msg &&
                     msg.type === "hubspot_success" &&
                     typeof msg.content === "object" ? (
