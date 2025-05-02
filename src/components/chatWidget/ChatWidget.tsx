@@ -5,6 +5,7 @@ import { Square, Plus } from "lucide-react";
 import { CommandInputArea } from "./CommandInputArea";
 import WelcomeScreen from "./WelcomeScreen";
 import MessageRenderer from "./MessageRenderer";
+import TaskSection from "./TaskSection";
 import HubspotModularOptions from "./HubspotModularOptions";
 import { ToastNotification } from "../ToastNotifications";
 // import SettingsModal from "../SettingsModal";
@@ -60,6 +61,8 @@ export function ChatWidget() {
   const [expandedExecutions, setExpandedExecutions] = useState<Set<number>>(
     new Set()
   );
+  const [taskHistories, setTaskHistories] = useState<StepState[]>([]);
+  const [isTaskSectionExpanded, setIsTaskSectionExpanded] = useState(true);
   const [isInputAreaFocused, setIsInputAreaFocused] = useState(false);
   const [selectedModel, setSelectedModel] = useState<"gemini" | "claude">(
     "gemini"
@@ -394,6 +397,18 @@ export function ChatWidget() {
 
   useEffect(() => {
     processMessages(messages);
+
+    // Extract the latest task histories from messages
+    const executionMessages = messages.filter(
+      (msg) => msg.role === "execution" && Array.isArray(msg.content)
+    );
+    if (executionMessages.length > 0) {
+      // Get the most recent execution message
+      const latestExecution = executionMessages[executionMessages.length - 1];
+      setTaskHistories(latestExecution.content as StepState[]);
+    } else {
+      setTaskHistories([]);
+    }
   }, [messages, processMessages]); // Re-process whenever raw messages change
 
   // Effect 4: Scroll messages container to show the latest message
@@ -1209,6 +1224,20 @@ export function ChatWidget() {
             />
           )}
         </div>
+
+        {/* Task Section */}
+        {taskHistories.length > 0 && (
+          <TaskSection
+            taskHistories={taskHistories}
+            textColor={textColor}
+            accentColor={accentColor}
+            mode={mode}
+            isExpanded={isTaskSectionExpanded}
+            toggleExpanded={() =>
+              setIsTaskSectionExpanded(!isTaskSectionExpanded)
+            }
+          />
+        )}
 
         {/* Input Area Section */}
         <div className="d4m-flex-shrink-0 d4m-relative d4m-z-20 d4m-border-t d4m-border-black/10 dark:d4m-border-white/10">
