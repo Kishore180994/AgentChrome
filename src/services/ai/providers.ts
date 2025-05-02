@@ -49,37 +49,43 @@ export async function shouldUseHubspotSystemPrompt(): Promise<boolean> {
       return false;
     }
 
-    // Fetch both items concurrently
-    const items = await chrome.storage.sync.get([
-      "hubspotMode",
-      "hubspotConfig",
-    ]);
-
-    const storedHubspotMode = items.hubspotMode;
-    const isHubspotMode = storedHubspotMode === true; // Store as boolean directly if possible, otherwise check string "true"
-    console.debug(
-      `[shouldUseHubspotSystemPromptAsync] hubspotMode from storage: ${storedHubspotMode}, isHubspotMode: ${isHubspotMode}`
-    );
-
-    const hubspotConfigValue = items.hubspotConfig; // Assume stored as object
-    let hasApiKey = false;
-    if (hubspotConfigValue && typeof hubspotConfigValue === "object") {
-      hasApiKey = !!hubspotConfigValue.apiKey; // Check for truthy apiKey
+    // First check local storage for current UI mode - this is the primary indicator
+    // since it reflects what the user is currently seeing
+    const localItems = await chrome.storage.local.get(["hubspotMode"]);
+    if (localItems.hubspotMode === true) {
       console.debug(
-        `[shouldUseHubspotSystemPromptAsync] Found hubspotConfig object, hasApiKey: ${hasApiKey}`,
-        hubspotConfigValue
+        "[shouldUseHubspotSystemPromptAsync] UI is in HubSpot mode"
       );
-    } else {
+
+      // Even in HubSpot mode, we need to check if there's a valid API key
+      const syncItems = await chrome.storage.sync.get(["hubspotConfig"]);
+      const hubspotConfigValue = syncItems.hubspotConfig;
+
+      let hasApiKey = false;
+      if (hubspotConfigValue && typeof hubspotConfigValue === "object") {
+        hasApiKey = !!hubspotConfigValue.apiKey;
+        console.debug(
+          `[shouldUseHubspotSystemPromptAsync] Found hubspotConfig object, hasApiKey: ${hasApiKey}`,
+          hubspotConfigValue
+        );
+      } else {
+        console.debug(
+          "[shouldUseHubspotSystemPromptAsync] hubspotConfig not found or not an object in storage."
+        );
+      }
+
+      const result = hasApiKey;
       console.debug(
-        "[shouldUseHubspotSystemPromptAsync] hubspotConfig not found or not an object in storage."
+        `[shouldUseHubspotSystemPromptAsync] Final result (in HubSpot mode && hasApiKey): ${result}`
       );
+      return result;
     }
 
-    const result = isHubspotMode && hasApiKey;
+    // If we're not in HubSpot mode UI, always return false
     console.debug(
-      `[shouldUseHubspotSystemPromptAsync] Final result (isHubspotMode && hasApiKey): ${result}`
+      "[shouldUseHubspotSystemPromptAsync] UI is not in HubSpot mode, returning false"
     );
-    return result;
+    return false;
   } catch (e) {
     console.error("[shouldUseHubspotSystemPromptAsync] Error during check:", e);
     return false;
@@ -450,9 +456,12 @@ export async function callAI(
     return null;
   }
 
-  // No longer checking message content for HubSpot keywords
-  // We now only consider HubSpot mode for determining if we should use the HubSpot system prompt
+  // Get the correct conversation history based on the current mode
+  // This ensures we're using the right context for the AI
+  const useHubspotSystem = await shouldUseHubspotSystemPrompt();
+  console.log(`[callAI] Using HubSpot system prompt: ${useHubspotSystem}`);
 
+  // In HubSpot mode, don't use screenshots
   if (isHubspotMode) {
     screenShotDataUrl = undefined;
   }
@@ -481,6 +490,7 @@ export async function callAI(
           }
         }
       );
+
       // Call Gemini with the consistently formatted messages
       const geminiKey =
         process.env.GEMINI_API_KEY || "AIzaSyDcDTlmwYLVRflcPIR9oklm5IlTUNzhu0Q";

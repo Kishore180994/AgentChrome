@@ -209,6 +209,8 @@ export function ChatWidget() {
         // Fetch multiple keys at once
         const data = await chrome.storage.local.get([
           "conversationHistory",
+          "d4mConversationHistory",
+          "hubspotConversationHistory",
           "commandHistory",
           "theme",
           "accentColor",
@@ -219,9 +221,7 @@ export function ChatWidget() {
         ]);
         console.log("[ChatWidget] Loaded state data:", data);
 
-        // Set state based on loaded data, with fallbacks
-        if (Array.isArray(data.conversationHistory))
-          setMessages(formatMessages(data.conversationHistory));
+        // Set basic UI state from storage
         if (Array.isArray(data.commandHistory))
           setCommandHistory(data.commandHistory);
         setTheme(data.theme || "neumorphism");
@@ -239,9 +239,47 @@ export function ChatWidget() {
         // Set the active accentColor based on the mode
         if (initialHubspotMode) {
           setAccentColor("white");
+
+          // Load appropriate conversation history based on mode
+          if (
+            Array.isArray(data.hubspotConversationHistory) &&
+            data.hubspotConversationHistory.length > 0
+          ) {
+            console.log("[ChatWidget] Loading Hubspot conversation history");
+            setMessages(formatMessages(data.hubspotConversationHistory));
+            // Also set as active conversation
+            chrome.storage.local.set({
+              conversationHistory: data.hubspotConversationHistory,
+            });
+          } else if (Array.isArray(data.conversationHistory)) {
+            // Fallback to generic conversation history if mode-specific one doesn't exist
+            console.log(
+              "[ChatWidget] No Hubspot history found, using generic conversation history"
+            );
+            setMessages(formatMessages(data.conversationHistory));
+          }
         } else {
-          // Use loaded D4M color, fallback to loaded accentColor, fallback to rose
+          // D4M mode: use D4M accent color
           setAccentColor(data.d4mAccentColor || data.accentColor || "rose");
+
+          // Load D4M conversation history
+          if (
+            Array.isArray(data.d4mConversationHistory) &&
+            data.d4mConversationHistory.length > 0
+          ) {
+            console.log("[ChatWidget] Loading D4M conversation history");
+            setMessages(formatMessages(data.d4mConversationHistory));
+            // Also set as active conversation
+            chrome.storage.local.set({
+              conversationHistory: data.d4mConversationHistory,
+            });
+          } else if (Array.isArray(data.conversationHistory)) {
+            // Fallback to generic conversation history if mode-specific one doesn't exist
+            console.log(
+              "[ChatWidget] No D4M history found, using generic conversation history"
+            );
+            setMessages(formatMessages(data.conversationHistory));
+          }
         }
 
         console.log("[ChatWidget] Initial state set.");
@@ -411,9 +449,18 @@ export function ChatWidget() {
                   },
                 ];
               }
-              chrome.storage.local.set({
-                conversationHistory: updatedMessages,
-              }); // Persist change
+              // Save to both the active conversation and mode-specific storage
+              if (hubspotMode) {
+                chrome.storage.local.set({
+                  conversationHistory: updatedMessages,
+                  hubspotConversationHistory: updatedMessages,
+                }); // Persist to active and Hubspot storage
+              } else {
+                chrome.storage.local.set({
+                  conversationHistory: updatedMessages,
+                  d4mConversationHistory: updatedMessages,
+                }); // Persist to active and D4M storage
+              }
               return updatedMessages;
             });
             messageHandled = true;
@@ -651,7 +698,18 @@ export function ChatWidget() {
                   return prev;
                 }
                 const updated = [...prev, newMessage!];
-                chrome.storage.local.set({ conversationHistory: updated }); // Persist
+                // Save to both the active conversation and mode-specific storage
+                if (hubspotMode) {
+                  chrome.storage.local.set({
+                    conversationHistory: updated,
+                    hubspotConversationHistory: updated,
+                  }); // Persist to active and Hubspot storage
+                } else {
+                  chrome.storage.local.set({
+                    conversationHistory: updated,
+                    d4mConversationHistory: updated,
+                  }); // Persist to active and D4M storage
+                }
                 return updated;
               });
             }
@@ -699,7 +757,18 @@ export function ChatWidget() {
                 content: hubspotResponse as HubSpotExecutionResult, // Ensure proper typing
               };
               const updated = [...prev, newMessage];
-              chrome.storage.local.set({ conversationHistory: updated });
+              // Save to both the active conversation and mode-specific storage
+              if (hubspotMode) {
+                chrome.storage.local.set({
+                  conversationHistory: updated,
+                  hubspotConversationHistory: updated,
+                }); // Persist to active and Hubspot storage
+              } else {
+                chrome.storage.local.set({
+                  conversationHistory: updated,
+                  d4mConversationHistory: updated,
+                }); // Persist to active and D4M storage
+              }
               return updated;
             });
 
@@ -735,7 +804,18 @@ export function ChatWidget() {
           // Add the question to the chat
           setMessages((prev) => {
             const updated = [...prev, newMessage];
-            chrome.storage.local.set({ conversationHistory: updated }); // Persist
+            // Save to both the active conversation and mode-specific storage
+            if (hubspotMode) {
+              chrome.storage.local.set({
+                conversationHistory: updated,
+                hubspotConversationHistory: updated,
+              }); // Persist to active and Hubspot storage
+            } else {
+              chrome.storage.local.set({
+                conversationHistory: updated,
+                d4mConversationHistory: updated,
+              }); // Persist to active and D4M storage
+            }
             return updated;
           });
 
@@ -908,14 +988,59 @@ export function ChatWidget() {
             <button
               onClick={() => {
                 if (!hubspotMode) return; // No change if already active
+
+                // Save current Hubspot chat before switching
+                chrome.storage.local.get(["conversationHistory"], (data) => {
+                  if (
+                    Array.isArray(data.conversationHistory) &&
+                    data.conversationHistory.length > 0
+                  ) {
+                    chrome.storage.local.set({
+                      hubspotConversationHistory: data.conversationHistory,
+                    });
+                    console.log(
+                      "[ChatWidget] Saved Hubspot conversation history"
+                    );
+                  }
+                });
+
+                // Switch to D4M mode
                 setHubspotMode(false);
+
+                // Restore visual state
                 const restoredColor = d4mAccentColor || "rose";
                 setAccentColor(restoredColor); // Restore D4M accent color
+
+                // Save mode state
                 chrome.storage.local.set({
                   hubspotMode: false,
                   accentColor: restoredColor,
                 }); // Save state
                 chrome.storage.sync.set({ hubspotMode: false }); // Sync preference if needed
+
+                // Restore previous D4M chat or start a new one
+                chrome.storage.local.get(["d4mConversationHistory"], (data) => {
+                  if (
+                    Array.isArray(data.d4mConversationHistory) &&
+                    data.d4mConversationHistory.length > 0
+                  ) {
+                    setMessages(formatMessages(data.d4mConversationHistory));
+                    chrome.storage.local.set({
+                      conversationHistory: data.d4mConversationHistory,
+                    });
+                    console.log(
+                      "[ChatWidget] Restored D4M conversation history"
+                    );
+                  } else {
+                    // Start a new chat if no history exists
+                    setMessages([]);
+                    setProcessedMessages([]);
+                    chrome.storage.local.remove(["conversationHistory"]);
+                    console.log(
+                      "[ChatWidget] Started new D4M chat (no history found)"
+                    );
+                  }
+                });
               }}
               className={`d4m-relative d4m-z-10 d4m-flex d4m-items-center d4m-justify-center d4m-px-3 d4m-py-0.5 d4m-rounded-full d4m-transition-colors d4m-duration-300 d4m-w-1/2 ${
                 !hubspotMode
@@ -939,10 +1064,28 @@ export function ChatWidget() {
             <button
               onClick={() => {
                 if (hubspotMode) return; // No change if already active
+
+                // Save current D4M chat before switching
+                chrome.storage.local.get(["conversationHistory"], (data) => {
+                  if (
+                    Array.isArray(data.conversationHistory) &&
+                    data.conversationHistory.length > 0
+                  ) {
+                    chrome.storage.local.set({
+                      d4mConversationHistory: data.conversationHistory,
+                    });
+                    console.log("[ChatWidget] Saved D4M conversation history");
+                  }
+                });
+
                 // Save current D4M color before switching if it's not white
                 if (accentColor !== "white") setD4mAccentColor(accentColor);
+
+                // Switch to Hubspot mode
                 setHubspotMode(() => true);
                 setAccentColor("white"); // HubSpot visual mode uses white base
+
+                // Save mode state
                 chrome.storage.local.set({
                   hubspotMode: true,
                   accentColor: "white",
@@ -950,6 +1093,35 @@ export function ChatWidget() {
                     accentColor === "white" ? d4mAccentColor : accentColor,
                 }); // Save state
                 chrome.storage.sync.set({ hubspotMode: true }); // Sync preference if needed
+
+                // Restore previous Hubspot chat or start a new one
+                chrome.storage.local.get(
+                  ["hubspotConversationHistory"],
+                  (data) => {
+                    if (
+                      Array.isArray(data.hubspotConversationHistory) &&
+                      data.hubspotConversationHistory.length > 0
+                    ) {
+                      setMessages(
+                        formatMessages(data.hubspotConversationHistory)
+                      );
+                      chrome.storage.local.set({
+                        conversationHistory: data.hubspotConversationHistory,
+                      });
+                      console.log(
+                        "[ChatWidget] Restored Hubspot conversation history"
+                      );
+                    } else {
+                      // Start a new chat if no history exists
+                      setMessages([]);
+                      setProcessedMessages([]);
+                      chrome.storage.local.remove(["conversationHistory"]);
+                      console.log(
+                        "[ChatWidget] Started new Hubspot chat (no history found)"
+                      );
+                    }
+                  }
+                );
               }}
               className={`d4m-relative d4m-z-10 d4m-flex d4m-items-center d4m-justify-center d4m-px-3 d4m-py-0.5 d4m-rounded-full d4m-transition-colors d4m-duration-300 d4m-w-1/2 ${
                 hubspotMode

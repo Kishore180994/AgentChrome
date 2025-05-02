@@ -351,7 +351,13 @@ export const handleNewChat =
       setIsLoading(false); // Ensure loading is stopped
 
       // --- Clear Local Storage ---
-      storage.local.remove(["currentChat", "conversationHistory"]); // Clear current chat marker and history
+      // Clear both the active conversation and mode-specific conversation histories
+      storage.local.remove([
+        "currentChat",
+        "conversationHistory",
+        "hubspotConversationHistory",
+        "d4mConversationHistory",
+      ]); // Clear all chat history
 
       // --- Inform Background Script (Optional) ---
       // If the background script maintains state related to the current chat, notify it.
