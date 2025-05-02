@@ -2,16 +2,20 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Square,
+  Plus,
   ChevronUp,
   ChevronDown,
   Check,
   X,
   HelpCircle,
-  Plus,
 } from "lucide-react";
 
-import HubspotErrorCard from "../HubspotErrorCard";
 import { CommandInputArea } from "./CommandInputArea";
+import WelcomeScreen from "./WelcomeScreen";
+import MessageRenderer from "./MessageRenderer";
+import HubspotModularOptions from "./HubspotModularOptions";
+import HubspotErrorCard from "../HubspotErrorCard";
+import HubspotSuccessCard from "../HubspotSuccessCard";
 import MarkdownWrapper from "../MarkDownWrapper";
 import { ToastNotification } from "../ToastNotifications";
 // import SettingsModal from "../SettingsModal";
@@ -32,7 +36,6 @@ import {
   handleBlur,
 } from "./chatHandlers";
 import { useSiriBorderWithRef } from "../../hooks/useSiriBorder";
-import HubspotSuccessCard from "../HubspotSuccessCard";
 import StarfallCascadeAnimation, { linkifyUrls } from "../../utils/helpers";
 import { Tool } from "@google/generative-ai";
 import { hubspotModularTools } from "../../services/ai/hubspotTool";
@@ -758,535 +761,48 @@ export function ChatWidget() {
           } d4m-flex d4m-flex-col-reverse d4m-relative d4m-z-0`} // flex-col-reverse displays newest at bottom
           aria-label="Chat messages"
         >
-          {/* --- Overlay for HubMode Commands/Options --- */}
-          {hubspotMode && isInputAreaFocused && selectedCommand && (
-            <Overlay
-              isVisible={true}
+          {/* Hubspot Command Options Overlay */}
+          <HubspotModularOptions
+            isVisible={
+              !!(
+                hubspotMode &&
+                isInputAreaFocused &&
+                (selectedCommand || slashActive)
+              )
+            }
+            mode={mode}
+            accentColor={accentColor}
+            selectedCommand={selectedCommand}
+            slashActive={slashActive}
+            slashFilter={slashFilter}
+            hubspotSlashCommands={hubspotSlashCommands}
+            hubspotModularTools={hubspotModularTools}
+          />
+          {/* Render Welcome Screen when no messages exist */}
+          {processedMessages.length === 0 && !isLoading && (
+            <WelcomeScreen
+              hubspotMode={hubspotMode}
+              hasHubspotApiKey={hasHubspotApiKey}
               mode={mode}
               accentColor={accentColor}
-              padding="20px 24px"
-              borderRadius="12px"
-              centerContent={false}
-              style={{
-                margin: "12px",
-                maxWidth: "96%",
-                marginLeft: "auto",
-                marginRight: "auto",
-                pointerEvents: "auto",
-              }}
-            >
-              {(() => {
-                // Format function name helper
-                const formatFunctionName = (name: string): string => {
-                  if (name.startsWith("hubspot_")) {
-                    name = name.substring(8);
-                  }
-                  name = name.replace(/_/g, " ");
-                  return name
-                    .replace(/([A-Z])/g, " $1")
-                    .replace(/^./, (str) => str.toUpperCase())
-                    .trim();
-                };
-
-                const selectedToolGroup = hubspotModularTools.find(
-                  (tool) => tool.toolGroupName === selectedCommand
-                ) as
-                  | {
-                      toolGroupName: string;
-                      functionDeclarations?: {
-                        name: string;
-                        description: string;
-                      }[];
-                    }
-                  | undefined;
-
-                if (
-                  !selectedToolGroup ||
-                  !selectedToolGroup.functionDeclarations
-                ) {
-                  return (
-                    <div>
-                      <div
-                        style={{
-                          fontWeight: "bold",
-                          marginBottom: 12,
-                          fontSize: 18,
-                        }}
-                      >
-                        No actions available for /{selectedCommand}
-                      </div>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div>
-                    <div
-                      style={{
-                        fontWeight: "bold",
-                        marginBottom: 12,
-                        fontSize: 18,
-                      }}
-                    >
-                      Available Actions for{" "}
-                      <span
-                        style={{
-                          color:
-                            accentColor === "white"
-                              ? "#ea580c"
-                              : `var(--${accentColor}-500)`,
-                        }}
-                      >
-                        /{selectedCommand}
-                      </span>
-                    </div>
-                    <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
-                      {selectedToolGroup.functionDeclarations.map((action) => (
-                        <li key={action.name} style={{ marginBottom: 8 }}>
-                          <div style={{ fontWeight: 500, fontSize: 16 }}>
-                            {formatFunctionName(action.name)}
-                          </div>
-                          <div
-                            style={{
-                              marginLeft: 12,
-                              color: mode === "light" ? "#6b7280" : "#9ca3af",
-                              fontSize: 14,
-                            }}
-                          >
-                            {action.description}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                );
-              })()}
-            </Overlay>
-          )}
-          {hubspotMode &&
-            isInputAreaFocused &&
-            !selectedCommand &&
-            slashActive && (
-              <Overlay
-                isVisible={true}
-                mode={mode}
-                accentColor={accentColor}
-                padding="20px 24px"
-                borderRadius="12px"
-                centerContent={false}
-                style={{
-                  margin: "12px",
-                  maxWidth: "96%",
-                  marginLeft: "auto",
-                  marginRight: "auto",
-                  pointerEvents: "auto",
-                }}
-              >
-                <div
-                  style={{ fontWeight: "bold", marginBottom: 12, fontSize: 18 }}
-                >
-                  Command Options for{" "}
-                  <span style={{ color: "#b91c1c" }}>
-                    / {slashFilter || "..."}
-                  </span>
-                </div>
-                <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
-                  {hubspotSlashCommands
-                    .filter((cmd) => cmd.command.startsWith(slashFilter))
-                    .map((cmd) => (
-                      <li key={cmd.command} style={{ marginBottom: 6 }}>
-                        <span style={{ fontWeight: 500, fontSize: 16 }}>
-                          / {cmd.command}
-                        </span>
-                        <span
-                          style={{
-                            marginLeft: 12,
-                            color: mode === "light" ? "#666" : "#9ca3af",
-                            fontSize: 14,
-                          }}
-                        >
-                          {cmd.description}
-                        </span>
-                      </li>
-                    ))}
-                  {hubspotSlashCommands.filter((cmd) =>
-                    cmd.command.startsWith(slashFilter)
-                  ).length === 0 && (
-                    <li
-                      style={{
-                        color: mode === "light" ? "#999" : "#6b7280",
-                        fontSize: 14,
-                      }}
-                    >
-                      No matching commands
-                    </li>
-                  )}
-                </ul>
-              </Overlay>
-            )}
-          {/* Render Empty State */}
-          {processedMessages.length === 0 && !isLoading && (
-            <div className="d4m-flex d4m-flex-col d4m-items-center d4m-justify-center d4m-text-center d4m-p-6 d4m-animate-fade-in d4m-h-full d4m-text-gray-500 dark:d4m-text-gray-400">
-              {/* Logo Display */}
-              <div className="d4m-relative d4m-flex d4m-items-center d4m-justify-center d4m-mb-6 d4m-mt-2">
-                {hubspotMode ? (
-                  <div className="d4m-relative d4m-flex d4m-items-center">
-                    <div className="d4m-relative d4m-z-20 d4m-transition-all d4m-duration-300 d4m-transform hover:d4m-scale-110">
-                      <img
-                        src="/icons/icon128.png"
-                        alt="D4M"
-                        className="d4m-w-16 h-16 md:d4m-w-20 md:d4m-h-20 d4m-drop-shadow-lg"
-                      />
-                    </div>
-                    <div
-                      className={`d4m-relative d4m-z-10 d4m-rounded-full d4m-bg-gradient-to-br d4m-from-orange-400 d4m-to-orange-600 d4m-flex d4m-items-center d4m-justify-center d4m-w-16 h-16 md:d4m-w-20 md:d4m-h-20 d4m-shadow-lg d4m-ml-[-30px] md:d4m-ml-[-35px] d4m-transform hover:d4m-scale-110 d4m-transition-transform d4m-duration-300 hover:d4m-rotate-3`}
-                      style={{
-                        animation:
-                          "pulseAndShine 3s infinite alternate ease-in-out",
-                      }}
-                    >
-                      <img
-                        src="/icons/hubspot/hubspot128.png"
-                        alt="Hubspot"
-                        className="d4m-w-12 h-12 md:d4m-w-16 md:d4m-h-16 d4m-opacity-95 hover:d4m-opacity-100 d4m-transition-opacity d4m-duration-300"
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <img
-                    src="/icons/icon128.png"
-                    alt="Agent Logo"
-                    className="d4m-w-16 h-16 md:d4m-w-20 md:d4m-h-20 d4m-mb-4 d4m-opacity-80"
-                  />
-                )}
-              </div>
-              {/* Welcome Text */}
-              <h2
-                className={`d4m-text-lg d4m-font-semibold ${textColor} d4m-mb-2`}
-              >
-                Welcome!
-              </h2>
-              {/* HubSpot API Key Warning */}
-              {hubspotMode && !hasHubspotApiKey && (
-                <div className="d4m-flex d4m-flex-col d4m-items-center d4m-text-center d4m-my-4 d4m-max-w-xs">
-                  <div className="d4m-p-4 d4m-bg-red-500/10 dark:d4m-bg-red-500/20 d4m-border d4m-border-red-500/30 dark:d4m-border-red-500/50 d4m-rounded-lg">
-                    <p className="d4m-text-red-600 dark:d4m-text-red-400 d4m-font-medium d4m-mb-2">
-                      HubSpot API Key Required
-                    </p>
-                    <p className="d4m-text-sm d4m-text-gray-600 dark:d4m-text-gray-300">
-                      Please add your HubSpot Private App token in Settings to
-                      use HubSpot features.
-                    </p>
-                  </div>
-                </div>
-              )}
-              {!(hubspotMode && !hasHubspotApiKey) && (
-                <>
-                  <p
-                    className={`d4m-text-sm ${
-                      mode === "light"
-                        ? "d4m-text-gray-600"
-                        : "d4m-text-gray-400"
-                    } d4m-mb-5`}
-                  >
-                    How can I assist you today?
-                  </p>
-                  <p
-                    className={`d4m-text-xs d4m-font-medium ${
-                      mode === "light"
-                        ? "d4m-text-gray-500"
-                        : "d4m-text-gray-400"
-                    } d4m-mb-3`}
-                  >
-                    Try an example:
-                  </p>
-                  <div className="d4m-flex d4m-flex-wrap d4m-gap-2 d4m-justify-center d4m-max-w-md">
-                    {welcomeSuggestions.slice(0, 4).map((suggestion) => (
-                      <button
-                        key={suggestion}
-                        onClick={() => handleSuggestionClick(suggestion)}
-                        className={`d4m-text-xs ${
-                          currentTheme.suggestion || ""
-                        } d4m-px-3 d4m-py-1 hover:d4m-opacity-80 d4m-transition-opacity d4m-rounded-full ${
-                          mode === "light"
-                            ? "d4m-bg-gray-100 d4m-text-gray-700"
-                            : "d4m-bg-gray-700 d4m-text-gray-200"
-                        }`}
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
+              textColor={textColor}
+              currentTheme={currentTheme}
+              handleSuggestionClick={handleSuggestionClick}
+            />
           )}
 
-          {/* Render Actual Messages */}
-          <React.Fragment>
-            {processedMessages.map((item, index) => {
-              // Stable key generation
-              const itemKey =
-                item.type === "single"
-                  ? item.message?.id || `s-${index}`
-                  : item.timestamp ||
-                    `${item.type}-${index}-${
-                      item.messages?.[0]?.id ||
-                      item.taskHistories?.[0]?.step_number ||
-                      ""
-                    }`;
-
-              // --- Single Message Renderer ---
-              if (item.type === "single") {
-                const message = item.message!;
-                // Align user messages to the right (example)
-                const alignment =
-                  message.role === "user" ? "d4m-ml-auto" : "d4m-mr-auto";
-                const bubbleStyle =
-                  message.role === "user"
-                    ? `${currentTheme.messageBubble || ""} ${
-                        accentColor === "white"
-                          ? "d4m-bg-orange-500 d4m-text-white"
-                          : `d4m-bg-${accentColor}-500 d4m-text-white`
-                      }` // User bubble style
-                    : `${
-                        mode === "light" ? "d4m-bg-gray-100" : "d4m-bg-gray-700"
-                      } ${textColor}`; // Model/other bubble style
-
-                return (
-                  <div
-                    key={itemKey}
-                    className={`d4m-flex d4m-max-w-[85%] md:d4m-max-w-[75%] ${alignment} d4m-mb-3`}
-                  >
-                    <div
-                      className={`d4m-text-sm d4m-p-2.5 d4m-rounded-lg ${bubbleStyle} d4m-shadow-sm`}
-                    >
-                      {" "}
-                      {/* Added padding, shadow */}
-                      {message.role === "model" ? (
-                        // --- Model Message Content ---
-                        "type" in message &&
-                        message.type === "hubspot_error" &&
-                        typeof message.content === "object" ? (
-                          <HubspotErrorCard
-                            errorType={
-                              (message.content as HubSpotExecutionResult) &&
-                              "errorType" in message.content
-                                ? message.content.errorType
-                                : "hubspot_api"
-                            }
-                            message={
-                              (message.content as HubSpotExecutionResult) &&
-                              "error" in message.content
-                                ? message.content.error
-                                : "Unknown HubSpot error"
-                            }
-                            details={
-                              (message.content as HubSpotExecutionResult)
-                                ?.details
-                            }
-                            status={
-                              (message.content as HubSpotExecutionResult)
-                                ?.success
-                                ? 1 // Map true to 1
-                                : 0 // Map false to 0
-                            }
-                            mode={mode}
-                          />
-                        ) : "type" in message &&
-                          message.type === "hubspot_success" &&
-                          typeof message.content === "object" ? (
-                          <HubspotSuccessCard // Use the new success card
-                            result={message.content as HubSpotExecutionResult}
-                            mode={mode}
-                            accentColor={accentColor} // Pass active accent color
-                            currentTheme={currentTheme}
-                          />
-                        ) : typeof message.content === "string" ? (
-                          // Standard markdown for string content
-                          <MarkdownWrapper content={message.content} />
-                        ) : (
-                          // Fallback for unknown model content - display as JSON
-                          <pre className="d4m-text-xs d4m-whitespace-pre-wrap">
-                            {JSON.stringify(message.content, null, 2)}
-                          </pre>
-                        )
-                      ) : (
-                        // --- End Model Message Content ---
-                        // User message content
-                        <span className="d4m-whitespace-pre-wrap d4m-break-words">
-                          {linkifyUrls(message.content as string)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              }
-              // --- Model Group Renderer ---
-              else if (item.type === "modelGroup") {
-                return (
-                  <div
-                    key={itemKey}
-                    className={`d4m-flex d4m-flex-col d4m-gap-1 d4m-max-w-[85%] md:d4m-max-w-[75%] d4m-mr-auto d4m-mb-3`}
-                  >
-                    {item.messages!.map((msg, msgIdx) => (
-                      <div
-                        key={msg.id || msgIdx}
-                        className={`d4m-text-sm d4m-p-2.5 d4m-rounded-lg ${
-                          mode === "light"
-                            ? "d4m-bg-gray-100"
-                            : "d4m-bg-gray-700"
-                        } ${textColor} d4m-shadow-sm`}
-                      >
-                        {typeof msg.content === "string" ? (
-                          <MarkdownWrapper content={msg.content} />
-                        ) : // Handle potential objects within model groups too
-                        "type" in msg &&
-                          msg.type === "hubspot_error" &&
-                          typeof msg.content === "object" ? (
-                          <HubspotErrorCard
-                            {...(msg.content as any)}
-                            mode={mode}
-                          />
-                        ) : "type" in msg &&
-                          msg.type === "hubspot_success" &&
-                          typeof msg.content === "object" ? (
-                          <HubspotSuccessCard
-                            result={msg.content as HubSpotExecutionResult}
-                            mode={mode}
-                            accentColor={accentColor}
-                            currentTheme={currentTheme}
-                          />
-                        ) : (
-                          <pre className="d4m-text-xs d4m-whitespace-pre-wrap">
-                            {JSON.stringify(msg.content, null, 2)}
-                          </pre>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                );
-              }
-              // --- Execution Group Renderer ---
-              else if (item.type === "executionGroup") {
-                const isExpanded = expandedExecutions.has(index);
-                return (
-                  <div
-                    key={itemKey}
-                    className={`d4m-p-3 d4m-mb-3 d4m-rounded-lg d4m-border ${
-                      mode === "light"
-                        ? "d4m-bg-gray-50/50 d4m-border-gray-200"
-                        : "d4m-bg-gray-700/30 d4m-border-gray-600"
-                    } d4m-max-w-[90%] d4m-mr-auto`}
-                  >
-                    <div
-                      className="d4m-flex d4m-justify-between d4m-items-center d4m-cursor-pointer"
-                      onClick={() => handleToggleExecution(index)} // Use original index
-                      aria-expanded={isExpanded}
-                      aria-controls={`execution-details-${index}`}
-                    >
-                      <h6
-                        className={`d4m-text-sm d4m-font-semibold ${
-                          accentColor === "white"
-                            ? "d4m-text-orange-500"
-                            : `d4m-text-${accentColor}-500`
-                        }`}
-                      >
-                        Task Steps ({item.taskHistories!.length})
-                      </h6>
-                      {isExpanded ? (
-                        <ChevronUp size={16} className={textColor} />
-                      ) : (
-                        <ChevronDown size={16} className={textColor} />
-                      )}
-                    </div>
-                    {isExpanded && (
-                      <div
-                        className="d4m-mt-2 d4m-overflow-x-auto"
-                        id={`execution-details-${index}`}
-                      >
-                        <table
-                          className={`d4m-w-full d4m-text-xs ${textColor}`}
-                        >
-                          <thead className="d4m-border-b d4m-border-gray-300 dark:d4m-border-gray-600">
-                            <tr>
-                              <th className="d4m-py-1 d4m-px-2 d4m-text-left d4m-font-medium">
-                                #
-                              </th>
-                              <th className="d4m-py-1 d4m-px-2 d4m-text-left d4m-font-medium">
-                                Description
-                              </th>
-                              <th className="d4m-py-1 d4m-px-2 d4m-text-center d4m-font-medium">
-                                Status
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {item.taskHistories!.map((task, taskIdx) => (
-                              <tr
-                                key={taskIdx}
-                                className="d4m-border-b d4m-border-gray-200 dark:d4m-border-gray-700 d4m-last:border-b-0"
-                              >
-                                <td className="d4m-py-1.5 d4m-px-2">
-                                  {taskIdx + 1}
-                                </td>
-                                <td className="d4m-py-1.5 d4m-px-2">
-                                  {task.description ||
-                                    task.step_number ||
-                                    "N/A"}
-                                </td>
-                                <td className="d4m-py-1.5 d4m-px-2 d4m-text-center">
-                                  {/* Status Icons */}
-                                  {(task.status === "PASS" ||
-                                    task.status === "passed") && (
-                                    <Check
-                                      size={14}
-                                      className="d4m-text-green-500 d4m-mx-auto"
-                                    />
-                                  )}
-                                  {(task.status === "FAIL" ||
-                                    task.status === "failed") && (
-                                    <X
-                                      size={14}
-                                      className="d4m-text-red-500 d4m-mx-auto"
-                                    />
-                                  )}
-                                  {(task.status === "PENDING" ||
-                                    task.status === "pending") && (
-                                    <div className="d4m-w-3 d4m-h-3 d4m-border-2 d4m-border-gray-400 d4m-border-t-transparent d4m-rounded-full d4m-animate-spin d4m-mx-auto"></div>
-                                  )}
-                                  {(task.status === "IN_PROGRESS" ||
-                                    task.status === "in_progress") && (
-                                    <div className="d4m-w-3 d4m-h-3 d4m-border-2 d4m-border-blue-400 d4m-border-t-transparent d4m-rounded-full d4m-animate-spin d4m-mx-auto"></div>
-                                  )}
-                                  {![
-                                    "PASS",
-                                    "passed",
-                                    "FAIL",
-                                    "failed",
-                                    "PENDING",
-                                    "pending",
-                                    "IN_PROGRESS",
-                                    "in_progress",
-                                  ].includes(task.status) && (
-                                    <HelpCircle
-                                      size={14}
-                                      className="d4m-text-gray-400 d4m-mx-auto"
-                                    />
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                );
-              }
-              return null;
-            })}
-          </React.Fragment>
+          {/* Render Messages using MessageRenderer component */}
+          {processedMessages.length > 0 && (
+            <MessageRenderer
+              processedMessages={processedMessages}
+              textColor={textColor}
+              currentTheme={currentTheme}
+              accentColor={accentColor}
+              mode={mode}
+              expandedExecutions={expandedExecutions}
+              handleToggleExecution={handleToggleExecution}
+            />
+          )}
         </div>
 
         {/* Input Area Section */}
