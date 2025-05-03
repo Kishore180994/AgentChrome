@@ -117,7 +117,7 @@ export const handleSubmit = async (
           chatIdToSend
         );
         try {
-          const api = await import("../../services/api"); // Adjust path
+          const api = await import("../../services/api");
           // Send the full user message for backend history context
           const messageStats = {
             messageLength: userMessage.length,
