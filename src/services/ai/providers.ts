@@ -6,9 +6,9 @@ import {
   InlineDataPart,
   TextPart,
   FunctionCallingMode,
+  Tool,
 } from "@google/generative-ai";
-import { logToGoogleSheet } from "../google/appsScript"; // Added import
-import { agentPrompt } from "../../utils/prompts";
+import { agentPrompt, hubspotSystemPrompt } from "../../utils/prompts";
 import {
   ClaudeChatMessage,
   ClaudeChatContent,
@@ -16,18 +16,81 @@ import {
   Role,
   GeminiResponse,
 } from "./interfaces";
-import Anthropic from "@anthropic-ai/sdk";
-import { geminiTools } from "./tools";
+import { googleDOMTools, HSTools, hubspotModularTools } from "./tools";
+import { getAPICompatibleTools, HubspotFunctionTool } from "./hubspotTool";
+import { commonTools } from "./commonTools";
 
 // Global references
 let geminiClient: GoogleGenerativeAI | null = null;
 let geminiModel: GenerativeModel | null = null;
-let claudeClient: Anthropic | null = null;
+// Flag for background context to know if this is a HubSpot-related command
+// Track the last HubSpot system prompt state to detect changes
 
 export type AIProvider = "gemini" | "claude";
 
 // --- Helper Functions ---
+/**
+ * Filters messages based on Role and calls the appropriate AI provider.
+ * Returns the raw GeminiResponse to preserve the [functioncall, functioncall, ...] format.
+ */
+// Helper to determine if we should use the HubSpot system prompt
+export async function shouldUseHubspotSystemPrompt(): Promise<boolean> {
+  console.debug("[shouldUseHubspotSystemPromptAsync] Function called.");
+  try {
+    // Check if chrome.storage is available (good practice for extensions)
+    if (
+      typeof chrome === "undefined" ||
+      !chrome.storage ||
+      !chrome.storage.sync
+    ) {
+      console.warn(
+        "[shouldUseHubspotSystemPromptAsync] chrome.storage.sync not available. Returning false."
+      );
+      return false;
+    }
 
+    // First check local storage for current UI mode - this is the primary indicator
+    // since it reflects what the user is currently seeing
+    const localItems = await chrome.storage.local.get(["hubspotMode"]);
+    if (localItems.hubspotMode === true) {
+      console.debug(
+        "[shouldUseHubspotSystemPromptAsync] UI is in HubSpot mode"
+      );
+
+      // Even in HubSpot mode, we need to check if there's a valid API key
+      const syncItems = await chrome.storage.sync.get(["hubspotConfig"]);
+      const hubspotConfigValue = syncItems.hubspotConfig;
+
+      let hasApiKey = false;
+      if (hubspotConfigValue && typeof hubspotConfigValue === "object") {
+        hasApiKey = !!hubspotConfigValue.apiKey;
+        console.debug(
+          `[shouldUseHubspotSystemPromptAsync] Found hubspotConfig object, hasApiKey: ${hasApiKey}`,
+          hubspotConfigValue
+        );
+      } else {
+        console.debug(
+          "[shouldUseHubspotSystemPromptAsync] hubspotConfig not found or not an object in storage."
+        );
+      }
+
+      const result = hasApiKey;
+      console.debug(
+        `[shouldUseHubspotSystemPromptAsync] Final result (in HubSpot mode && hasApiKey): ${result}`
+      );
+      return result;
+    }
+
+    // If we're not in HubSpot mode UI, always return false
+    console.debug(
+      "[shouldUseHubspotSystemPromptAsync] UI is not in HubSpot mode, returning false"
+    );
+    return false;
+  } catch (e) {
+    console.error("[shouldUseHubspotSystemPromptAsync] Error during check:", e);
+    return false;
+  }
+}
 /**
  * Extracts text content from a Gemini message part.
  */
@@ -102,26 +165,34 @@ function parseDataUrl(
 export async function callGemini(
   messages: GeminiChatMessage[],
   geminiKey: string,
+  selectedTool: string,
+  isHubSpotModeOn: boolean,
   screenShotDataUrl?: string
 ): Promise<GeminiResponse | null> {
-  console.debug(`[callGemini] Called with ${messages.length} messages.`);
-
   if (!geminiKey) {
     console.error("[callGemini] Gemini API key is missing.");
     return null;
   }
 
   try {
+    // Initialize or reinitialize the model if needed
     if (!geminiClient || !geminiModel) {
       console.debug(
         "[callGemini] Initializing GoogleGenerativeAI client and model..."
       );
       geminiClient = new GoogleGenerativeAI(geminiKey);
+
+      const systemPrompt = isHubSpotModeOn ? hubspotSystemPrompt : agentPrompt;
+
       geminiModel = geminiClient.getGenerativeModel({
         model: "gemini-2.0-flash",
-        systemInstruction: agentPrompt,
+        systemInstruction: systemPrompt,
       });
-      console.debug("[callGemini] Gemini client and model initialized.");
+      console.debug(
+        `[callGemini] Gemini client and model initialized with ${
+          isHubSpotModeOn ? "HubSpot" : "default"
+        } system prompt.`
+      );
     } else {
       console.debug("[callGemini] Reusing existing Gemini client & model.");
     }
@@ -132,7 +203,7 @@ export async function callGemini(
       topK: 64,
       maxOutputTokens: 8192,
     };
-
+    let HSTools: HubspotFunctionTool[] = [];
     // Process history messages
     const processedHistoryMessages = processTextData(messages.slice(0, -1));
     const sdkHistory: Content[] = processedHistoryMessages
@@ -147,20 +218,102 @@ export async function callGemini(
       })
       .filter((content) => content.parts.length > 0);
 
+    // Check if there's a selected command stored in chrome storage
+    try {
+      if (selectedTool) {
+        console.log(
+          `[callGemini] Using tools for selected command: ${selectedTool}`
+        );
+
+        // Find the tool group matching the selected command
+        const matchingToolGroup = hubspotModularTools.find(
+          (tool) => tool.toolGroupName === selectedTool
+        );
+
+        if (matchingToolGroup) {
+          // Use only the tools for this specific command
+          HSTools = [matchingToolGroup];
+          // Use type assertion to access functionDeclarations property safely
+          const funcDecls = (matchingToolGroup as any).functionDeclarations;
+          const funcCount = Array.isArray(funcDecls) ? funcDecls.length : 0;
+          console.log(
+            `[callGemini] Found matching tool group with ${funcCount} functions`
+          );
+        } else {
+          console.log(
+            `[callGemini] No matching tool group found for: ${selectedTool}`
+          );
+        }
+      }
+    } catch (e) {
+      console.error("[callGemini] Error getting selected command:", e);
+    }
+
+    // Make sure we always have tools to send to the AI
+    let finalTools: Tool[] = [];
+
+    if (isHubSpotModeOn) {
+      if (HSTools && HSTools.length > 0) {
+        // Only send the specific selected tool to the API, not all tools
+        finalTools = getAPICompatibleTools(HSTools);
+        console.log("[callGemini] Using selected tool only:", HSTools.length);
+      } else {
+        console.log("[callGemini] No tool selected, using minimal tools");
+      }
+    } else {
+      finalTools = [...googleDOMTools];
+    }
+    finalTools.push(...commonTools);
+
+    console.log("Final tools being sent to AI:", {
+      finalTools,
+    });
+
     // Initialize chat session
     const chatSession = geminiModel.startChat({
       generationConfig,
       history: sdkHistory,
-      tools: geminiTools,
+      tools: finalTools,
       toolConfig: {
         functionCallingConfig: {
           mode: FunctionCallingMode.ANY,
         },
       },
     });
-
     // Prepare last message
-    const lastMsg = messages[messages.length - 1];
+    let lastMsg = messages[messages.length - 1];
+    console.log("[callGemini] useHubspotSystemPrompt:", isHubSpotModeOn);
+
+    if (
+      isHubSpotModeOn &&
+      lastMsg &&
+      lastMsg.parts &&
+      lastMsg.parts.length > 0 &&
+      lastMsg.parts[0].text
+    ) {
+      console.log("[callGemini] Entered main condition block."); // Did we get inside?
+      const originalText = lastMsg.parts[0].text;
+      const delimiter = " && ";
+      const delimiterIndex = originalText.indexOf(delimiter);
+      if (delimiterIndex !== -1) {
+        const truncatedText = originalText.substring(0, delimiterIndex).trim();
+        // *** This is the modification line ***
+        lastMsg.parts[0].text = truncatedText;
+      } else {
+        console.log("[callGemini] Delimiter '&&' not found in text.");
+      }
+    } else {
+      console.log(
+        "[callGemini] Main condition not met. No truncation needed or possible based on conditions."
+      );
+    }
+
+    // Log the state *after* the potential modification attempt
+    // console.log("[callGemini] Final last message object logged below:");
+    // console.log("[callGemini] Last message:", JSON.stringify(lastMsg, null, 2));
+    // Also check the original array if possible
+    // console.log("[callGemini] Last message text in original array:", messages[messages.length - 1]?.parts?.[0]?.text);
+    // console.log("[callGemini] Last message:", JSON.stringify(lastMsg, null, 2));
     if (!lastMsg) {
       console.error("[callGemini] No last message found in messages array.");
       return null;
@@ -200,21 +353,30 @@ export async function callGemini(
       `[callGemini] Sending ${lastMessageSdkParts.length} SDK part(s) to Gemini.`
     );
 
+    // Add detailed debugging information about what we're sending
+    // console.debug("[callGemini] DETAILED REQUEST DEBUG:");
+    // console.debug(
+    //   "[callGemini] Last message parts:",
+    //   JSON.stringify(lastMessageSdkParts, null, 2)
+    // );
+    // console.debug("[callGemini] Message history length:", sdkHistory.length);
+    // console.debug("[callGemini] Has screenshot:", !!screenShotDataUrl);
+    // console.debug("[callGemini] Tools config:", {
+    //   toolsCount: geminiTools.length,
+    //   // Check if the first tool has functionDeclarations property before accessing it
+    //   functionDeclarationsCount: Array.isArray(
+    //     geminiTools[0] && "functionDeclarations" in geminiTools[0]
+    //       ? geminiTools[0].functionDeclarations
+    //       : []
+    //   )
+    //     ? (geminiTools[0] as any).functionDeclarations.length
+    //     : 0,
+    //   mode: FunctionCallingMode.ANY,
+    // });
+
+    console.debug({ lastMessageSdkParts });
     // Send message and process response
     const result = await chatSession.sendMessage(lastMessageSdkParts);
-
-    // Log the result to Google Sheets (fire and forget)
-    logToGoogleSheet({
-      timestamp: new Date().toISOString(),
-      provider: "gemini",
-      request: {
-        messages: messages, // Log the input messages
-        lastMessageParts: lastMessageSdkParts, // Log the parts sent
-      },
-      response: result.response, // Log the raw response
-    }).catch((logError) => {
-      console.error("Failed to log Gemini response to Google Sheet:", logError);
-    });
 
     const response = result.response;
     const candidates = response.candidates;
@@ -251,7 +413,9 @@ export async function callGemini(
 
     // Validate presence of reportCurrentState
     const hasReportCurrentState = functionCallParts.some(
-      (part) => part.functionCall.name === "reportCurrentState"
+      (part) =>
+        part.functionCall.name === "dom_reportCurrentState" ||
+        part.functionCall.name === "google_workspace_reportCurrentState"
     );
     if (!hasReportCurrentState) {
       console.error(
@@ -273,13 +437,11 @@ export async function callGemini(
 
 // --- Dispatcher ---
 
-/**
- * Filters messages based on Role and calls the appropriate AI provider.
- * Returns the raw GeminiResponse to preserve the [functioncall, functioncall, ...] format.
- */
 export async function callAI(
   provider: AIProvider,
   messages: (GeminiChatMessage | ClaudeChatMessage)[],
+  isHubspotMode: boolean,
+  selectedTool: string,
   screenShotDataUrl?: string
 ): Promise<GeminiResponse | null> {
   // Filter messages based on Role, keeping only 'user' and 'model'/'assistant'
@@ -295,6 +457,16 @@ export async function callAI(
     return null;
   }
 
+  // Get the correct conversation history based on the current mode
+  // This ensures we're using the right context for the AI
+  const useHubspotSystem = await shouldUseHubspotSystemPrompt();
+  console.log(`[callAI] Using HubSpot system prompt: ${useHubspotSystem}`);
+
+  // In HubSpot mode, don't use screenshots
+  if (isHubspotMode) {
+    screenShotDataUrl = undefined;
+  }
+
   switch (provider) {
     case "gemini": {
       // Convert all filtered messages to GeminiChatMessage format before calling
@@ -306,16 +478,30 @@ export async function callAI(
 
           if ("parts" in msg) {
             return { role: geminiRole, parts: msg.parts };
-          } else {
-            const text = msg.content.find((c) => c.type === "text")?.text ?? "";
+          } else if ("content" in msg) {
+            // This is a ClaudeChatMessage
+            const text =
+              msg.content.find((c: ClaudeChatContent) => c.type === "text")
+                ?.text ?? "";
             return { role: geminiRole, parts: [{ text: text }] };
+          } else {
+            // Fallback for any unexpected message format
+            console.warn("[callAI] Unexpected message format:", msg);
+            return { role: geminiRole, parts: [{ text: "" }] };
           }
         }
       );
+
       // Call Gemini with the consistently formatted messages
       const geminiKey =
         process.env.GEMINI_API_KEY || "AIzaSyDcDTlmwYLVRflcPIR9oklm5IlTUNzhu0Q";
-      return await callGemini(geminiMessages, geminiKey, screenShotDataUrl);
+      return await callGemini(
+        geminiMessages,
+        geminiKey,
+        selectedTool,
+        isHubspotMode,
+        screenShotDataUrl
+      );
     }
 
     case "claude": {

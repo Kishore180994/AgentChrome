@@ -44,9 +44,12 @@ export default defineConfig({
         background: resolve(__dirname, "src/background.ts"),
         content: resolve(__dirname, "src/content.ts"),
         sidebar: resolve(__dirname, "sidepanel.html"),
+        micPermission: resolve(__dirname, "micPermission.html"),
+        offscreen: resolve(__dirname, "offscreen.html"),
+        audioProcessor: resolve(__dirname, "audio-processor.js"),
       },
       output: {
-        entryFileNames: "[name].js",
+        entryFileNames: "[name].js", // This will likely produce micPermissionJs.js
         chunkFileNames: "[name].js",
         assetFileNames: "[name].[ext]",
       },

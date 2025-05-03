@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Settings, X, LogOut, LogIn, User } from "lucide-react";
+import { Settings, X, LogOut, LogIn, User, Key } from "lucide-react";
 import { storage } from "../utils/storage";
 import { AccentColor, themeStyles } from "../utils/themes";
 import { useAuth } from "../contexts/AuthContext";
+import { HubSpotConfig, saveHubSpotConfig } from "../services/hubspot/api";
 
 interface AppSettings {
   geminiKey: string;
@@ -12,6 +13,7 @@ interface AppSettings {
   theme: "neumorphism" | "glassmorphism" | "claymorphism";
   accentColor: AccentColor;
   mode: "light" | "dark";
+  hubspotConfig: HubSpotConfig;
 }
 
 interface SettingsModalProps {
@@ -34,6 +36,7 @@ export function SettingsModal({
   const { user, loginWithGoogle, logout, isLoading } = useAuth();
   const [geminiKey, setGeminiKey] = useState("");
   const [openaiKey, setOpenaiKey] = useState("");
+  const [hubspotApiKey, setHubspotApiKey] = useState("");
   const [aiProvider, setAiProvider] =
     useState<AppSettings["aiProvider"]>("gemini");
   const [selectedTheme, setSelectedTheme] =
@@ -67,6 +70,7 @@ export function SettingsModal({
           "theme",
           "accentColor",
           "mode",
+          "hubspotConfig",
         ]);
         setGeminiKey(settings.geminiKey || "");
         setOpenaiKey(settings.openaiKey || "");
@@ -74,6 +78,7 @@ export function SettingsModal({
         setSelectedTheme(settings.theme || theme);
         setSelectedAccentColor(settings.accentColor || accentColor);
         setSelectedMode(settings.mode || mode);
+        setHubspotApiKey(settings.hubspotConfig?.apiKey || "");
       } catch (error) {
         console.error("Error loading settings:", error);
       }
@@ -91,6 +96,17 @@ export function SettingsModal({
         accentColor: selectedAccentColor,
         mode: selectedMode,
       };
+
+      // Save HubSpot config separately - used only when in HubSpot mode
+      const hubspotConfig = { apiKey: hubspotApiKey };
+      await saveHubSpotConfig(hubspotConfig);
+
+      // Also store in localStorage for direct access by shouldUseHubspotSystemPrompt
+      localStorage.setItem("hubspotConfig", JSON.stringify(hubspotConfig));
+
+      // We no longer set useHubspotApi flag as the API is now only used when in HubSpot mode
+      // HubSpot mode is controlled directly from the ChatWidget toggle
+
       await storage.set(newSettings);
       onSettingsUpdate(newSettings);
       onClose();
@@ -233,6 +249,90 @@ export function SettingsModal({
               )}
             </div>
           </div>
+
+          {/* API Keys Section */}
+          <div className="d4m-border-b d4m-border-gray-700 d4m-pb-3 d4m-mb-3">
+            <div className="d4m-flex d4m-items-center d4m-justify-between d4m-mb-2">
+              <h3
+                className={`d4m-font-medium d4m-text-${accentColor}-400 d4m-flex d4m-items-center d4m-gap-1`}
+              >
+                <Key className="d4m-w-4 d4m-h-4" />
+                API Keys
+              </h3>
+            </div>
+
+            {/* HubSpot API Key */}
+            <div className="d4m-flex d4m-flex-col d4m-gap-1 d4m-mb-3">
+              <div className="d4m-flex d4m-items-center d4m-gap-2">
+                <label
+                  className={`d4m-font-medium d4m-text-${accentColor}-400 d4m-w-24`}
+                >
+                  HubSpot API Key
+                </label>
+                <input
+                  type="password"
+                  value={hubspotApiKey}
+                  onChange={(e) => setHubspotApiKey(e.target.value)}
+                  className={`d4m-flex-1 d4m-px-2 d4m-py-1 ${textColor} d4m-text-sm d4m-rounded-full d4m-border ${borderColor} ${
+                    currentTheme.textarea
+                  } d4m-focus:outline-none d4m-focus:ring-1 d4m-focus:ring-${accentColor}-500 ${
+                    mode === "light"
+                      ? "d4m-placeholder-gray-400"
+                      : "d4m-placeholder-gray-500"
+                  } d4m-transition-all`}
+                  placeholder="HubSpot API Key"
+                />
+              </div>
+              <div className="d4m-text-xs d4m-text-gray-500 d4m-ml-24">
+                This key will only be used when in HubSpot mode
+              </div>
+            </div>
+
+            {/* AI Provider Keys */}
+            <div className="d4m-flex d4m-items-center d4m-gap-2 d4m-mb-3">
+              <label
+                className={`d4m-font-medium d4m-text-${accentColor}-400 d4m-w-24`}
+              >
+                Gemini Key
+              </label>
+              <input
+                type="password"
+                value={geminiKey}
+                onChange={(e) => setGeminiKey(e.target.value)}
+                className={`d4m-flex-1 d4m-px-2 d4m-py-1 ${textColor} d4m-text-sm d4m-rounded-full d4m-border ${borderColor} ${
+                  currentTheme.textarea
+                } d4m-focus:outline-none d4m-focus:ring-1 d4m-focus:ring-${accentColor}-500 ${
+                  mode === "light"
+                    ? "d4m-placeholder-gray-400"
+                    : "d4m-placeholder-gray-500"
+                } d4m-transition-all`}
+                placeholder="Gemini API Key"
+              />
+            </div>
+
+            <div className="d4m-flex d4m-items-center d4m-gap-2">
+              <label
+                className={`d4m-font-medium d4m-text-${accentColor}-400 d4m-w-24`}
+              >
+                OpenAI Key
+              </label>
+              <input
+                type="password"
+                value={openaiKey}
+                onChange={(e) => setOpenaiKey(e.target.value)}
+                className={`d4m-flex-1 d4m-px-2 d4m-py-1 ${textColor} d4m-text-sm d4m-rounded-full d4m-border ${borderColor} ${
+                  currentTheme.textarea
+                } d4m-focus:outline-none d4m-focus:ring-1 d4m-focus:ring-${accentColor}-500 ${
+                  mode === "light"
+                    ? "d4m-placeholder-gray-400"
+                    : "d4m-placeholder-gray-500"
+                } d4m-transition-all`}
+                placeholder="OpenAI API Key"
+              />
+            </div>
+          </div>
+
+          {/* AI Provider Selection */}
           <div className="d4m-flex d4m-items-center d4m-gap-2">
             <label
               className={`d4m-font-medium d4m-text-${accentColor}-400 d4m-w-24`}
@@ -267,30 +367,6 @@ export function SettingsModal({
                 OpenAI
               </label>
             </div>
-          </div>
-          <div className="d4m-flex d4m-items-center d4m-gap-2">
-            <label
-              className={`d4m-font-medium d4m-text-${accentColor}-400 d4m-w-24`}
-            >
-              {aiProvider === "gemini" ? "Gemini Key" : "OpenAI Key"}
-            </label>
-            <input
-              type="password"
-              value={aiProvider === "gemini" ? geminiKey : openaiKey}
-              onChange={(e) =>
-                aiProvider === "gemini"
-                  ? setGeminiKey(e.target.value)
-                  : setOpenaiKey(e.target.value)
-              }
-              className={`d4m-flex-1 d4m-px-2 d4m-py-1 ${textColor} d4m-text-sm d4m-rounded-full d4m-border ${borderColor} ${
-                currentTheme.textarea
-              } d4m-focus:outline-none d4m-focus:ring-1 d4m-focus:ring-${accentColor}-500 ${
-                mode === "light"
-                  ? "d4m-placeholder-gray-400"
-                  : "d4m-placeholder-gray-500"
-              } d4m-transition-all`}
-              placeholder="API Key"
-            />
           </div>
           <div className="d4m-flex d4m-items-center d4m-gap-2">
             <label
@@ -387,6 +463,16 @@ export function SettingsModal({
                 className={`d4m-text-${accentColor}-400 d4m-hover:text-${accentColor}-300 d4m-underline`}
               >
                 Google Cloud Console (Vision)
+              </a>
+            </li>
+            <li>
+              <a
+                href="https://developers.hubspot.com/docs/api/overview"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`d4m-text-${accentColor}-400 d4m-hover:text-${accentColor}-300 d4m-underline`}
+              >
+                HubSpot Developer Portal
               </a>
             </li>
           </ul>

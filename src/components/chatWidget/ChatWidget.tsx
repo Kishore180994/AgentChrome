@@ -1,231 +1,360 @@
-import React, { useState, useRef, useEffect } from "react";
-import {
-  Send,
-  Square,
-  Eye,
-  EyeOff,
-  ChevronUp,
-  ChevronDown,
-  Check,
-  X,
-  HelpCircle,
-  Settings,
-  Mic,
-  List, // Import List icon
-} from "lucide-react";
-import MarkdownWrapper from "../MarkDownWrapper";
-import { StepState } from "../../types/responseFormat";
-import { storage } from "../../utils/storage";
-import { SettingsModal } from "../SettingsModal";
-import { AccentColor, themeStyles } from "../../utils/themes";
+// src/components/ChatWidget.tsx
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { Square } from "lucide-react";
+import ComponentHeader, {
+  commonButtons,
+  HeaderButtonOption,
+  TabOption,
+} from "../common/ComponentHeader";
+
+import { CommandInputArea } from "./CommandInputArea";
+import WelcomeScreen from "./WelcomeScreen";
+import MessageRenderer from "./MessageRenderer";
+import TaskSection from "./TaskSection";
+import HubspotModularOptions from "./HubspotModularOptions";
 import { ToastNotification } from "../ToastNotifications";
+// import SettingsModal from "../SettingsModal";
+
+import { AccentColor, hubspotTheme, themeStyles } from "../../utils/themes";
+import { loadHubSpotConfig } from "../../services/hubspot/api";
+import { HubSpotExecutionResult } from "../../services/ai/interfaces";
+import { StepState } from "../../types/responseFormat";
+import { Message, ProcessedMessage } from "./chatInterface";
+
 import {
-  handleSubmit,
+  handleSubmit as originalHandleSubmit,
   handleStop,
   handleNewChat,
-  handlePopupSelect,
   toggleExecutionGroup,
   handleChipClick,
-  toggleWatching,
   handleFocus,
   handleBlur,
 } from "./chatHandlers";
-import { Message, ProcessedMessage } from "./chatInterface";
-import api, { Chat } from "../../services/api"; // Import api and Chat
-import ChatListModal from "./ChatListModal"; // Default import
-import { RecordingMic } from "./RecordingMic";
-import StarfallCascadeAnimation, { linkifyUrls } from "../../utils/helpers"; // Import linkifyUrls
-import { TranscriptLine, useDeepgramLive } from "../../hooks/useDeepgramLive";
 import { useSiriBorderWithRef } from "../../hooks/useSiriBorder";
+import StarfallCascadeAnimation from "../../utils/helpers";
+import { hubspotModularTools } from "../../services/ai/hubspotTool";
 
 export function ChatWidget() {
+  // State
   const [messages, setMessages] = useState<Message[]>([]);
   const [processedMessages, setProcessedMessages] = useState<
     ProcessedMessage[]
   >([]);
-  const [isRecordingClicked, setIsRecording] = useState(false);
   const [input, setInput] = useState("");
+  // Wrapped setSelectedCommand to also update the tools.ts file and storage
+  const [selectedCommand, setSelectedCommandRaw] = useState<string | null>(
+    null
+  );
+
+  // Create a wrapper to update tools when command changes
+  const setSelectedCommand = useCallback((command: string | null) => {
+    // Update state with the raw setter
+    setSelectedCommandRaw(command);
+
+    // Store the command in localStorage for the providers.ts to access
+    if (command) {
+      chrome.storage.local.set({ selectedHubspotCommand: command });
+      console.log(`[ChatWidget] Saved selected command to storage: ${command}`);
+    } else {
+      // If command is null, remove it from storage
+      chrome.storage.local.remove("selectedHubspotCommand");
+      console.log("[ChatWidget] Cleared selected command from storage");
+    }
+  }, []);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isWatching, setIsWatching] = useState(false);
   const [expandedExecutions, setExpandedExecutions] = useState<Set<number>>(
     new Set()
   );
-  const [userTypedInput, setUserTypedInput] = useState("");
-  const selectedCommandRef = useRef<HTMLDivElement | null>(null);
-  const [isTextareaFocused, setIsTextareaFocused] = useState(false);
+  const [taskHistories, setTaskHistories] = useState<StepState[]>([]);
+  const [isTaskSectionExpanded, setIsTaskSectionExpanded] = useState(true);
+  const [isInputAreaFocused, setIsInputAreaFocused] = useState(false);
   const [selectedModel, setSelectedModel] = useState<"gemini" | "claude">(
     "gemini"
   );
+  const [hubspotMode, setHubspotMode] = useState<boolean>(false);
   const [theme, setTheme] = useState<
     "neumorphism" | "glassmorphism" | "claymorphism"
   >("neumorphism");
   const [accentColor, setAccentColor] = useState<AccentColor>("rose");
+  const [d4mAccentColor, setD4mAccentColor] = useState<AccentColor>("rose");
+
+  // Overlay state for slash commands
+  const [slashActive, setSlashActive] = useState(false);
+  const [slashFilter, setSlashFilter] = useState("");
+
+  // HubSpot commands (should match CommandInputArea)
+  const hubspotSlashCommands = [
+    {
+      command: "contact",
+      description: "Manage Contacts (Get, Create, Update...)",
+    },
+    {
+      command: "company",
+      description: "Manage Companies (Get, Create, Update...)",
+    },
+    { command: "deal", description: "Manage Deals (Get, Create, Update...)" },
+    { command: "ticket", description: "Manage Tickets (Get, Create...)" },
+    { command: "task", description: "Manage Tasks (Get, Create...)" },
+    { command: "note", description: "Add Notes to records" },
+    { command: "meeting", description: "Schedule or Log Meetings" },
+    { command: "call", description: "Log Calls" },
+    {
+      command: "search",
+      description: "Advanced Search (Contacts, Companies...)",
+    },
+    { command: "list", description: "Get details of Contact/Company Lists" },
+    { command: "workflow", description: "Trigger Workflows or Enroll records" },
+    {
+      command: "associate",
+      description: "Associate records (e.g., Contact to Deal)",
+    },
+  ];
+  // Callback for slash command state from CommandInputArea
+
+  const handleSlashCommandStateChange = (
+    active: boolean,
+    filter: string
+  ): void => {
+    setSlashActive(active);
+    setSlashFilter(filter);
+  };
   const [mode, setMode] = useState<"light" | "dark">("dark");
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isChatListOpen, setIsChatListOpen] = useState(false); // Add state for ChatListModal
-  const [currentAnimation, setCurrentAnimation] =
-    useState<"starfallCascade">("starfallCascade");
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [showCommandPopup, setShowCommandPopup] = useState(false);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [toast, setToast] = useState<{
     message: string;
     type: "success" | "info" | "error";
   } | null>(null);
-  const [liveTranscript, setLiveTranscript] = useState<TranscriptLine[]>([]);
-
-  const { startRecording, stopRecording } = useDeepgramLive({
-    apiKey: "0f7e30b6546822958e971a12c1a4215bccceabb5",
-    onTranscript: (line) => {
-      setLiveTranscript((prev) => [...prev, line]);
-    },
-  });
+  const [hasHubspotApiKey, setHasHubspotApiKey] = useState<boolean>(false);
+  // No need for a separate state for currentTheme, we'll derive it directly
+  // Just save the theme name and mode, and compute currentTheme when needed
+  // Refs
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const selectedCommandRef = useRef<HTMLDivElement>(null);
   const widgetContainerRef = useRef<HTMLDivElement>(null);
-  const suggestions = [
-    "Open a new tab with Google",
-    "Summarize this page",
-    "Extract text from this page",
-    "Search for 'AI tools' on Bing",
-    "Navigate to x.com",
-    "Click the first link on the page",
-    "Fill form with my details",
-    "Scroll to the bottom of the page",
-    "show me the code that is displayed on the screen",
-  ];
 
+  // Handlers
+  const handleInputFocus = useCallback(() => {
+    handleFocus(setIsInputAreaFocused, setShowCommandPopup)();
+  }, [setIsInputAreaFocused, setShowCommandPopup]);
+
+  const handleInputBlur = useCallback(() => {
+    handleBlur(setIsInputAreaFocused, setShowCommandPopup)();
+  }, [setIsInputAreaFocused, setShowCommandPopup]);
+
+  const handleSuggestionClick = useCallback(
+    (suggestion: string) => {
+      handleChipClick(suggestion, setInput, setSelectedCommand);
+    },
+    [setInput, setSelectedCommand]
+  );
+
+  const handleInputSubmit = useCallback(() => {
+    originalHandleSubmit(
+      input,
+      selectedCommand,
+      isLoading,
+      setInput,
+      setSelectedCommand,
+      setError,
+      setIsLoading,
+      setShowCommandPopup,
+      setCommandHistory,
+      setHistoryIndex,
+      setMessages,
+      setToast,
+      setIsInputAreaFocused,
+      selectedModel,
+      hubspotMode
+    );
+  }, [
+    input,
+    selectedCommand,
+    isLoading,
+    setInput,
+    setSelectedCommand,
+    setError,
+    setIsLoading,
+    setShowCommandPopup,
+    setCommandHistory,
+    setHistoryIndex,
+    setMessages,
+    selectedModel,
+    setToast,
+    setIsInputAreaFocused,
+    hubspotMode,
+  ]);
+
+  const handleStopClick = useCallback(() => {
+    handleStop(setIsLoading, setMessages, setError, setToast)();
+  }, [setIsLoading, setMessages, setError, setToast]);
+
+  const handleNewChatClick = useCallback(() => {
+    handleNewChat(
+      setMessages,
+      setProcessedMessages,
+      setError,
+      setIsLoading,
+      setToast
+    )();
+  }, [setMessages, setProcessedMessages, setError, setIsLoading, setToast]);
+
+  const handleToggleExecution = useCallback(
+    (index: number) => {
+      toggleExecutionGroup(index, setExpandedExecutions);
+    },
+    [setExpandedExecutions]
+  );
+
+  // --- Effects ---
+
+  // Effect 1: Load initial state from chrome.storage on component mount
   useEffect(() => {
-    const loadInitialState = async () => {
+    const loadState = async () => {
+      console.log("[ChatWidget] Loading initial state...");
       try {
-        const {
-          conversationHistory,
-          commandHistory,
-          theme,
-          accentColor,
-          mode,
-        } = await chrome.storage.local.get([
+        // Fetch multiple keys at once
+        const data = await chrome.storage.local.get([
           "conversationHistory",
+          "d4mConversationHistory",
+          "hubspotConversationHistory",
           "commandHistory",
           "theme",
           "accentColor",
+          "d4mAccentColor",
           "mode",
+          "selectedModel",
+          "hubspotMode",
         ]);
-        if (Array.isArray(conversationHistory))
-          setMessages(formatMessages(conversationHistory));
-        if (Array.isArray(commandHistory)) setCommandHistory(commandHistory);
-        if (theme) setTheme(theme);
-        if (accentColor) setAccentColor(accentColor);
-        if (mode) setMode(mode);
+        console.log("[ChatWidget] Loaded state data:", data);
+
+        // Set basic UI state from storage
+        if (Array.isArray(data.commandHistory))
+          setCommandHistory(data.commandHistory);
+        setTheme(data.theme || "neumorphism");
+        setMode(data.mode || "light"); // Default to light mode
+        setSelectedModel(
+          ["gemini", "claude"].includes(data.selectedModel)
+            ? data.selectedModel
+            : "gemini"
+        );
+        setD4mAccentColor(data.d4mAccentColor || data.accentColor || "rose"); // Load D4M color, fallback to accent, then rose
+
+        const initialHubspotMode = data.hubspotMode ?? false;
+        setHubspotMode(initialHubspotMode);
+
+        // Set the active accentColor based on the mode
+        if (initialHubspotMode) {
+          setAccentColor("white");
+
+          // Load appropriate conversation history based on mode
+          if (
+            Array.isArray(data.hubspotConversationHistory) &&
+            data.hubspotConversationHistory.length > 0
+          ) {
+            console.log("[ChatWidget] Loading Hubspot conversation history");
+            setMessages(formatMessages(data.hubspotConversationHistory));
+            // Also set as active conversation
+            chrome.storage.local.set({
+              conversationHistory: data.hubspotConversationHistory,
+            });
+          } else if (Array.isArray(data.conversationHistory)) {
+            // Fallback to generic conversation history if mode-specific one doesn't exist
+            console.log(
+              "[ChatWidget] No Hubspot history found, using generic conversation history"
+            );
+            setMessages(formatMessages(data.conversationHistory));
+          }
+        } else {
+          // D4M mode: use D4M accent color
+          setAccentColor(data.d4mAccentColor || data.accentColor || "rose");
+
+          // Load D4M conversation history
+          if (
+            Array.isArray(data.d4mConversationHistory) &&
+            data.d4mConversationHistory.length > 0
+          ) {
+            console.log("[ChatWidget] Loading D4M conversation history");
+            setMessages(formatMessages(data.d4mConversationHistory));
+            // Also set as active conversation
+            chrome.storage.local.set({
+              conversationHistory: data.d4mConversationHistory,
+            });
+          } else if (Array.isArray(data.conversationHistory)) {
+            // Fallback to generic conversation history if mode-specific one doesn't exist
+            console.log(
+              "[ChatWidget] No D4M history found, using generic conversation history"
+            );
+            setMessages(formatMessages(data.conversationHistory));
+          }
+        }
+
+        console.log("[ChatWidget] Initial state set.");
       } catch (err) {
-        console.error("Error loading initial state:", err);
+        console.error("[ChatWidget] Error loading initial state:", err);
+        setError("Failed to load initial state.");
       }
     };
+    loadState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty dependency array ensures this runs only once on mount
 
-    const handleStorageChange = (
-      changes: { [key: string]: chrome.storage.StorageChange },
-      areaName: string
-    ) => {
-      if (areaName !== "local") return;
-      if (changes.conversationHistory) {
-        if (Array.isArray(changes.conversationHistory))
-          setMessages(formatMessages(changes.conversationHistory));
-      }
-      if (changes.commandHistory) {
-        const newCommands = changes.commandHistory.newValue || [];
-        setCommandHistory(newCommands);
-      }
-    };
-
-    loadInitialState();
-    chrome.storage.onChanged.addListener(handleStorageChange);
-    return () => chrome.storage.onChanged.removeListener(handleStorageChange);
-  }, []);
-
-  const loadSettings = async () => {
+  // Effect 2: Check HubSpot API Key Status
+  const checkHubspotApiKey = useCallback(async () => {
+    console.log("[ChatWidget] Checking HubSpot API key status...");
     try {
-      const { conversationHistory, theme, accentColor, mode, commandHistory } =
-        await storage.get([
-          "conversationHistory",
-          "theme",
-          "accentColor",
-          "mode",
-          "commandHistory",
-        ]);
-      if (conversationHistory && Array.isArray(conversationHistory))
-        setMessages(formatMessages(conversationHistory));
-      if (commandHistory && Array.isArray(commandHistory))
-        setCommandHistory(commandHistory);
-      setTheme(theme || "neumorphism");
-      setAccentColor(accentColor || "rose");
-      setMode(mode || "dark");
+      const config = await loadHubSpotConfig();
+      const keyExists = !!config?.apiKey;
+      setHasHubspotApiKey(keyExists);
+      console.log("[ChatWidget] HubSpot API key status:", keyExists);
     } catch (err) {
-      console.error("[ChatWidget] Failed to load data from storage:", err);
-      setError("Failed to load conversation history or settings.");
+      console.error("[ChatWidget] Failed to check Hubspot API key:", err);
+      setHasHubspotApiKey(false); // Assume no key on error
     }
-  };
-
-  function formatMessages(messages: Message[]): Message[] {
-    return messages
-      .filter((msg) => {
-        if (msg.role === "execution") {
-          return Array.isArray(msg.content) && msg.content.length > 0;
-        }
-        if (msg.role === "model" && typeof msg.content === "string") {
-          try {
-            const parsed = JSON.parse(msg.content);
-            return !!parsed?.action?.[0]?.done?.output;
-          } catch {
-            return true;
-          }
-        }
-        return true;
-      })
-      .map((msg) => {
-        if (msg.role === "model" && typeof msg.content === "string") {
-          try {
-            const parsed = JSON.parse(msg.content);
-            if (parsed?.action?.[0]?.done?.output) {
-              return { ...msg, content: parsed.action[0].done.output };
-            }
-          } catch {
-            // Leave as-is if not JSON
-          }
-        }
-        return msg;
-      });
-  }
+  }, []); // No dependencies needed for this callback itself
 
   useEffect(() => {
-    loadSettings();
-  }, []);
+    checkHubspotApiKey(); // Check on mount
+  }, [checkHubspotApiKey]); // Re-run if the checking function itself changes (unlikely)
 
+  // Re-check key specifically when HubSpot mode is enabled
   useEffect(() => {
-    const scrollToBottom = () => {
-      if (messagesContainerRef.current)
-        messagesContainerRef.current.scrollTop =
-          messagesContainerRef.current.scrollHeight;
-    };
-    scrollToBottom();
-  }, [processedMessages, isLoading, error]);
+    if (hubspotMode) {
+      console.log("[ChatWidget] HubSpot mode enabled, re-checking API key...");
+      checkHubspotApiKey();
+    }
+  }, [hubspotMode, checkHubspotApiKey]);
 
-  const processMessages = (msgs: Message[]) => {
+  // Effect 3: Process raw messages into grouped/structured messages for display
+  const processMessages = useCallback((msgs: Message[]) => {
+    console.log("[ChatWidget] Processing messages for display...");
     const processed: ProcessedMessage[] = [];
     let currentModelGroup: Message[] = [];
-    msgs.forEach((message) => {
+
+    msgs.forEach((message, msgIndex) => {
+      if (!message) {
+        // Add a check for potentially null/undefined messages
+        console.warn(
+          `[ChatWidget] Null or undefined message encountered at index ${msgIndex}`
+        );
+        return; // Skip this message
+      }
+
       if (message.role === "model") {
-        if (currentModelGroup.length === 0)
-          currentModelGroup.push({
-            ...message,
-            id: message.id || Date.now().toString(),
-          });
-        else currentModelGroup.push(message);
+        // Ensure message has an ID, generate if missing
+        currentModelGroup.push({
+          ...message,
+          id: message.id || `msg-${Date.now()}-${msgIndex}`,
+        });
       } else if (
         message.role === "execution" &&
         Array.isArray(message.content)
       ) {
+        // Finalize previous model group
         if (currentModelGroup.length > 0) {
+          // Use ID of the first message in the group as timestamp anchor
           processed.push({
             type: "modelGroup",
             messages: currentModelGroup,
@@ -233,16 +362,14 @@ export function ChatWidget() {
           });
           currentModelGroup = [];
         }
+        // Add execution group if it has content
         const taskHistories = message.content as StepState[];
-        if (
-          taskHistories.length > 0 &&
-          taskHistories.some(
-            (task) => task.step_number || task.description || task.status
-          )
-        ) {
+        if (taskHistories.length > 0) {
           processed.push({ type: "executionGroup", taskHistories });
         }
       } else {
+        // User message or other single types
+        // Finalize previous model group
         if (currentModelGroup.length > 0) {
           processed.push({
             type: "modelGroup",
@@ -251,721 +378,905 @@ export function ChatWidget() {
           });
           currentModelGroup = [];
         }
-        processed.push({ type: "single", message });
+        processed.push({
+          type: "single",
+          message: {
+            ...message,
+            id: message.id || `msg-${Date.now()}-${msgIndex}`,
+          },
+        }); // Ensure ID
       }
     });
-    if (currentModelGroup.length > 0)
+    // Finalize any trailing model group
+    if (currentModelGroup.length > 0) {
       processed.push({
         type: "modelGroup",
         messages: currentModelGroup,
         timestamp: currentModelGroup[0].id,
       });
-    setProcessedMessages(processed.reverse());
-  };
+    }
 
-  useEffect(() => {
-    const handleBackgroundMessage = (
-      message: any,
-      _sender: chrome.runtime.MessageSender,
-      sendResponse: (response: any) => void
-    ) => {
-      console.log("[ChatWidget] Received message:", message);
-      if (message.type === "MEMORY_UPDATE") {
-        const memory = message.response;
-        if (memory) {
-          const steps = memory.steps as StepState[];
-          setMessages((prev) => {
-            const updatedMessages =
-              prev.length > 0 && prev[prev.length - 1].role === "execution"
-                ? [
-                    ...prev.slice(0, -1),
-                    { ...prev[prev.length - 1], content: steps },
-                  ]
-                : [
-                    ...prev,
-                    {
-                      id: Date.now().toString(),
-                      role: "execution" as const,
-                      content: steps,
-                    },
-                  ];
-            chrome.storage.local.set({ conversationHistory: updatedMessages });
-            return updatedMessages;
-          });
-        }
-        sendResponse({ success: true });
-      } else if (message.type === "COMMAND_RESPONSE") {
-        let content: string;
-        if (typeof message.response === "string") {
-          content = message.response;
-        } else if (message.response.message) {
-          content = message.response.message;
-          if (message.response.output)
-            content += "\n\n" + message.response.output;
-        } else {
-          const { data } = message.response;
-          const { text, output } = data || {};
-          content = (text || "Task completed") + (output || "");
-        }
-        setMessages((prev) => {
-          const updatedMessages = [
-            ...prev,
-            { id: Date.now().toString(), role: "model" as const, content },
-          ];
-          chrome.storage.local.set({ conversationHistory: updatedMessages });
-          return updatedMessages;
-        });
-        setIsLoading(false);
-        sendResponse({ success: true });
-      } else if (message.type === "FINISH_PROCESS_COMMAND") {
-        setToast({ message: message.response, type: "success" });
-        setIsLoading(false);
-        sendResponse({ success: true });
-      } else if (message.type === "UPDATE_SIDEPANEL") {
-        if (message.question) {
-          setMessages((prev) => {
-            const updatedMessages = [
-              ...prev,
-              {
-                id: Date.now().toString(),
-                role: "model" as const,
-                content: message.question,
-              },
-            ];
-            chrome.storage.local.set({ conversationHistory: updatedMessages });
-            return updatedMessages;
-          });
-          sendResponse({ success: true });
-        }
-      }
-      return true;
-    };
-    chrome.runtime.onMessage.addListener(handleBackgroundMessage);
-    return () =>
-      chrome.runtime.onMessage.removeListener(handleBackgroundMessage);
-  }, []);
+    // Reverse the final array for display with flex-col-reverse
+    setProcessedMessages(processed.reverse());
+    console.log("[ChatWidget] Messages processed.", processed);
+  }, []); // Add dependencies if this callback uses external state/props, currently none
 
   useEffect(() => {
     processMessages(messages);
-  }, [messages]);
 
+    // Extract the latest task histories from messages
+    const executionMessages = messages.filter(
+      (msg) => msg.role === "execution" && Array.isArray(msg.content)
+    );
+    if (executionMessages.length > 0) {
+      // Get the most recent execution message
+      const latestExecution = executionMessages[executionMessages.length - 1];
+      setTaskHistories(latestExecution.content as StepState[]);
+    } else {
+      setTaskHistories([]);
+    }
+  }, [messages, processMessages]); // Re-process whenever raw messages change
+
+  // Effect 4: Scroll messages container to show the latest message
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (container) {
+      // For flex-col-reverse, scrolling to the top shows the latest message (at the bottom visually)
+      if (container.scrollTop !== 0) {
+        // Only scroll if not already at top
+        console.log("[ChatWidget] Scrolling message container to top.");
+        container.scrollTop = 0;
+      }
+    }
+    // Trigger scroll when processed messages change, loading starts/stops, or an error occurs
+  }, [processedMessages, isLoading, error]);
+
+  // Effect 5: Listen for messages from the background script
+  useEffect(() => {
+    const handleBackgroundMessage = (
+      message: any, // Consider defining a more specific type for background messages
+      _sender: chrome.runtime.MessageSender,
+      sendResponse: (response?: any) => void
+    ) => {
+      console.log(
+        `[ChatWidget] Received background message: ${message?.type}`,
+        message
+      );
+
+      let messageHandled = false; // Flag to check if any handler processed the message
+
+      try {
+        // Add try-catch block for safety within the listener
+        if (message?.type === "MEMORY_UPDATE") {
+          const steps = message.response?.steps as StepState[] | undefined;
+          if (steps) {
+            console.log("[ChatWidget] Handling MEMORY_UPDATE");
+            setMessages((prev) => {
+              const lastMsg = prev[prev.length - 1];
+              let updatedMessages: Message[];
+              // If last message was execution, update its content; otherwise add new execution message
+              if (lastMsg?.role === "execution") {
+                updatedMessages = [
+                  ...prev.slice(0, -1),
+                  { ...lastMsg, content: steps },
+                ];
+              } else {
+                updatedMessages = [
+                  ...prev,
+                  {
+                    id: Date.now().toString(),
+                    role: "execution",
+                    content: steps,
+                  },
+                ];
+              }
+              // Save to both the active conversation and mode-specific storage
+              if (hubspotMode) {
+                chrome.storage.local.set({
+                  conversationHistory: updatedMessages,
+                  hubspotConversationHistory: updatedMessages,
+                }); // Persist to active and Hubspot storage
+              } else {
+                chrome.storage.local.set({
+                  conversationHistory: updatedMessages,
+                  d4mConversationHistory: updatedMessages,
+                }); // Persist to active and D4M storage
+              }
+              return updatedMessages;
+            });
+            messageHandled = true;
+          } else {
+            console.warn(
+              "[ChatWidget] MEMORY_UPDATE received without valid steps data."
+            );
+          }
+        } else if (message?.type === "COMMAND_RESPONSE") {
+          console.log("[ChatWidget] Handling COMMAND_RESPONSE");
+          setIsLoading(false); // Stop loading on any command response
+          const responseData = message.response;
+
+          if (responseData) {
+            // Check if responseData exists
+            let newMessage: Message | null = null;
+
+            // Check if it's a HubSpot API response that needs to be displayed as a card
+            const isHubspotResult =
+              typeof responseData === "object" &&
+              (responseData.success === true ||
+                responseData.success === false) &&
+              (responseData.functionName?.includes("hubspot") ||
+                message.source === "hubspot" ||
+                (responseData.details &&
+                  typeof responseData.details === "object"));
+
+            if (isHubspotResult) {
+              console.log(
+                "[ChatWidget] Processing HubSpot API response:",
+                responseData
+              );
+              // Force the response into the right structure for a card
+              if (responseData.success === true) {
+                // Create a structured message for HubSpot success
+                newMessage = {
+                  id: Date.now().toString(),
+                  role: "model",
+                  type: "hubspot_success",
+                  content: responseData as HubSpotExecutionResult, // Store the whole object
+                };
+                console.log(
+                  `[ChatWidget] Created hubspot_success card message.`
+                );
+              } else {
+                // Create a properly structured message for HubSpot error
+                // For debugging
+                console.log(
+                  "[ChatWidget] Creating hubspot_error with data:",
+                  responseData
+                );
+
+                // Extract details and ensure it's a string for display
+                let detailsString = "";
+                try {
+                  if (responseData.details) {
+                    detailsString =
+                      typeof responseData.details === "string"
+                        ? responseData.details
+                        : JSON.stringify(responseData.details, null, 2);
+                  } else {
+                    // If no details, use the full response for debugging
+                    detailsString = JSON.stringify(responseData, null, 2);
+                  }
+                } catch (err) {
+                  console.error("Error stringifying details:", err);
+                  detailsString = "Error parsing details";
+                }
+
+                // Create message with properly formatted properties
+                newMessage = {
+                  id: Date.now().toString(),
+                  role: "model",
+                  type: "hubspot_error",
+                  // Ensure all required properties are explicitly set
+                  errorType: responseData.errorType || "general",
+                  message:
+                    responseData.error ||
+                    "An error occurred with the HubSpot operation",
+                  details: detailsString,
+                  status: responseData.status || 0,
+                  // Use undefined instead of null to comply with the type definition
+                  content: undefined,
+                };
+
+                console.log(
+                  `[ChatWidget] Created hubspot_error card message:`,
+                  newMessage
+                );
+              }
+            } else if (typeof responseData === "object") {
+              // Check for specific message types
+              if (responseData.type === "question") {
+                // This is an "ask" action from AI
+                newMessage = {
+                  id: Date.now().toString(),
+                  role: "model",
+                  type: "question",
+                  content: responseData.message,
+                };
+                console.log(
+                  `[ChatWidget] Created question message: "${responseData.message}"`
+                );
+              } else if (responseData.type === "completion") {
+                // This is a "done" action from AI
+                newMessage = {
+                  id: Date.now().toString(),
+                  role: "model",
+                  type: "completion",
+                  content:
+                    responseData.message +
+                    (responseData.output ? `: ${responseData.output}` : ""),
+                };
+                console.log(
+                  `[ChatWidget] Created completion message: "${responseData.message}"`
+                );
+              } else if (
+                responseData.success === false ||
+                !!responseData.error
+              ) {
+                // Create a properly structured message for HubSpot error
+                newMessage = {
+                  id: Date.now().toString(),
+                  role: "model",
+                  type: "hubspot_error",
+                  // Ensure all required properties are present for HubspotErrorCard
+                  errorType: responseData.errorType || "general",
+                  message: responseData.error || "An error occurred",
+                  details: responseData.details || responseData,
+                  status: responseData.status || 0,
+                  content: responseData as HubSpotExecutionResult, // Also store the full object
+                };
+                console.log(
+                  `[ChatWidget] Created structured hubspot_error message:`,
+                  newMessage
+                );
+              } else if (
+                Array.isArray(responseData) &&
+                responseData.length > 0 &&
+                responseData[0]?.functionCall
+              ) {
+                // This is a raw function call array from Gemini - don't display as raw JSON
+                console.log(
+                  "[ChatWidget] Detected raw function call array:",
+                  responseData
+                );
+
+                // Extract a user-friendly message
+                let friendlyMessage = "Processing your request...";
+
+                // Look for Hubspot actions specifically
+                const hubspotAction = responseData.find((item) =>
+                  item?.functionCall?.name?.includes("hubspot_")
+                );
+
+                if (hubspotAction) {
+                  const functionName = hubspotAction.functionCall.name.replace(
+                    "hubspot_",
+                    ""
+                  );
+                  const args = hubspotAction.functionCall.args;
+
+                  // Create a friendly message based on the action
+                  if (functionName.includes("create")) {
+                    const entityType = functionName
+                      .replace("create", "")
+                      .toLowerCase();
+                    friendlyMessage = `Creating ${entityType} with the provided information...`;
+                  } else if (functionName.includes("get")) {
+                    const entityType = functionName
+                      .replace("get", "")
+                      .toLowerCase();
+                    friendlyMessage = `Retrieving ${entityType} information...`;
+                  } else if (functionName.includes("update")) {
+                    const entityType = functionName
+                      .replace("update", "")
+                      .toLowerCase();
+                    friendlyMessage = `Updating ${entityType} with the provided information...`;
+                  } else {
+                    friendlyMessage = `Processing ${functionName
+                      .replace(/([A-Z])/g, " $1")
+                      .toLowerCase()} request...`;
+                  }
+                }
+
+                newMessage = {
+                  id: Date.now().toString(),
+                  role: "model",
+                  content: friendlyMessage,
+                };
+                console.log(
+                  `[ChatWidget] Created friendly model message: "${friendlyMessage}"`
+                );
+              } else {
+                // Fallback for other object structures - try to get meaningful text
+                let contentText =
+                  responseData.message ||
+                  responseData.output ||
+                  responseData.text ||
+                  (typeof responseData === "object"
+                    ? "Processing your request..." // Don't stringify objects
+                    : JSON.stringify(responseData));
+
+                newMessage = {
+                  id: Date.now().toString(),
+                  role: "model",
+                  content: contentText,
+                };
+                console.log(
+                  "[ChatWidget] Created fallback model message from object."
+                );
+              }
+            } else if (typeof responseData === "string") {
+              // Handle plain string response
+              newMessage = {
+                id: Date.now().toString(),
+                role: "model",
+                content: responseData,
+              };
+              console.log("[ChatWidget] Created model message from string.");
+            }
+
+            // Add the new message to state if one was created
+            if (newMessage) {
+              setMessages((prev) => {
+                // Optional: Check for duplicate messages before adding
+                const lastMsgContent = prev[prev.length - 1]?.content;
+                if (
+                  JSON.stringify(lastMsgContent) ===
+                  JSON.stringify(newMessage!.content)
+                ) {
+                  console.warn(
+                    "[ChatWidget] Duplicate message content detected, skipping add."
+                  );
+                  return prev;
+                }
+                const updated = [...prev, newMessage!];
+                // Save to both the active conversation and mode-specific storage
+                if (hubspotMode) {
+                  chrome.storage.local.set({
+                    conversationHistory: updated,
+                    hubspotConversationHistory: updated,
+                  }); // Persist to active and Hubspot storage
+                } else {
+                  chrome.storage.local.set({
+                    conversationHistory: updated,
+                    d4mConversationHistory: updated,
+                  }); // Persist to active and D4M storage
+                }
+                return updated;
+              });
+            }
+          } else {
+            console.warn(
+              "[ChatWidget] COMMAND_RESPONSE received with null/undefined data."
+            );
+          }
+          messageHandled = true;
+        } else if (message?.type === "FINISH_PROCESS_COMMAND") {
+          console.log("[ChatWidget] Handling FINISH_PROCESS_COMMAND");
+          setIsLoading(false); // Ensure loading stops
+
+          // Process the response
+          const response = message.response;
+
+          // Handle HubSpot success response with card view
+          if (
+            typeof response === "object" &&
+            response.success === true &&
+            (response.functionName?.includes("hubspot") ||
+              message.source === "hubspot")
+          ) {
+            console.log(
+              "[ChatWidget] Processing HubSpot success response as card:",
+              response
+            );
+
+            // Create a data structure that HubspotSuccessCard can properly display
+            const hubspotResponse = {
+              success: true,
+              functionName: response.functionName || "hubspot_operation",
+              message: response.message || "Operation completed successfully",
+              // Ensure we have a details object with the full API response
+              details: response.data || response.details || response,
+            };
+
+            // Add a structured message for display in the chat
+            setMessages((prev) => {
+              // Create a properly typed message with correct structure
+              const newMessage: Message = {
+                id: Date.now().toString(),
+                role: "model", // Must be 'model' not just string
+                type: "hubspot_success", // This must be a valid type
+                content: hubspotResponse as HubSpotExecutionResult, // Ensure proper typing
+              };
+              const updated = [...prev, newMessage];
+              // Save to both the active conversation and mode-specific storage
+              if (hubspotMode) {
+                chrome.storage.local.set({
+                  conversationHistory: updated,
+                  hubspotConversationHistory: updated,
+                }); // Persist to active and Hubspot storage
+              } else {
+                chrome.storage.local.set({
+                  conversationHistory: updated,
+                  d4mConversationHistory: updated,
+                }); // Persist to active and D4M storage
+              }
+              return updated;
+            });
+
+            // Skip toast since we're showing a card
+            console.log("[ChatWidget] Added hubspot_success card to messages");
+          } else {
+            // For non-card responses, just show a toast
+            const msg =
+              typeof response === "string"
+                ? response
+                : response?.message || "Task completed";
+            setToast({ message: msg, type: "success" });
+          }
+
+          messageHandled = true;
+        }
+        // Handle UPDATE_SIDEPANEL messages sent by the background script
+        else if (message?.type === "UPDATE_SIDEPANEL" && message.question) {
+          console.log(
+            "[ChatWidget] Handling UPDATE_SIDEPANEL with question:",
+            message.question
+          );
+          setIsLoading(false); // Stop loading indicator
+
+          // Create a question message
+          const newMessage: Message = {
+            id: Date.now().toString(),
+            role: "model",
+            type: "question",
+            content: message.question,
+          };
+
+          // Add the question to the chat
+          setMessages((prev) => {
+            const updated = [...prev, newMessage];
+            // Save to both the active conversation and mode-specific storage
+            if (hubspotMode) {
+              chrome.storage.local.set({
+                conversationHistory: updated,
+                hubspotConversationHistory: updated,
+              }); // Persist to active and Hubspot storage
+            } else {
+              chrome.storage.local.set({
+                conversationHistory: updated,
+                d4mConversationHistory: updated,
+              }); // Persist to active and D4M storage
+            }
+            return updated;
+          });
+
+          messageHandled = true;
+        }
+        // Add other message type handlers here (e.g., "ERROR_MESSAGE", "STATUS_UPDATE")
+      } catch (error) {
+        console.error(
+          "[ChatWidget] Error processing background message:",
+          message?.type,
+          error
+        );
+        // Optionally set a general error state or toast
+        setError("Error processing background message.");
+      }
+
+      // Indicate if the message was handled (important for async responses)
+      // If messageHandled is true, Chrome knows to keep the message channel open for a potential async sendResponse.
+      // If false, the channel closes immediately after this function returns.
+      if (messageHandled) {
+        // If your handlers might need to send an async response later, return true.
+        // If they always respond synchronously (or don't respond), you can omit sendResponse/return true.
+        // sendResponse({ack: true}); // Example sync response
+        return true; // Keep channel open for potential async response from handlers
+      } else {
+        console.log(
+          "[ChatWidget] Background message type not handled:",
+          message?.type
+        );
+        // No handler matched, send default sync response or do nothing
+        sendResponse(); // Close channel immediately
+        return false;
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(handleBackgroundMessage);
+    // Cleanup function to remove the listener when the component unmounts
+    return () => {
+      console.log("[ChatWidget] Removing background message listener.");
+      chrome.runtime.onMessage.removeListener(handleBackgroundMessage);
+    };
+    // Add dependencies used within the listener's scope (setters mainly)
+  }, [setIsLoading, setError, setToast, setMessages]);
+
+  // Effect 6: Apply Siri border effect using the hook
   useSiriBorderWithRef(isLoading, "16px");
 
+  // Effect 7: Listen for storage changes (for mode sync across components)
   useEffect(() => {
-    if (selectedCommandRef.current) {
-      selectedCommandRef.current.scrollIntoView({ block: "nearest" });
-    }
-  }, [historyIndex]);
+    const handleStorageChange = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string
+    ) => {
+      console.log(
+        "[ChatWidget] Storage change detected:",
+        changes,
+        "in",
+        areaName
+      );
 
-  const currentTheme = themeStyles[theme][mode];
+      // Check if mode was changed (by SettingsPage or other components)
+      if (changes.mode && changes.mode.newValue !== undefined) {
+        console.log(`[ChatWidget] Mode changed to: ${changes.mode.newValue}`);
+        setMode(changes.mode.newValue);
+      }
+
+      // Check if theme was changed
+      if (changes.theme && changes.theme.newValue !== undefined) {
+        console.log(`[ChatWidget] Theme changed to: ${changes.theme.newValue}`);
+        setTheme(changes.theme.newValue);
+      }
+
+      // Check if accent color was changed
+      if (changes.accentColor && changes.accentColor.newValue !== undefined) {
+        console.log(
+          `[ChatWidget] Accent color changed to: ${changes.accentColor.newValue}`
+        );
+        setAccentColor(changes.accentColor.newValue);
+      }
+    };
+
+    // Add listener for both local and sync storage
+    chrome.storage.onChanged.addListener(handleStorageChange);
+
+    // Cleanup
+    return () => {
+      chrome.storage.onChanged.removeListener(handleStorageChange);
+    };
+  }, []); // Empty dependency array as we want this to run once and stay active
+
+  // Effect 8: Apply HubSpot pulse animation CSS (runs once)
+  useEffect(() => {
+    const styleId = "hubspot-pulse-animation";
+    if (document.getElementById(styleId)) return; // Prevent adding multiple times
+    const styleEl = document.createElement("style");
+    styleEl.id = styleId;
+    styleEl.innerHTML = `
+         @keyframes pulseAndShine {
+           0% { box-shadow: 0 0 8px 1px rgba(255, 120, 28, 0.4); transform: translateY(0) scale(1); }
+           50% { box-shadow: 0 0 16px 4px rgba(255, 120, 28, 0.6); transform: translateY(-2px) scale(1.03); }
+           100% { box-shadow: 0 0 8px 1px rgba(255, 120, 28, 0.4); transform: translateY(0) scale(1); }
+         }
+       `;
+    document.head.appendChild(styleEl);
+    // Cleanup function (optional, but good practice)
+    return () => {
+      const existingStyle = document.getElementById(styleId);
+      if (existingStyle) {
+        document.head.removeChild(existingStyle);
+      }
+    };
+  }, []); // Empty dependency array ensures this runs only once
+
+  // Effect 8: Scroll selected history item into view (if history nav implemented)
+  useEffect(() => {
+    if (historyIndex !== null && selectedCommandRef.current) {
+      console.log(
+        "[ChatWidget] Scrolling history item into view:",
+        historyIndex
+      );
+      selectedCommandRef.current.scrollIntoView({
+        block: "nearest",
+        behavior: "smooth",
+      });
+    }
+  }, [historyIndex]); // Trigger only when historyIndex changes
+
+  // --- Helper Functions ---
+
+  // Formats raw messages (basic filtering, can be expanded)
+  function formatMessages(msgs: Message[]): Message[] {
+    if (!Array.isArray(msgs)) return []; // Handle case where msgs isn't an array
+    // Filter out any potentially invalid message entries
+    return msgs.filter(
+      (msg) =>
+        msg &&
+        (typeof msg.content === "string"
+          ? msg.content.trim()
+          : msg.content !== undefined && msg.content !== null)
+    );
+  }
+
+  // Compute current theme directly from mode/theme settings instead of using a separate state
+  const currentTheme = hubspotMode
+    ? hubspotTheme[mode]
+    : themeStyles[theme][mode];
   const textColor =
     mode === "light" ? "d4m-text-gray-800" : "d4m-text-gray-200";
-  const borderColor =
-    mode === "light" ? "d4m-border-gray-300" : "d4m-border-gray-700";
 
+  // --- JSX ---
   return (
     <React.Fragment>
+      {/* Main Widget Container */}
       <div
-        ref={widgetContainerRef}
-        className={`d4m-w-full d4m-h-full d4m-flex d4m-flex-col ${currentTheme.container} d4m-relative`}
+        ref={widgetContainerRef} // Ref for Siri border hook
+        className={`d4m-w-full d4m-h-full d4m-flex d4m-flex-col ${
+          currentTheme?.container || "d4m-bg-gray-800 d4m-text-gray-200"
+        } d4m-relative d4m-overflow-hidden`} // Use theme, flex column, hide overflow with fallback
+        role="log" // ARIA role for chat log area
+        aria-live="polite" // Announce changes politely
       >
-        {isTextareaFocused && (
-          <div
-            className={`d4m-absolute d4m-inset-0 d4m-backdrop-blur-[0.6px] d4m-bg-opacity-80 d4m-z-10 ${
-              mode === "light" ? "d4m-bg-gray-200" : "d4m-bg-gray-900"
-            }`}
-          ></div>
-        )}
+        {/* Header Section using the new ComponentHeader */}
+        <ComponentHeader
+          activeTab="chatWidget"
+          mode={mode}
+          onModeToggle={() => {
+            // Toggle mode
+            const newMode = mode === "light" ? "dark" : "light";
+            setMode(newMode);
 
-        <div
-          className={`d4m-flex d4m-justify-between d4m-items-center d4m-px-3 d4m-py-2 ${currentTheme.header}`}
-        >
-          <div
-            className={`d4m-text-sm d4m-font-bold d4m-text-${accentColor}-500`}
-          >
-            D4M Agent
-          </div>
-          <div className="d4m-flex d4m-items-center d4m-space-x-2">
-            <button
-              onClick={handleNewChat(
-                setMessages,
-                setProcessedMessages,
-                setError,
-                setIsLoading,
-                setToast
-              )}
-              className={`d4m-px-2 d4m-py-1 d4m-text-${accentColor}-400 d4m-text-sm d4m-rounded-lg ${currentTheme.button} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
-            >
-              New Chat
-            </button>
+            // Save to storage for persistence
+            chrome.storage.local.set({ mode: newMode });
+            chrome.storage.sync.set({ mode: newMode }); // Also sync for global preference
 
-            <div className="d4m-flex d4m-gap-2">
-              <button
-                onClick={toggleWatching(setIsWatching)}
-                className={`d4m-p-1 d4m-rounded-full d4m-bg-${accentColor}-400 d4m-text-white ${currentTheme.button} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
-              >
-                {isWatching ? (
-                  <Eye className="d4m-w-4 d4m-h-4" />
-                ) : (
-                  <EyeOff className="d4m-w-4 d4m-h-4" />
-                )}
-              </button>
-              <button
-                onClick={() => {
-                  setIsRecording(true);
-                  startRecording();
-                }}
-                className={`d4m-p-1 d4m-rounded-full d4m-bg-${accentColor}-400 d4m-text-white ${currentTheme.button} d4m-transition-transform d4m-duration-200 d4m-active:scale-95 d4m-cursor-pointer`}
-              >
-                <Mic className="d4m-w-4 d4m-h-4" />
-              </button>
-              <button
-                onClick={() => setIsSettingsOpen(true)}
-                className={`d4m-p-1 d4m-rounded-full d4m-bg-${accentColor}-400 d4m-text-white ${currentTheme.button} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
-              >
-                <Settings className="d4m-w-4 d4m-h-4" />
-              </button>
-              {/* Added Chat List Button */}
-              <button
-                onClick={() => setIsChatListOpen(true)}
-                className={`d4m-p-1 d4m-rounded-full d4m-bg-${accentColor}-400 d4m-text-white ${currentTheme.button} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
-                title="View Chat History"
-              >
-                <List className="d4m-w-4 d4m-h-4" /> {/* Use List icon */}
-              </button>
-            </div>
-          </div>
-        </div>
+            console.log(`[ChatWidget] Switched to ${newMode} mode`);
+          }}
+          accentColor={accentColor}
+          hubspotMode={hubspotMode}
+          d4mAccentColor={d4mAccentColor}
+          toggleD4MMode={() => {
+            if (!hubspotMode) return; // No change if already active
+
+            // Save current Hubspot chat before switching
+            chrome.storage.local.get(["conversationHistory"], (data) => {
+              if (
+                Array.isArray(data.conversationHistory) &&
+                data.conversationHistory.length > 0
+              ) {
+                chrome.storage.local.set({
+                  hubspotConversationHistory: data.conversationHistory,
+                });
+                console.log("[ChatWidget] Saved Hubspot conversation history");
+              }
+            });
+
+            // Switch to D4M mode
+            setHubspotMode(false);
+
+            // Restore visual state
+            const restoredColor = d4mAccentColor || "rose";
+            setAccentColor(restoredColor); // Restore D4M accent color
+
+            // Save mode state
+            chrome.storage.local.set({
+              hubspotMode: false,
+              accentColor: restoredColor,
+            }); // Save state
+            chrome.storage.sync.set({ hubspotMode: false }); // Sync preference if needed
+
+            // Restore previous D4M chat or start a new one
+            chrome.storage.local.get(["d4mConversationHistory"], (data) => {
+              if (
+                Array.isArray(data.d4mConversationHistory) &&
+                data.d4mConversationHistory.length > 0
+              ) {
+                setMessages(formatMessages(data.d4mConversationHistory));
+                chrome.storage.local.set({
+                  conversationHistory: data.d4mConversationHistory,
+                });
+                console.log("[ChatWidget] Restored D4M conversation history");
+              } else {
+                // Start a new chat if no history exists
+                setMessages([]);
+                setProcessedMessages([]);
+                chrome.storage.local.remove(["conversationHistory"]);
+                console.log(
+                  "[ChatWidget] Started new D4M chat (no history found)"
+                );
+              }
+            });
+          }}
+          toggleHubspotMode={() => {
+            if (hubspotMode) return; // No change if already active
+
+            // Save current D4M chat before switching
+            chrome.storage.local.get(["conversationHistory"], (data) => {
+              if (
+                Array.isArray(data.conversationHistory) &&
+                data.conversationHistory.length > 0
+              ) {
+                chrome.storage.local.set({
+                  d4mConversationHistory: data.conversationHistory,
+                });
+                console.log("[ChatWidget] Saved D4M conversation history");
+              }
+            });
+
+            // Save current D4M color before switching if it's not white
+            if (accentColor !== "white") setD4mAccentColor(accentColor);
+
+            // Switch to Hubspot mode
+            setHubspotMode(() => true);
+            setAccentColor("white"); // HubSpot visual mode uses white base
+
+            // Save mode state
+            chrome.storage.local.set({
+              hubspotMode: true,
+              accentColor: "white",
+              d4mAccentColor:
+                accentColor === "white" ? d4mAccentColor : accentColor,
+            }); // Save state
+            chrome.storage.sync.set({ hubspotMode: true }); // Sync preference if needed
+
+            // Restore previous Hubspot chat or start a new one
+            chrome.storage.local.get(["hubspotConversationHistory"], (data) => {
+              if (
+                Array.isArray(data.hubspotConversationHistory) &&
+                data.hubspotConversationHistory.length > 0
+              ) {
+                setMessages(formatMessages(data.hubspotConversationHistory));
+                chrome.storage.local.set({
+                  conversationHistory: data.hubspotConversationHistory,
+                });
+                console.log(
+                  "[ChatWidget] Restored Hubspot conversation history"
+                );
+              } else {
+                // Start a new chat if no history exists
+                setMessages([]);
+                setProcessedMessages([]);
+                chrome.storage.local.remove(["conversationHistory"]);
+                console.log(
+                  "[ChatWidget] Started new Hubspot chat (no history found)"
+                );
+              }
+            });
+          }}
+          additionalButtons={[
+            {
+              ...commonButtons.newChat,
+              onClick: handleNewChatClick,
+            },
+            // Add more buttons as needed based on tab
+          ]}
+        />
+
+        {/* Toast Notification Area */}
         {toast && (
           <ToastNotification
-            message={toast.message}
-            type={toast.type}
+            {...toast}
             onClose={() => setToast(null)}
-            duration={1000}
-            animationDuration={300}
+            duration={4000}
           />
         )}
+
+        {/* Messages Area (Scrollable) */}
         <div
           ref={messagesContainerRef}
-          className={`d4m-flex-1 d4m-overflow-y-auto d4m-space-y-4 d4m-px-3 d4m-py-2 d4m-bg-transparent d4m-scrollbar-thin d4m-relative ${
-            theme === "glassmorphism"
-              ? "d4m-scrollbar-thumb-gray-500/50"
-              : mode === "light"
-              ? "d4m-scrollbar-thumb-gray-400"
-              : "d4m-scrollbar-thumb-gray-600"
-          } d4m-flex d4m-flex-col-reverse`}
+          className={`d4m-flex-1 d4m-overflow-y-auto d4m-space-y-4 d4m-px-4 d4m-py-3 d4m-scrollbar-thin ${
+            // Adjusted padding
+            mode === "light"
+              ? "d4m-scrollbar-thumb-gray-300 hover:d4m-scrollbar-thumb-gray-400"
+              : "d4m-scrollbar-thumb-gray-600 hover:d4m-scrollbar-thumb-gray-500"
+          } d4m-flex d4m-flex-col-reverse d4m-relative d4m-z-0`} // flex-col-reverse displays newest at bottom
+          aria-label="Chat messages"
         >
-          {processedMessages.length === 0 &&
-            !isLoading &&
-            !isRecordingClicked && (
-              <div className="d4m-flex d4m-flex-col d4m-items-center d4m-justify-center d4m-text-center d4m-p-6 d4m-animate-fade-in d4m-h-full">
-                {" "}
-                {/* Ensure it can fill height */}
-                {/* Logo from public folder - ADJUST PATH/FILENAME IF NEEDED */}
-                <img
-                  src="/icons/icon128.png"
-                  alt="Agent Logo"
-                  className="d4m-w-16 d4m-h-16 d4m-mb-4 d4m-opacity-80"
-                />
-                <h2
-                  className={`d4m-text-lg d4m-font-semibold ${textColor} d4m-mb-2`}
-                >
-                  Welcome!
-                </h2>
-                <p className={`d4m-text-sm ${accentColor} d4m-mb-6`}>
-                  How can I assist you today?
-                </p>
-                <p
-                  className={`d4m-text-xs d4m-font-medium ${accentColor} d4m-mb-3`}
-                >
-                  Try an example:
-                </p>
-                <div className="d4m-flex d4m-flex-wrap d4m-gap-2 d4m-justify-center d4m-max-w-xs">
-                  {/* Map over your suggestions array */}
-                  {suggestions.slice(0, 4).map(
-                    (
-                      suggestion // Show first 4 suggestions
-                    ) => (
-                      <button
-                        key={suggestion}
-                        onClick={() =>
-                          handleChipClick(suggestion, setInput, textareaRef)
-                        }
-                        // Apply theme styles for consistency
-                        className={`d4m-text-xs ${currentTheme.suggestion} d4m-px-3 d4m-py-1 hover:d4m-opacity-80 d4m-transition-opacity d4m-rounded-full`}
-                      >
-                        {suggestion}
-                      </button>
-                    )
-                  )}
-                </div>
-              </div>
-            )}
-          {isRecordingClicked ? (
-            <RecordingMic
+          {/* Hubspot Command Options Overlay */}
+          <HubspotModularOptions
+            isVisible={
+              !!(
+                hubspotMode &&
+                isInputAreaFocused &&
+                (selectedCommand || slashActive)
+              )
+            }
+            mode={mode}
+            accentColor={accentColor}
+            selectedCommand={selectedCommand}
+            slashActive={slashActive}
+            slashFilter={slashFilter}
+            hubspotSlashCommands={hubspotSlashCommands}
+            hubspotModularTools={hubspotModularTools}
+          />
+          {/* Render Welcome Screen when no messages exist */}
+          {processedMessages.length === 0 && !isLoading && (
+            <WelcomeScreen
+              hubspotMode={hubspotMode}
+              hasHubspotApiKey={hasHubspotApiKey}
+              mode={mode}
               accentColor={accentColor}
               textColor={textColor}
-              onStop={() => {
-                stopRecording();
-                setIsRecording(false);
-              }}
-              transcript={liveTranscript}
+              currentTheme={currentTheme}
+              handleSuggestionClick={handleSuggestionClick}
             />
-          ) : (
-            <React.Fragment>
-              {processedMessages.map((item, index) => {
-                if (item.type === "single") {
-                  const message = item.message!;
-                  return (
-                    <div key={index} className="d4m-flex d4m-flex-col d4m-mb-4">
-                      <div
-                        className={`d4m-text-sm d4m-p-2 ${
-                          message.role === "user"
-                            ? `${currentTheme.messageBubble} ${textColor}`
-                            : "d4m-bg-transparent d4m-border-none"
-                        } ${textColor}`}
-                      >
-                        {message.role === "model" ? (
-                          <MarkdownWrapper
-                            content={message.content as string}
-                          />
-                        ) : (
-                          // Use linkifyUrls for user messages
-                          <span>{linkifyUrls(message.content as string)}</span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                } else if (item.type === "modelGroup") {
-                  const formatTimestamp = (timestamp?: string) => {
-                    if (!timestamp) return "";
-                    const date = new Date(parseInt(timestamp, 10));
-                    return isNaN(date.getTime())
-                      ? ""
-                      : date.toLocaleString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit",
-                          hour12: true,
-                        });
-                  };
-                  return (
-                    <div key={index} className="d4m-flex d4m-flex-col d4m-mb-4">
-                      {item.messages!.map((message, idx) => (
-                        <div
-                          key={idx}
-                          className="d4m-flex d4m-flex-col d4m-mb-1 d4m-relative group"
-                        >
-                          <div
-                            className={`d4m-text-sm d4m-p-2 d4m-bg-transparent d4m-border-none ${textColor}`}
-                          >
-                            <MarkdownWrapper
-                              content={message.content as string}
-                            />
-                          </div>
-                          {idx === 0 && item.timestamp && (
-                            <span
-                              className={`d4m-absolute d4m-top-0 d4m-left-0 d4m-text-xs ${
-                                mode === "light"
-                                  ? "d4m-text-gray-600"
-                                  : "d4m-text-gray-500"
-                              } d4m-opacity-0 group-hover:d4m-opacity-100 d4m-transition-opacity d4m-duration-200`}
-                            >
-                              {formatTimestamp(item.timestamp)}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  );
-                } else if (item.type === "executionGroup") {
-                  const isExpanded = expandedExecutions.has(index);
-                  return (
-                    <div
-                      key={index}
-                      className={`d4m-p-2 d4m-mb-8 ${currentTheme.executionGroup}`}
-                    >
-                      <div
-                        className="d4m-flex d4m-justify-between d4m-items-center d4m-cursor-pointer"
-                        onClick={() =>
-                          toggleExecutionGroup(index, setExpandedExecutions)
-                        }
-                      >
-                        <h6
-                          className={`d4m-text-sm d4m-font-bold d4m-text-${accentColor}-400`}
-                        >
-                          Task Steps ({item.taskHistories!.length})
-                        </h6>
-                        {isExpanded ? (
-                          <ChevronUp
-                            className={`d4m-w-4 d4m-h-4 d4m-text-${accentColor}-400`}
-                          />
-                        ) : (
-                          <ChevronDown
-                            className={`d4m-w-4 d4m-h-4 d4m-text-${accentColor}-400`}
-                          />
-                        )}
-                      </div>
-                      {isExpanded && (
-                        <div className="d4m-mt-2">
-                          <table
-                            className={`d4m-w-full d4m-text-sm ${
-                              mode === "light"
-                                ? "d4m-text-gray-700"
-                                : "d4m-text-gray-300"
-                            }`}
-                          >
-                            <thead>
-                              <tr
-                                className={`d4m-border-b ${
-                                  theme === "glassmorphism"
-                                    ? "d4m-border-gray-500/50"
-                                    : borderColor
-                                }`}
-                              >
-                                <th
-                                  className={`d4m-py-1 d4m-px-2 d4m-text-left d4m-font-medium d4m-text-${accentColor}-400`}
-                                >
-                                  Step
-                                </th>
-                                <th
-                                  className={`d4m-py-1 d4m-px-2 d4m-text-left d4m-font-medium d4m-text-${accentColor}-400`}
-                                >
-                                  Description
-                                </th>
-                                <th
-                                  className={`d4m-py-1 d4m-px-2 d4m-text-center d4m-font-medium d4m-text-${accentColor}-400`}
-                                >
-                                  Status
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {item.taskHistories!.map((task, idx) => (
-                                <tr
-                                  key={idx}
-                                  className={`d4m-border-b ${
-                                    theme === "glassmorphism"
-                                      ? "d4m-border-gray-500/50"
-                                      : borderColor
-                                  } d4m-last:border-b-0`}
-                                >
-                                  <td className="d4m-py-1 d4m-px-2">
-                                    {idx + 1}
-                                  </td>
-                                  <td className="d4m-py-1 d4m-px-2">
-                                    {task.step_number || "N/A"}
-                                    {task.description && (
-                                      <span
-                                        className={`d4m-block d4m-text-xs ${
-                                          mode === "light"
-                                            ? "d4m-text-gray-600"
-                                            : "d4m-text-gray-500"
-                                        }`}
-                                      >
-                                        {task.description}
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="d4m-py-1 d4m-px-2 d4m-text-center">
-                                    {["PENDING", "pending"].includes(
-                                      task.status
-                                    ) ? (
-                                      <span className="d4m-inline-flex d4m-items-center d4m-justify-center">
-                                        <span
-                                          className={`d4m-w-3 d4m-h-3 d4m-border-2 d4m-border-t-${accentColor}-400 ${
-                                            theme === "glassmorphism"
-                                              ? "d4m-border-gray-500/50"
-                                              : borderColor
-                                          } d4m-rounded-full d4m-animate-spin`}
-                                        ></span>
-                                      </span>
-                                    ) : [
-                                        "IN_PROGRESS",
-                                        "in_progress",
-                                        "in progress",
-                                      ].includes(task.status) ? (
-                                      <span className="d4m-inline-flex d4m-items-center d4m-justify-center">
-                                        <span
-                                          className={`d4m-w-3 d4m-h-3 d4m-border-2 d4m-border-t-yellow-400 ${
-                                            theme === "glassmorphism"
-                                              ? "d4m-border-gray-500/50"
-                                              : borderColor
-                                          } d4m-rounded-full d4m-animate-spin`}
-                                        ></span>
-                                      </span>
-                                    ) : ["PASS", "pass", "passed"].includes(
-                                        task.status
-                                      ) ? (
-                                      <Check className="d4m-w-4 d4m-h-4 d4m-text-green-400 d4m-mx-auto" />
-                                    ) : ["FAIL", "fail", "failed"].includes(
-                                        task.status
-                                      ) ? (
-                                      <X className="d4m-w-4 d4m-h-4 d4m-text-red-400 d4m-mx-auto" />
-                                    ) : (
-                                      <HelpCircle
-                                        className={`d4m-w-4 d4m-h-4 ${
-                                          mode === "light"
-                                            ? "d4m-text-gray-500"
-                                            : "d4m-text-gray-400"
-                                        } d4m-mx-auto`}
-                                      />
-                                    )}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  );
-                }
-                return null;
-              })}
+          )}
 
-              {isTextareaFocused && (
-                <div
-                  className={`d4m-absolute d4m-inset-0 d4m-flex d4m-items-center d4m-justify-center d4m-p-2 d4m-z-20 ${currentTheme.suggestion} d4m-bg-opacity-0 d4m-rounded-lg d4m-overflow-y-auto`}
-                >
-                  <div className="d4m-flex d4m-flex-wrap d4m-gap-1 d4m-justify-center d4m-items-center">
-                    {suggestions.map((suggestion) => (
-                      <button
-                        key={suggestion}
-                        type="button"
-                        onClick={() =>
-                          handleChipClick(suggestion, setInput, textareaRef)
-                        }
-                        className={`d4m-px-2 d4m-py-1 d4m-text-${accentColor}-400 d4m-text-xs ${currentTheme.suggestion} d4m-transition-transform d4m-duration-200 d4m-active:scale-95 d4m-rounded-md`}
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </React.Fragment>
+          {/* Render Messages using MessageRenderer component */}
+          {processedMessages.length > 0 && (
+            <MessageRenderer
+              processedMessages={processedMessages}
+              textColor={textColor}
+              currentTheme={currentTheme}
+              accentColor={accentColor}
+              mode={mode}
+              expandedExecutions={expandedExecutions}
+              handleToggleExecution={handleToggleExecution}
+            />
           )}
         </div>
 
-        {isLoading ? (
-          <div
-            className={`d4m-w-full d4m-px-3 d4m-py-4 d4m-flex d4m-items-center d4m-justify-between ${currentTheme.loading}`}
-          >
-            {currentAnimation === "starfallCascade" && (
+        {/* Task Section */}
+        {taskHistories.length > 0 && (
+          <TaskSection
+            taskHistories={taskHistories}
+            textColor={textColor}
+            accentColor={accentColor}
+            mode={mode}
+            isExpanded={isTaskSectionExpanded}
+            toggleExpanded={() =>
+              setIsTaskSectionExpanded(!isTaskSectionExpanded)
+            }
+          />
+        )}
+
+        {/* Input Area Section */}
+        <div
+          className={`d4m-flex-shrink-0 d4m-relative d4m-z-20 d4m-border-t ${
+            mode === "light" ? "d4m-border-black/10" : "d4m-border-white/10"
+          }`}
+        >
+          {isLoading ? (
+            // --- Loading Indicator with Star Animation when waiting for AI response ---
+            <div
+              className={`d4m-flex d4m-items-center d4m-justify-between d4m-w-full d4m-px-4 d4m-py-3 ${
+                currentTheme?.loading ||
+                "d4m-bg-gray-800 d4m-border-t d4m-border-gray-700"
+              }`}
+            >
               <StarfallCascadeAnimation
                 accentColor={accentColor}
                 textColor={textColor}
               />
-            )}
-            <button
-              onClick={handleStop(
-                setIsLoading,
-                setMessages,
-                setError,
-                setToast
-              )}
-              className={`d4m-p-2 d4m-text-white d4m-rounded-full ${currentTheme.stopButton.replace(
-                "red",
-                accentColor
-              )} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
-            >
-              <Square className="d4m-w-5 d4m-h-5" />
-            </button>
-          </div>
-        ) : (
-          <div className="d4m-relative d4m-px-3 d4m-py-4 d4m-w-full d4m-box-border d4m-z-20">
-            <form
-              onSubmit={(e) =>
-                handleSubmit(
-                  e,
-                  input,
-                  isLoading,
-                  setInput,
-                  setError,
-                  setIsLoading,
-                  setShowCommandPopup,
-                  setCurrentAnimation,
-                  setCommandHistory,
-                  setHistoryIndex,
-                  setMessages,
-                  selectedModel,
-                  setToast,
-                  setIsTextareaFocused
-                )
-              }
-            >
-              <div className="d4m-flex d4m-items-center d4m-space-x-3 d4m-w-full d4m-max-w-[calc(100%-8px)]">
-                <textarea
-                  ref={textareaRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSubmit(
-                        e,
-                        input,
-                        isLoading,
-                        setInput,
-                        setError,
-                        setIsLoading,
-                        setShowCommandPopup,
-                        setCurrentAnimation,
-                        setCommandHistory,
-                        setHistoryIndex,
-                        setMessages,
-                        selectedModel,
-                        setToast,
-                        setIsTextareaFocused
-                      );
-                    }
-                  }}
-                  onFocus={() => {
-                    console.log("[ChatWidget] Textarea onFocus triggered!"); // <-- ADD THIS LOG
-                    // Make sure to call the function returned by handleFocus
-                    handleFocus(setIsTextareaFocused, setShowCommandPopup)();
-                  }}
-                  onBlur={() => {
-                    console.log("[ChatWidget] Textarea onBlur triggered!"); // <-- ADD THIS LOG
-                    handleBlur(setIsTextareaFocused, setShowCommandPopup)();
-                  }}
-                  placeholder="Enter command..."
-                  className={`d4m-flex-1 d4m-px-3 d4m-py-2 ${textColor} d4m-text-sm d4m-rounded-xl d4m-border-none ${
-                    currentTheme.textarea
-                  } d4m-focus:outline-none d4m-focus:ring-2 d4m-focus:ring-${accentColor}-500 ${
-                    mode === "light"
-                      ? "d4m-placeholder-gray-400"
-                      : "d4m-placeholder-gray-500"
-                  } d4m-resize-none d4m-box-border d4m-transition-all`}
-                  disabled={isLoading}
-                  rows={1}
-                  style={{ height: "auto", overflowY: "hidden" }}
-                  onInput={(e) => {
-                    const target = e.target as HTMLTextAreaElement;
-                    target.style.height = "auto";
-                    target.style.height = `${target.scrollHeight}px`;
-                  }}
-                />
-                <button
-                  type="submit"
-                  disabled={!input.trim()}
-                  className={`d4m-p-2 d4m-text-white d4m-rounded-full ${currentTheme.sendButton.replace(
-                    "amber",
-                    accentColor
-                  )} d4m-transition-transform d4m-duration-200 d4m-active:scale-95`}
-                >
-                  <Send className="d4m-w-5 d4m-h-5" />
-                </button>
-              </div>
-            </form>
-            {showCommandPopup && (
-              <div
-                className={`d4m-absolute d4m-bottom-[70px] d4m-left-3 d4m-right-3 d4m-bg-${
-                  mode === "light" ? "gray-100" : "gray-800"
-                } d4m-rounded-lg d4m-shadow-lg d4m-z-30 d4m-max-h-[150px] d4m-overflow-y-auto`}
+              <button
+                onClick={handleStopClick}
+                className={`d4m-p-2 d4m-rounded-full d4m-transition-colors d4m-duration-200 d4m-active:scale-95 ${
+                  accentColor === "white"
+                    ? "d4m-bg-red-500 hover:d4m-bg-red-600 d4m-text-white" // Red stop button in HS mode
+                    : `d4m-bg-${accentColor}-500 hover:d4m-bg-${accentColor}-600 d4m-text-white` // Accent color stop button otherwise
+                }`}
+                title="Stop Generating"
+                aria-label="Stop generating response"
               >
-                {[...commandHistory].reverse().map((cmd, revIdx) => {
-                  const idx = commandHistory.length - 1 - revIdx;
-                  const isSelected = historyIndex === idx;
-                  return (
-                    <div
-                      key={idx}
-                      ref={isSelected ? selectedCommandRef : null}
-                      onClick={() =>
-                        handlePopupSelect(
-                          cmd,
-                          setInput,
-                          setUserTypedInput,
-                          setShowCommandPopup,
-                          setHistoryIndex,
-                          textareaRef
-                        )
-                      }
-                      className={`d4m-px-3 d4m-py-2 d4m-text-sm ${textColor} d4m-cursor-pointer hover:d4m-bg-${accentColor}-500/20 ${
-                        isSelected ? `d4m-bg-${accentColor}-500/30` : ""
-                      }`}
-                    >
-                      {cmd}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
+                <Square size={18} />
+              </button>
+            </div>
+          ) : (
+            // --- Command Input Area Component ---
+            <CommandInputArea
+              input={input}
+              selectedCommand={selectedCommand}
+              isLoading={isLoading}
+              hubspotMode={hubspotMode}
+              hasHubspotApiKey={hasHubspotApiKey}
+              commandHistory={commandHistory}
+              historyIndex={historyIndex}
+              showCommandPopup={showCommandPopup}
+              setInput={setInput}
+              setSelectedCommand={setSelectedCommand}
+              onSubmit={handleInputSubmit}
+              onFocus={handleInputFocus}
+              onBlur={handleInputBlur}
+              onPopupSelect={() => {}}
+              selectedCommandRef={selectedCommandRef}
+              currentTheme={currentTheme}
+              accentColor={accentColor}
+              textColor={textColor}
+              mode={mode}
+              placeholder={
+                hubspotMode
+                  ? "Type / for HubSpot commands (e.g. /contact, /deal...)"
+                  : "Type your message here..."
+              }
+              onSlashCommandStateChange={handleSlashCommandStateChange}
+            />
+          )}
+        </div>
       </div>
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        onSettingsUpdate={(newSettings) => {
-          setTheme(
-            (newSettings.theme as
-              | "neumorphism"
-              | "glassmorphism"
-              | "claymorphism") || theme
-          );
-          setAccentColor(
-            (newSettings.accentColor as
-              | "rose"
-              | "cyan"
-              | "green"
-              | "fuchsia"
-              | "sky") || accentColor
-          );
-          setMode((newSettings.mode as "light" | "dark") || mode);
-        }}
-        theme={theme}
-        accentColor={accentColor}
-        mode={mode}
-      />
-      {/* Added ChatListModal */}
-      <ChatListModal
-        isOpen={isChatListOpen}
-        onClose={() => setIsChatListOpen(false)}
-        onChatSelect={async (chat: Chat) => {
-          console.log("Selected chat:", chat._id, chat.title);
-          setIsLoading(true); // Show loading indicator
-          setError(null);
-          try {
-            // Fetch the full chat details, including messages
-            const fullChat = await api.chats.getChatById(chat._id);
-            if (fullChat && fullChat.messages) {
-              // Map API messages to local Message type
-              const localMessages: Message[] = fullChat.messages.map(
-                (apiMsg) => ({
-                  id: apiMsg._id, // Map _id to id
-                  role: apiMsg.sender === "ai" ? "model" : apiMsg.sender, // Map sender to role ('ai' -> 'model')
-                  content: apiMsg.content,
-                  // Add other fields if necessary, or ensure they are optional in local Message type
-                })
-              );
-              // Format messages using the existing function (which expects local Message type)
-              const formatted = formatMessages(localMessages);
-              setMessages(formatted);
-              // Optionally save to storage as the current conversation
-              await chrome.storage.local.set({
-                conversationHistory: formatted,
-              });
-              setToast({ message: `Loaded chat: ${chat.title}`, type: "info" });
-            } else {
-              throw new Error("Chat messages not found.");
-            }
-          } catch (err) {
-            console.error("Failed to load selected chat:", err);
-            setError("Failed to load the selected chat.");
-            setToast({ message: "Error loading chat.", type: "error" });
-          } finally {
-            setIsLoading(false);
-            setIsChatListOpen(false); // Close modal regardless of success/failure
-          }
-        }}
-        theme={theme}
-        accentColor={accentColor}
-        mode={mode}
-      />
     </React.Fragment>
   );
 }
+
+// Default export might be needed depending on how you import/use it
+// export default ChatWidget;

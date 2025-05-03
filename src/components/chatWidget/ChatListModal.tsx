@@ -200,7 +200,9 @@ const ChatListModal: React.FC<ChatListModalProps> = ({
       <div
         className={`d4m-relative d4m-rounded-2xl d4m-p-4 d4m-w-full d4m-max-w-md d4m-shadow-xl ${currentTheme.container}`}
       >
-        <div className="d4m-flex d4m-items-center d4m-justify-between d4m-mb-4">
+        <div
+          className={`d4m-flex d4m-items-center d4m-justify-between d4m-mb-4 ${currentTheme.header} d4m-rounded-t-xl d4m-p-3`}
+        >
           <h2
             className={`d4m-text-lg d4m-font-semibold d4m-flex d4m-items-center d4m-gap-2 d4m-text-${accentColor}-400`}
           >
@@ -209,7 +211,7 @@ const ChatListModal: React.FC<ChatListModalProps> = ({
           </h2>
           <button
             onClick={onClose}
-            className={`${textColor} d4m-hover:text-${accentColor}-400 d4m-transition-colors`}
+            className={`${currentTheme.button} d4m-hover:text-${accentColor}-400 d4m-transition-colors d4m-p-1 d4m-rounded-full`}
           >
             <X className="d4m-w-5 d4m-h-5" />
           </button>
@@ -338,18 +340,24 @@ const ChatListModal: React.FC<ChatListModalProps> = ({
         )}
 
         {/* New chat form */}
-        <form onSubmit={createChat} className="d4m-flex d4m-space-x-2 d4m-mb-4">
+        <form
+          onSubmit={createChat}
+          className={`d4m-flex d4m-space-x-2 d4m-mb-4 d4m-p-3 ${currentTheme.form} d4m-rounded-md`}
+        >
           <input
             type="text"
             value={newChatTitle}
             onChange={(e) => setNewChatTitle(e.target.value)}
-            className={`d4m-flex-1 d4m-px-3 d4m-py-2 d4m-border ${borderColor} d4m-rounded-md d4m-shadow-sm ${currentTheme.textarea} d4m-text-sm`}
+            className={`d4m-flex-1 d4m-px-3 d4m-py-2 ${currentTheme.textarea} d4m-text-sm d4m-rounded-full`}
             placeholder="New chat title (optional)"
           />
           <button
             type="submit"
             disabled={loading || authLoading}
-            className={`d4m-bg-${accentColor}-500 d4m-text-white d4m-px-4 d4m-py-2 d4m-rounded-md d4m-hover:bg-${accentColor}-600 d4m-transition-colors d4m-disabled:opacity-50 d4m-flex d4m-items-center d4m-gap-1`}
+            className={`${currentTheme.sendButton.replace(
+              "amber",
+              accentColor
+            )} d4m-px-4 d4m-py-2 d4m-rounded-full d4m-disabled:opacity-50 d4m-flex d4m-items-center d4m-gap-1`}
           >
             <Plus className="d4m-w-4 d4m-h-4" />
             New
@@ -373,12 +381,12 @@ const ChatListModal: React.FC<ChatListModalProps> = ({
               {chats.map((chat) => (
                 <li
                   key={chat._id}
-                  className={`d4m-p-3 d4m-cursor-pointer d4m-hover:bg-${accentColor}-50 d4m-transition-colors d4m-rounded-md`}
+                  className={`d4m-p-3 d4m-cursor-pointer d4m-hover:bg-opacity-90 d4m-transition-colors d4m-mb-2 ${currentTheme.messageBubble}`}
                   onClick={() => handleChatSelect(chat)}
                 >
                   <div className="d4m-flex d4m-items-start d4m-gap-3">
                     <div
-                      className={`d4m-p-2 d4m-rounded-full d4m-bg-${accentColor}-100 d4m-text-${accentColor}-500`}
+                      className={`d4m-p-2 d4m-rounded-full ${currentTheme.avatar} d4m-text-${accentColor}-400`}
                     >
                       <MessageSquare className="d4m-w-4 d4m-h-4" />
                     </div>

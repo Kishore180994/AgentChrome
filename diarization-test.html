@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Diarization Test</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      button {
+        padding: 10px 20px;
+        margin: 5px;
+        cursor: pointer;
+      }
+      #log {
+        border: 1px solid #ccc;
+        padding: 10px;
+        height: 300px;
+        overflow-y: auto;
+        margin-top: 20px;
+        font-family: monospace;
+        white-space: pre-wrap;
+      }
+      .status {
+        font-weight: bold;
+        margin: 10px 0;
+      }
+      .success {
+        color: green;
+      }
+      .error {
+        color: red;
+      }
+      .info {
+        color: blue;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Diarization Server Test</h1>
+
+    <div>
+      <button id="connectBtn">Connect to Server</button>
+      <button id="startRecordingBtn" disabled>Start Recording</button>
+      <button id="stopRecordingBtn" disabled>Stop Recording</button>
+      <button id="sendAudioBtn" disabled>Send Audio to Server</button>
+      <button id="disconnectBtn" disabled>Disconnect</button>
+    </div>
+
+    <div class="status" id="status">Not connected</div>
+
+    <div id="log"></div>
+
+    <script>
+      // DOM Elements
+      const connectBtn = document.getElementById("connectBtn");
+      const startRecordingBtn = document.getElementById("startRecordingBtn");
+      const stopRecordingBtn = document.getElementById("stopRecordingBtn");
+      const sendAudioBtn = document.getElementById("sendAudioBtn");
+      const disconnectBtn = document.getElementById("disconnectBtn");
+      const statusEl = document.getElementById("status");
+      const logEl = document.getElementById("log");
+
+      // State
+      let socket = null;
+      let mediaRecorder = null;
+      let audioChunks = [];
+      let audioBlob = null;
+
+      // Logging function
+      function log(message, type = "info") {
+        const timestamp = new Date().toISOString().substring(11, 23);
+        const entry = document.createElement("div");
+        entry.classList.add(type);
+        entry.textContent = `[${timestamp}] ${message}`;
+        logEl.appendChild(entry);
+        logEl.scrollTop = logEl.scrollHeight;
+        console.log(`[${type}] ${message}`);
+      }
+
+      // Update status
+      function updateStatus(message, isError = false) {
+        statusEl.textContent = message;
+        statusEl.className = "status " + (isError ? "error" : "info");
+      }
+
+      // Connect to WebSocket server
+      connectBtn.addEventListener("click", () => {
+        try {
+          const serverUrl = "ws://localhost:8000/ws/diarize";
+          socket = new WebSocket(serverUrl);
+
+          socket.onopen = () => {
+            log("Connected to server", "success");
+            updateStatus("Connected");
+            connectBtn.disabled = true;
+            startRecordingBtn.disabled = false;
+            disconnectBtn.disabled = false;
+          };
+
+          socket.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+              log(
+                `Received message: ${JSON.stringify(data, null, 2)}`,
+                "success"
+              );
+            } catch (e) {
+              log(`Received non-JSON message: ${event.data}`, "info");
+            }
+          };
+
+          socket.onerror = (error) => {
+            log(`WebSocket error: ${error}`, "error");
+            updateStatus("Connection error", true);
+          };
+
+          socket.onclose = (event) => {
+            log(`WebSocket closed: ${event.code} ${event.reason}`, "info");
+            updateStatus("Disconnected");
+            connectBtn.disabled = false;
+            startRecordingBtn.disabled = true;
+            stopRecordingBtn.disabled = true;
+            sendAudioBtn.disabled = true;
+            disconnectBtn.disabled = true;
+            socket = null;
+          };
+
+          updateStatus("Connecting...");
+        } catch (error) {
+          log(`Error connecting to server: ${error}`, "error");
+          updateStatus("Connection failed", true);
+        }
+      });
+
+      // Start recording
+      startRecordingBtn.addEventListener("click", async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+          log("Microphone access granted", "success");
+
+          // Create MediaRecorder
+          mediaRecorder = new MediaRecorder(stream);
+
+          // Clear previous chunks
+          audioChunks = [];
+
+          // Handle data available event
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+              audioChunks.push(event.data);
+              log(`Recorded chunk: ${event.data.size} bytes`, "info");
+            }
+          };
+
+          // Start recording
+          mediaRecorder.start(1000); // Collect data every second
+          log("Recording started", "success");
+          updateStatus("Recording...");
+
+          startRecordingBtn.disabled = true;
+          stopRecordingBtn.disabled = false;
+          sendAudioBtn.disabled = true;
+        } catch (error) {
+          log(`Error starting recording: ${error}`, "error");
+          updateStatus("Recording failed", true);
+        }
+      });
+
+      // Stop recording
+      stopRecordingBtn.addEventListener("click", () => {
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+          mediaRecorder.stop();
+          log("Recording stopped", "success");
+          updateStatus("Recording stopped");
+
+          // Handle recording stopped
+          mediaRecorder.onstop = () => {
+            // Create audio blob
+            audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+            log(`Created audio blob: ${audioBlob.size} bytes`, "success");
+
+            // Stop all tracks
+            mediaRecorder.stream.getTracks().forEach((track) => track.stop());
+
+            startRecordingBtn.disabled = false;
+            stopRecordingBtn.disabled = true;
+            sendAudioBtn.disabled = false;
+
+            // Create audio element for playback
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const audio = document.createElement("audio");
+            audio.controls = true;
+            audio.src = audioUrl;
+
+            // Add to page
+            const container = document.createElement("div");
+            container.appendChild(document.createTextNode("Recorded Audio: "));
+            container.appendChild(audio);
+            document.body.insertBefore(container, logEl);
+          };
+        }
+      });
+
+      // Send audio to server
+      sendAudioBtn.addEventListener("click", async () => {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+          log("WebSocket not connected", "error");
+          return;
+        }
+
+        if (!audioBlob) {
+          log("No audio recorded", "error");
+          return;
+        }
+
+        try {
+          log("Converting audio to PCM format...", "info");
+          updateStatus("Processing audio...");
+
+          // Convert audio blob to ArrayBuffer
+          const arrayBuffer = await audioBlob.arrayBuffer();
+
+          // Create AudioContext
+          const audioContext = new (window.AudioContext ||
+            window.webkitAudioContext)();
+
+          // Decode the audio data
+          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+          // Resample to 16kHz if needed
+          const sampleRate = 16000;
+          const numberOfChannels = 1; // Mono
+          const length = Math.ceil(audioBuffer.duration * sampleRate);
+
+          // Create an offline audio context for resampling
+          const offlineContext = new OfflineAudioContext(
+            numberOfChannels,
+            length,
+            sampleRate
+          );
+
+          // Create a buffer source
+          const source = offlineContext.createBufferSource();
+          source.buffer = audioBuffer;
+
+          // Connect the source to the offline context destination
+          source.connect(offlineContext.destination);
+
+          // Start the source
+          source.start(0);
+
+          // Render the audio
+          const renderedBuffer = await offlineContext.startRendering();
+
+          // Get the resampled PCM data
+          const pcmData = renderedBuffer.getChannelData(0);
+
+          // Convert to 16-bit PCM (Int16Array)
+          const pcm16 = new Int16Array(pcmData.length);
+          for (let i = 0; i < pcmData.length; i++) {
+            // Convert float (-1.0 to 1.0) to int16 (-32768 to 32767)
+            const s = Math.max(-1, Math.min(1, pcmData[i]));
+            pcm16[i] = s < 0 ? s * 32768 : s * 32767;
+          }
+
+          // Increase volume by 50% to make speaker detection easier
+          for (let i = 0; i < pcm16.length; i++) {
+            // Multiply by 1.5 and clamp to int16 range
+            pcm16[i] = Math.max(-32768, Math.min(32767, pcm16[i] * 1.5));
+          }
+
+          log(
+            `Sending ${pcm16.byteLength} bytes of 16-bit PCM audio data`,
+            "info"
+          );
+          updateStatus("Sending audio...");
+
+          // Send the 16-bit PCM data
+          socket.send(pcm16.buffer);
+
+          log("Audio data sent successfully", "success");
+          updateStatus("Audio sent");
+
+          // Close the audio contexts
+          if (audioContext.state !== "closed") {
+            await audioContext.close();
+          }
+        } catch (error) {
+          log(`Error sending audio: ${error}`, "error");
+          updateStatus("Send failed", true);
+        }
+      });
+
+      // Disconnect from server
+      disconnectBtn.addEventListener("click", () => {
+        if (socket) {
+          socket.close(1000, "User disconnected");
+          log("Disconnected from server", "info");
+          updateStatus("Disconnected");
+
+          connectBtn.disabled = false;
+          startRecordingBtn.disabled = true;
+          stopRecordingBtn.disabled = true;
+          sendAudioBtn.disabled = true;
+          disconnectBtn.disabled = true;
+          socket = null;
+        }
+      });
+
+      // Initial log
+      log("Diarization Test Page Loaded", "info");
+    </script>
+  </body>
+</html>

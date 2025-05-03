@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web Speech API Test</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        line-height: 1.6;
+      }
+      .container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+      }
+      button {
+        padding: 10px 20px;
+        font-size: 16px;
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: background-color 0.3s;
+      }
+      button:hover {
+        background-color: #45a049;
+      }
+      button.recording {
+        background-color: #f44336;
+      }
+      .transcript {
+        width: 100%;
+        min-height: 200px;
+        border: 1px solid #ddd;
+        padding: 15px;
+        border-radius: 5px;
+        background-color: #f9f9f9;
+      }
+      .status {
+        font-style: italic;
+        color: #666;
+      }
+      .error {
+        color: #f44336;
+        font-weight: bold;
+      }
+      .debug {
+        margin-top: 30px;
+        border-top: 1px solid #ddd;
+        padding-top: 20px;
+        font-size: 14px;
+      }
+      .debug h3 {
+        margin-bottom: 10px;
+      }
+      .debug pre {
+        background-color: #f5f5f5;
+        padding: 10px;
+        border-radius: 5px;
+        overflow-x: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Web Speech API Test</h1>
+      <p>This page tests the Web Speech API functionality in your browser.</p>
+
+      <button id="micButton">Start Recording</button>
+
+      <div class="status" id="status">Ready</div>
+
+      <div class="transcript" id="transcript">
+        <p><em>Transcript will appear here...</em></p>
+      </div>
+
+      <div class="debug">
+        <h3>Debug Information</h3>
+        <pre id="debugInfo">No information available yet.</pre>
+      </div>
+    </div>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const micButton = document.getElementById("micButton");
+        const statusElement = document.getElementById("status");
+        const transcriptElement = document.getElementById("transcript");
+        const debugInfoElement = document.getElementById("debugInfo");
+
+        let recognition = null;
+        let isRecording = false;
+        let debugLog = [];
+
+        // Check if browser supports Web Speech API
+        if (
+          !("webkitSpeechRecognition" in window) &&
+          !("SpeechRecognition" in window)
+        ) {
+          statusElement.textContent =
+            "Web Speech API is not supported in this browser.";
+          statusElement.classList.add("error");
+          micButton.disabled = true;
+          logDebug("ERROR: Web Speech API not supported");
+          return;
+        }
+
+        // Initialize speech recognition
+        const SpeechRecognition =
+          window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = "en-US";
+
+        // Handle recognition results
+        recognition.onresult = (event) => {
+          let finalTranscript = "";
+          let interimTranscript = "";
+
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              finalTranscript += transcript;
+              logDebug(
+                `Final transcript: ${transcript} (Confidence: ${event.results[
+                  i
+                ][0].confidence.toFixed(2)})`
+              );
+            } else {
+              interimTranscript += transcript;
+              logDebug(`Interim transcript: ${transcript}`);
+            }
+          }
+
+          if (finalTranscript) {
+            const p = document.createElement("p");
+            p.textContent = finalTranscript;
+            transcriptElement.appendChild(p);
+          }
+
+          if (interimTranscript) {
+            // Update or create interim element
+            let interimElement = document.getElementById("interim");
+            if (!interimElement) {
+              interimElement = document.createElement("p");
+              interimElement.id = "interim";
+              interimElement.style.color = "#666";
+              interimElement.style.fontStyle = "italic";
+              transcriptElement.appendChild(interimElement);
+            }
+            interimElement.textContent = interimTranscript;
+          }
+        };
+
+        // Handle recognition errors
+        recognition.onerror = (event) => {
+          logDebug(
+            `ERROR: ${event.error}${event.message ? ": " + event.message : ""}`
+          );
+          statusElement.textContent = `Error: ${event.error}. Please check microphone access.`;
+          statusElement.classList.add("error");
+
+          if (event.error === "not-allowed") {
+            micButton.textContent = "Start Recording";
+            micButton.classList.remove("recording");
+            isRecording = false;
+          }
+        };
+
+        // Handle recognition end
+        recognition.onend = () => {
+          logDebug("Recognition ended");
+          if (isRecording) {
+            logDebug("Attempting to restart recognition");
+            try {
+              recognition.start();
+              logDebug("Recognition restarted successfully");
+            } catch (err) {
+              logDebug(`Failed to restart recognition: ${err.message}`);
+              statusElement.textContent = "Recognition stopped unexpectedly.";
+              micButton.textContent = "Start Recording";
+              micButton.classList.remove("recording");
+              isRecording = false;
+            }
+          }
+        };
+
+        // Handle button click
+        micButton.addEventListener("click", async () => {
+          if (!isRecording) {
+            // Request microphone permission
+            try {
+              logDebug("Requesting microphone permission");
+              const stream = await navigator.mediaDevices.getUserMedia({
+                audio: true,
+              });
+              stream.getTracks().forEach((track) => track.stop()); // Stop tracks immediately
+
+              logDebug("Microphone permission granted");
+              statusElement.textContent = "Listening...";
+              statusElement.classList.remove("error");
+
+              // Clear transcript if it only contains the placeholder
+              if (transcriptElement.querySelector("em")) {
+                transcriptElement.innerHTML = "";
+              }
+
+              // Start recognition
+              try {
+                recognition.start();
+                logDebug("Recognition started");
+                micButton.textContent = "Stop Recording";
+                micButton.classList.add("recording");
+                isRecording = true;
+              } catch (err) {
+                logDebug(`Error starting recognition: ${err.message}`);
+                statusElement.textContent = `Error starting recognition: ${err.message}`;
+                statusElement.classList.add("error");
+              }
+            } catch (err) {
+              logDebug(`Microphone permission denied: ${err.message}`);
+              statusElement.textContent =
+                "Microphone access denied. Please allow microphone access in your browser settings.";
+              statusElement.classList.add("error");
+            }
+          } else {
+            // Stop recognition
+            logDebug("Stopping recognition");
+            recognition.stop();
+            statusElement.textContent = "Stopped";
+            micButton.textContent = "Start Recording";
+            micButton.classList.remove("recording");
+            isRecording = false;
+
+            // Remove interim element if it exists
+            const interimElement = document.getElementById("interim");
+            if (interimElement) {
+              interimElement.remove();
+            }
+          }
+        });
+
+        // Helper function to log debug information
+        function logDebug(message) {
+          const timestamp = new Date().toISOString();
+          debugLog.push(`[${timestamp}] ${message}`);
+          debugInfoElement.textContent = debugLog.join("\n");
+          // Auto-scroll to bottom
+          debugInfoElement.scrollTop = debugInfoElement.scrollHeight;
+        }
+
+        // Initial debug log
+        logDebug("Page loaded");
+        logDebug(`Browser: ${navigator.userAgent}`);
+        logDebug("Web Speech API is supported");
+      });
+    </script>
+  </body>
+</html>

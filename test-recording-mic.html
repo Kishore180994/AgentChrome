@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RecordingMic Component Test</title>
+    <script type="module">
+      import React from "react";
+      import ReactDOM from "react-dom/client";
+      import { RecordingMic } from "./src/components/chatWidget/RecordingMic";
+
+      // Create a simple test component
+      const TestApp = () => {
+        const handleStop = (transcript) => {
+          console.log("Recording stopped with transcript:", transcript);
+          document.getElementById("result").textContent = transcript;
+        };
+
+        return React.createElement(
+          "div",
+          { style: { maxWidth: "800px", margin: "0 auto", padding: "20px" } },
+          [
+            React.createElement(
+              "h1",
+              { key: "title" },
+              "RecordingMic Component Test"
+            ),
+            React.createElement(
+              "div",
+              { key: "component", style: { height: "600px" } },
+              React.createElement(RecordingMic, {
+                accentColor: "rose",
+                textColor: "d4m-text-gray-200",
+                onStop: handleStop,
+              })
+            ),
+            React.createElement("div", { key: "result-container" }, [
+              React.createElement("h2", { key: "result-title" }, "Result:"),
+              React.createElement(
+                "pre",
+                {
+                  key: "result",
+                  id: "result",
+                  style: {
+                    padding: "10px",
+                    backgroundColor: "#f5f5f5",
+                    borderRadius: "5px",
+                    minHeight: "100px",
+                  },
+                },
+                "Transcript will appear here after recording"
+              ),
+            ]),
+          ]
+        );
+      };
+
+      // Render the test component
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(React.createElement(TestApp));
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

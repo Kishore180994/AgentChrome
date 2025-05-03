@@ -4,7 +4,7 @@ export const googleWorkspaceTools: Tool[] = [
   {
     functionDeclarations: [
       {
-        name: "createNewGoogleDoc",
+        name: "google_workspace_createNewGoogleDoc",
         description:
           "Creates a new Google Document with optional structured content.",
         parameters: {
@@ -60,7 +60,7 @@ export const googleWorkspaceTools: Tool[] = [
         },
       },
       {
-        name: "insertStructuredDocContent",
+        name: "google_workspace_insertStructuredDocContent",
         description:
           "Inserts structured content into an existing Google Document.",
         parameters: {
@@ -116,7 +116,7 @@ export const googleWorkspaceTools: Tool[] = [
         },
       },
       {
-        name: "updateDocText",
+        name: "google_workspace_updateDocText",
         description: "Updates specific text in a Google Document.",
         parameters: {
           type: SchemaType.OBJECT,
@@ -138,7 +138,7 @@ export const googleWorkspaceTools: Tool[] = [
         },
       },
       {
-        name: "appendDocText",
+        name: "google_workspace_appendDocText",
         description: "Appends plain text at the end of a Google Document.",
         parameters: {
           type: SchemaType.OBJECT,
@@ -156,7 +156,7 @@ export const googleWorkspaceTools: Tool[] = [
         },
       },
       {
-        name: "deleteDocText",
+        name: "google_workspace_deleteDocText",
         description:
           "Deletes occurrences of specified text from a Google Document.",
         parameters: {
@@ -175,7 +175,7 @@ export const googleWorkspaceTools: Tool[] = [
         },
       },
       {
-        name: "getDocContent",
+        name: "google_workspace_getDocContent",
         description: "Retrieves the text content of a Google Document.",
         parameters: {
           type: SchemaType.OBJECT,
@@ -189,7 +189,7 @@ export const googleWorkspaceTools: Tool[] = [
         },
       },
       {
-        name: "getDocFileName",
+        name: "google_workspace_getDocFileName",
         description: "Gets the name of a Google Document file.",
         parameters: {
           type: SchemaType.OBJECT,
@@ -203,7 +203,7 @@ export const googleWorkspaceTools: Tool[] = [
         },
       },
       {
-        name: "createNewGoogleSheet",
+        name: "google_workspace_createNewGoogleSheet",
         description: "Creates a new Google Sheet with optional initial sheets.",
         parameters: {
           type: SchemaType.OBJECT,
@@ -222,7 +222,7 @@ export const googleWorkspaceTools: Tool[] = [
         },
       },
       {
-        name: "appendSheetRow",
+        name: "google_workspace_appendSheetRow",
         description: "Appends a row of data to a specified sheet.",
         parameters: {
           type: SchemaType.OBJECT,
@@ -245,7 +245,7 @@ export const googleWorkspaceTools: Tool[] = [
         },
       },
       {
-        name: "updateSheetCell",
+        name: "google_workspace_updateSheetCell",
         description: "Updates the value of a specific cell in a Google Sheet.",
         parameters: {
           type: SchemaType.OBJECT,
@@ -271,7 +271,7 @@ export const googleWorkspaceTools: Tool[] = [
         },
       },
       {
-        name: "getSheetData",
+        name: "google_workspace_getSheetData",
         description: "Retrieves data from a specified range in a Google Sheet.",
         parameters: {
           type: SchemaType.OBJECT,
@@ -293,7 +293,7 @@ export const googleWorkspaceTools: Tool[] = [
         },
       },
       {
-        name: "deleteSheetRow",
+        name: "google_workspace_deleteSheetRow",
         description: "Deletes a specific row from a Google Sheet.",
         parameters: {
           type: SchemaType.OBJECT,

@@ -56,7 +56,7 @@ const MarkdownWrapper: React.FC<{ content: string }> = ({ content }) => {
   const processedContent = preprocessContent(content);
 
   return (
-    <div className="d4m-text-white d4m-text-xs">
+    <div className="d4m-text-xs">
       <Markdown
         components={{
           code({ children, className }) {
@@ -108,8 +108,9 @@ const MarkdownWrapper: React.FC<{ content: string }> = ({ content }) => {
                 </div>
               );
             } else {
+              // Use a more theme-neutral styling for inline code
               return (
-                <code className="d4m-bg-gray-800 d4m-px-1 d4m-py-0.5 d4m-rounded d4m-text-cyan-300 d4m-text-[10px]">
+                <code className="d4m-bg-opacity-20 d4m-bg-gray-500 d4m-px-1 d4m-py-0.5 d4m-rounded d4m-text-[10px]">
                   {children}
                 </code>
               );
