@@ -303,66 +303,126 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
 
       if (onStop) onStop();
     } else {
-      setDiarizationResults([]);
-      resetMicTranscript();
-
-      setMeetingTimestamp(new Date());
-
-      setInitializationStatus("Starting initialization...");
-
+      // Check for microphone permission before starting recording
       try {
-        const tabs = await chrome.tabs.query({
-          active: true,
-          currentWindow: true,
+        const permissionStatus = await navigator.permissions.query({
+          name: "microphone" as PermissionName,
         });
-        const targetTabId = tabs[0]?.id;
-
-        if (!targetTabId) {
-          const errorMsg = "UI: Could not get the active tab ID.";
-          console.error(errorMsg);
-          setInitializationStatus(errorMsg);
-          return;
-        }
-        console.log("UI: Got active tab ID:", targetTabId);
-
-        console.log("UI: Requesting background to start recording...");
-        chrome.runtime.sendMessage(
-          {
-            type: "START_RECORDING",
-            tabId: targetTabId,
-            meetingName: meetingName,
-          },
-          (response) => {
-            if (response && !response.success) {
-              console.error(
-                "UI: Background failed to start recording:",
-                response.error
-              );
-              setInitializationStatus(`Error: ${response.error}`);
-              setIsRecording(false);
-              if (micListening) {
-                SpeechRecognition.stopListening();
-              }
-            } else {
-              console.log("UI: Background acknowledged start request.");
-            }
-          }
+        console.log(
+          "UI: Microphone permission status:",
+          permissionStatus.state
         );
 
-        if (micTranscriptionEnabled && !micListening) {
-          console.log("UI: Starting microphone-only listener...");
-          SpeechRecognition.startListening({
-            continuous: true,
-            interimResults: true,
+        if (permissionStatus.state === "granted") {
+          // Permission granted, proceed with starting recording
+          setDiarizationResults([]);
+          resetMicTranscript();
+
+          setMeetingTimestamp(new Date());
+
+          setInitializationStatus("Starting initialization...");
+
+          try {
+            const tabs = await chrome.tabs.query({
+              active: true,
+              currentWindow: true,
+            });
+            const targetTabId = tabs[0]?.id;
+
+            if (!targetTabId) {
+              const errorMsg = "UI: Could not get the active tab ID.";
+              console.error(errorMsg);
+              setInitializationStatus(errorMsg);
+              return;
+            }
+            console.log("UI: Got active tab ID:", targetTabId);
+
+            console.log("UI: Requesting background to start recording...");
+            chrome.runtime.sendMessage(
+              {
+                type: "START_RECORDING",
+                tabId: targetTabId,
+                meetingName: meetingName,
+              },
+              (response) => {
+                if (response && !response.success) {
+                  console.error(
+                    "UI: Background failed to start recording:",
+                    response.error
+                  );
+                  setInitializationStatus(`Error: ${response.error}`);
+                  setIsRecording(false);
+                  if (micListening) {
+                    SpeechRecognition.stopListening();
+                  }
+                } else {
+                  console.log("UI: Background acknowledged start request.");
+                }
+              }
+            );
+
+            if (micTranscriptionEnabled && !micListening) {
+              console.log("UI: Starting microphone-only listener...");
+              SpeechRecognition.startListening({
+                continuous: true,
+                interimResults: true,
+              });
+            }
+          } catch (error: any) {
+            console.error(
+              "UI: Error getting tab ID or sending message:",
+              error
+            );
+            setInitializationStatus(`Error: ${error.message || error}`);
+            setIsRecording(false);
+            if (micListening) {
+              SpeechRecognition.stopListening();
+            }
+          }
+        } else if (permissionStatus.state === "denied") {
+          setInitializationStatus(
+            "Microphone permission denied. Enable in extension settings."
+          );
+          console.warn("UI: Microphone permission denied.");
+          // Optionally, provide a link to settings here if needed
+        } else if (permissionStatus.state === "prompt") {
+          // Permission is 'prompt', need to request it by opening the popup
+          console.log(
+            "UI: Microphone permission state is 'prompt'. Opening permission popup."
+          );
+          chrome.windows.create({
+            url: chrome.runtime.getURL("micPermission.html"),
+            type: "popup",
+            height: 200,
+            width: 350,
           });
+
+          // Listen for permission changes to automatically start recording if granted
+          permissionStatus.onchange = () => {
+            if (permissionStatus.state === "granted") {
+              console.log(
+                "UI: Permission granted via popup. Starting recording..."
+              );
+              // Re-call toggleRecording to proceed with starting recording
+              toggleRecording();
+            } else if (permissionStatus.state === "denied") {
+              setInitializationStatus(
+                "Microphone permission denied via popup. Enable in extension settings."
+              );
+              console.warn("UI: Microphone permission denied via popup.");
+            }
+          };
+
+          setInitializationStatus("Waiting for microphone permission...");
         }
       } catch (error: any) {
-        console.error("UI: Error getting tab ID or sending message:", error);
-        setInitializationStatus(`Error: ${error.message || error}`);
-        setIsRecording(false);
-        if (micListening) {
-          SpeechRecognition.stopListening();
-        }
+        console.error(
+          "UI: Error checking/requesting microphone permission:",
+          error
+        );
+        setInitializationStatus(
+          `Error checking permission: ${error.message || error}`
+        );
       }
     }
   };
@@ -665,7 +725,7 @@ export const RecordingMic: React.FC<RecordingMicProps> = ({
                 initializationStatus &&
                 initializationStatus.includes("final") && (
                   <div className="d4m-mb-4 d4m-bg-blue-500 d4m-bg-opacity-10 d4m-border d4m-border-blue-500 d4m-border-opacity-20 d4m-rounded-md d4m-p-3 d4m-text-blue-400 d4m-flex d4m-items-center d4m-gap-2">
-                    <div className="d4m-w-3 d4m-h-3 d4m-rounded-full d4m-bg-blue-400 d4m-animate-pulse"></div>
+                    <div className="d4m-w-3 d4m-h-3 d4m-border-t-4 d4m-border-r-4 d4m-border-blue-500 d4m-rounded-full d4m-animate-spin"></div>
                     <span className="d4m-text-sm d4m-font-medium">
                       Finalizing transcription... Please wait while we process
                       the last segments.
