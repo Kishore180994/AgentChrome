@@ -11,10 +11,19 @@ import {
   User,
   Settings,
   LogIn,
+  Download,
+  RefreshCw,
+  Search,
 } from "lucide-react";
+import ComponentHeader, {
+  commonButtons,
+  HeaderButtonOption,
+} from "./common/ComponentHeader";
 import { SettingsPage } from "./SettingsPage";
 import { ChatWidget } from "./chatWidget/ChatWidget";
-import { RecordingMic } from "./chatWidget/RecordingMic";
+import { PreviousChatsPage } from "./PreviousChatsPage";
+import { PreviousRecordingsPage } from "./PreviousRecordingsPage";
+import { RecordMeetingsPage } from "./RecordMeetingsPage";
 import { storage } from "../utils/storage";
 import { AccentColor, themeStyles } from "../utils/themes";
 
@@ -37,23 +46,6 @@ interface AppSettings {
     apiKey: string;
   };
 }
-
-// Dummy data
-const dummyPreviousChats = [
-  { id: 1, title: "Project Discussion", date: "Apr 24, 2025" },
-  { id: 2, title: "Weekly Meeting", date: "Apr 22, 2025" },
-  { id: 3, title: "Client Presentation", date: "Apr 20, 2025" },
-  { id: 4, title: "Team Brainstorming", date: "Apr 18, 2025" },
-  { id: 5, title: "Product Review", date: "Apr 15, 2025" },
-];
-
-const dummyPreviousRecordings = [
-  { id: 1, title: "Team Standup", duration: "15:32", date: "Apr 23, 2025" },
-  { id: 2, title: "Client Call", duration: "45:12", date: "Apr 21, 2025" },
-  { id: 3, title: "Product Demo", duration: "28:45", date: "Apr 19, 2025" },
-  { id: 4, title: "Strategy Meeting", duration: "52:18", date: "Apr 17, 2025" },
-  { id: 5, title: "Feedback Session", duration: "33:27", date: "Apr 14, 2025" },
-];
 
 export const MaterialSidebar: React.FC = () => {
   const { user, logout, loginWithGoogle, isLoading: authLoading } = useAuth();
@@ -155,85 +147,27 @@ export const MaterialSidebar: React.FC = () => {
         return <ChatWidget />;
       case "recording":
         return (
-          <div className="d4m-flex d4m-flex-col d4m-items-center d4m-justify-center d4m-h-full d4m-p-4">
-            <RecordingMic
-              accentColor={accentColor}
-              textColor={textColor}
-              mode={mode}
-              theme={theme}
-            />
-          </div>
+          <RecordMeetingsPage
+            theme={theme}
+            accentColor={accentColor}
+            mode={mode}
+          />
         );
       case "previousChats":
         return (
-          <div className={`d4m-p-4 ${currentTheme.container}`}>
-            <h2
-              className={`d4m-text-xl d4m-font-semibold d4m-mb-4 d4m-text-${accentColor}-400 d4m-flex d4m-items-center d4m-gap-2`}
-            >
-              <MessageSquare className="d4m-w-5 d4m-h-5" />
-              Previous Chats
-            </h2>
-            <div className="d4m-space-y-3">
-              {dummyPreviousChats.map((chat) => (
-                <div
-                  key={chat.id}
-                  className={`${currentTheme.messageBubble} d4m-p-3 d4m-cursor-pointer d4m-hover:bg-opacity-90 d4m-transition-colors`}
-                >
-                  <div className="d4m-flex d4m-items-center d4m-gap-3">
-                    <div
-                      className={`d4m-p-2 d4m-rounded-full d4m-bg-${accentColor}-500/20 d4m-text-${accentColor}-400 ${currentTheme.avatar}`}
-                    >
-                      <MessageSquare size={16} />
-                    </div>
-                    <div>
-                      <h3 className={`d4m-font-medium ${textColor}`}>
-                        {chat.title}
-                      </h3>
-                      <p className="d4m-text-xs d4m-text-gray-400">
-                        {chat.date}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <PreviousChatsPage
+            theme={theme}
+            accentColor={accentColor}
+            mode={mode}
+          />
         );
       case "previousRecordings":
         return (
-          <div className={`d4m-p-4 ${currentTheme.container}`}>
-            <h2
-              className={`d4m-text-xl d4m-font-semibold d4m-mb-4 d4m-text-${accentColor}-400 d4m-flex d4m-items-center d4m-gap-2`}
-            >
-              <Mic className="d4m-w-5 d4m-h-5" />
-              Previous Recordings
-            </h2>
-            <div className="d4m-space-y-3">
-              {dummyPreviousRecordings.map((recording) => (
-                <div
-                  key={recording.id}
-                  className={`${currentTheme.messageBubble} d4m-p-3 d4m-cursor-pointer d4m-hover:bg-opacity-90 d4m-transition-colors`}
-                >
-                  <div className="d4m-flex d4m-items-center d4m-gap-3">
-                    <div
-                      className={`d4m-p-2 d4m-rounded-full d4m-bg-${accentColor}-500/20 d4m-text-${accentColor}-400 ${currentTheme.avatar}`}
-                    >
-                      <Mic size={16} />
-                    </div>
-                    <div className="d4m-flex-1">
-                      <h3 className={`d4m-font-medium ${textColor}`}>
-                        {recording.title}
-                      </h3>
-                      <div className="d4m-flex d4m-justify-between d4m-text-xs d4m-text-gray-400">
-                        <span>{recording.date}</span>
-                        <span>{recording.duration}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <PreviousRecordingsPage
+            theme={theme}
+            accentColor={accentColor}
+            mode={mode}
+          />
         );
       case "settings":
         return (

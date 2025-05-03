@@ -9,17 +9,10 @@ import { linkifyUrls } from "../../utils/helpers";
 import { ChevronUp, ChevronDown, Check, X, HelpCircle } from "lucide-react";
 
 // Define ThemeStyle type
-interface ThemeStyle {
-  container?: string;
-  messageBubble?: string;
-  suggestion?: string;
-  [key: string]: string | undefined;
-}
-
 interface MessageRendererProps {
   processedMessages: ProcessedMessage[];
   textColor: string;
-  currentTheme: ThemeStyle;
+  currentTheme: any; // We receive the computed theme directly from ChatWidget
   accentColor: AccentColor;
   mode: "light" | "dark";
   expandedExecutions: Set<number>;
@@ -139,7 +132,13 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
                   ) : "type" in message && message.type === "question" ? (
                     // Question message from AI with futuristic design
                     <div className="d4m-flex d4m-flex-col d4m-gap-3">
-                      <div className="d4m-flex d4m-items-center d4m-gap-2 d4m-bg-black/10 dark:d4m-bg-white/10 d4m-p-2 d4m-rounded-md d4m-backdrop-blur-sm">
+                      <div
+                        className={`d4m-flex d4m-items-center d4m-gap-2 ${
+                          mode === "light"
+                            ? "d4m-bg-black/10"
+                            : "d4m-bg-white/10"
+                        } d4m-p-2 d4m-rounded-md d4m-backdrop-blur-sm`}
+                      >
                         <HelpCircle
                           size={18}
                           className={
@@ -159,12 +158,22 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
                   ) : "type" in message && message.type === "completion" ? (
                     // Completion message from AI with futuristic design
                     <div className="d4m-flex d4m-flex-col d4m-gap-3">
-                      <div className="d4m-flex d4m-items-center d4m-gap-2 d4m-bg-green-500/20 dark:d4m-bg-green-500/20 d4m-p-2 d4m-rounded-md d4m-backdrop-blur-sm">
+                      <div className="d4m-flex d4m-items-center d4m-gap-2 d4m-bg-green-500/20 d4m-p-2 d4m-rounded-md d4m-backdrop-blur-sm">
                         <Check
                           size={18}
-                          className="d4m-text-green-500 dark:d4m-text-green-400"
+                          className={
+                            mode === "light"
+                              ? "d4m-text-green-500"
+                              : "d4m-text-green-400"
+                          }
                         />
-                        <span className="d4m-font-medium d4m-text-base d4m-tracking-wide d4m-text-green-700 dark:d4m-text-green-400">
+                        <span
+                          className={`d4m-font-medium d4m-text-base d4m-tracking-wide ${
+                            mode === "light"
+                              ? "d4m-text-green-700"
+                              : "d4m-text-green-400"
+                          }`}
+                        >
                           Task Completed
                         </span>
                       </div>
@@ -198,8 +207,22 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
                     )
                   ) : (
                     // Fallback for unknown model content - display as JSON with futuristic styling
-                    <pre className="d4m-text-xs d4m-whitespace-pre-wrap d4m-bg-black/20 dark:d4m-bg-white/5 d4m-p-3 d4m-rounded-md d4m-overflow-auto d4m-max-h-[300px] d4m-border d4m-border-gray-200/30 dark:d4m-border-gray-700/30 d4m-backdrop-blur-sm d4m-font-mono">
-                      <div className="d4m-flex d4m-items-center d4m-justify-between d4m-mb-2 d4m-pb-2 d4m-border-b d4m-border-gray-200/30 dark:d4m-border-gray-700/30">
+                    <pre
+                      className={`d4m-text-xs d4m-whitespace-pre-wrap ${
+                        mode === "light" ? "d4m-bg-black/20" : "d4m-bg-white/5"
+                      } d4m-p-3 d4m-rounded-md d4m-overflow-auto d4m-max-h-[300px] d4m-border ${
+                        mode === "light"
+                          ? "d4m-border-gray-200/30"
+                          : "d4m-border-gray-700/30"
+                      } d4m-backdrop-blur-sm d4m-font-mono`}
+                    >
+                      <div
+                        className={`d4m-flex d4m-items-center d4m-justify-between d4m-mb-2 d4m-pb-2 d4m-border-b ${
+                          mode === "light"
+                            ? "d4m-border-gray-200/30"
+                            : "d4m-border-gray-700/30"
+                        }`}
+                      >
                         <span
                           className={`d4m-text-xs d4m-font-medium ${
                             accentColor === "white"
@@ -210,7 +233,13 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
                           JSON Data
                         </span>
                       </div>
-                      <code className="d4m-text-gray-800 dark:d4m-text-gray-200">
+                      <code
+                        className={
+                          mode === "light"
+                            ? "d4m-text-gray-800"
+                            : "d4m-text-gray-200"
+                        }
+                      >
                         {JSON.stringify(message.content, null, 2)}
                       </code>
                     </pre>
@@ -287,8 +316,22 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
                       currentTheme={currentTheme}
                     />
                   ) : (
-                    <pre className="d4m-text-xs d4m-whitespace-pre-wrap d4m-bg-black/20 dark:d4m-bg-white/5 d4m-p-3 d4m-rounded-md d4m-overflow-auto d4m-max-h-[300px] d4m-border d4m-border-gray-200/30 dark:d4m-border-gray-700/30 d4m-backdrop-blur-sm d4m-font-mono">
-                      <div className="d4m-flex d4m-items-center d4m-justify-between d4m-mb-2 d4m-pb-2 d4m-border-b d4m-border-gray-200/30 dark:d4m-border-gray-700/30">
+                    <pre
+                      className={`d4m-text-xs d4m-whitespace-pre-wrap ${
+                        mode === "light" ? "d4m-bg-black/20" : "d4m-bg-white/5"
+                      } d4m-p-3 d4m-rounded-md d4m-overflow-auto d4m-max-h-[300px] d4m-border ${
+                        mode === "light"
+                          ? "d4m-border-gray-200/30"
+                          : "d4m-border-gray-700/30"
+                      } d4m-backdrop-blur-sm d4m-font-mono`}
+                    >
+                      <div
+                        className={`d4m-flex d4m-items-center d4m-justify-between d4m-mb-2 d4m-pb-2 d4m-border-b ${
+                          mode === "light"
+                            ? "d4m-border-gray-200/30"
+                            : "d4m-border-gray-700/30"
+                        }`}
+                      >
                         <span
                           className={`d4m-text-xs d4m-font-medium ${
                             accentColor === "white"
@@ -299,7 +342,13 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
                           JSON Data
                         </span>
                       </div>
-                      <code className="d4m-text-gray-800 dark:d4m-text-gray-200">
+                      <code
+                        className={
+                          mode === "light"
+                            ? "d4m-text-gray-800"
+                            : "d4m-text-gray-200"
+                        }
+                      >
                         {JSON.stringify(msg.content, null, 2)}
                       </code>
                     </pre>

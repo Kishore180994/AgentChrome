@@ -1,6 +1,11 @@
 // src/components/ChatWidget.tsx
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Square, Plus } from "lucide-react";
+import { Square } from "lucide-react";
+import ComponentHeader, {
+  commonButtons,
+  HeaderButtonOption,
+  TabOption,
+} from "../common/ComponentHeader";
 
 import { CommandInputArea } from "./CommandInputArea";
 import WelcomeScreen from "./WelcomeScreen";
@@ -123,7 +128,8 @@ export function ChatWidget() {
     type: "success" | "info" | "error";
   } | null>(null);
   const [hasHubspotApiKey, setHasHubspotApiKey] = useState<boolean>(false);
-
+  // No need for a separate state for currentTheme, we'll derive it directly
+  // Just save the theme name and mode, and compute currentTheme when needed
   // Refs
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const selectedCommandRef = useRef<HTMLDivElement>(null);
@@ -228,7 +234,7 @@ export function ChatWidget() {
         if (Array.isArray(data.commandHistory))
           setCommandHistory(data.commandHistory);
         setTheme(data.theme || "neumorphism");
-        setMode(data.mode || "dark");
+        setMode(data.mode || "light"); // Default to light mode
         setSelectedModel(
           ["gemini", "claude"].includes(data.selectedModel)
             ? data.selectedModel
@@ -878,7 +884,50 @@ export function ChatWidget() {
   // Effect 6: Apply Siri border effect using the hook
   useSiriBorderWithRef(isLoading, "16px");
 
-  // Effect 7: Apply HubSpot pulse animation CSS (runs once)
+  // Effect 7: Listen for storage changes (for mode sync across components)
+  useEffect(() => {
+    const handleStorageChange = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string
+    ) => {
+      console.log(
+        "[ChatWidget] Storage change detected:",
+        changes,
+        "in",
+        areaName
+      );
+
+      // Check if mode was changed (by SettingsPage or other components)
+      if (changes.mode && changes.mode.newValue !== undefined) {
+        console.log(`[ChatWidget] Mode changed to: ${changes.mode.newValue}`);
+        setMode(changes.mode.newValue);
+      }
+
+      // Check if theme was changed
+      if (changes.theme && changes.theme.newValue !== undefined) {
+        console.log(`[ChatWidget] Theme changed to: ${changes.theme.newValue}`);
+        setTheme(changes.theme.newValue);
+      }
+
+      // Check if accent color was changed
+      if (changes.accentColor && changes.accentColor.newValue !== undefined) {
+        console.log(
+          `[ChatWidget] Accent color changed to: ${changes.accentColor.newValue}`
+        );
+        setAccentColor(changes.accentColor.newValue);
+      }
+    };
+
+    // Add listener for both local and sync storage
+    chrome.storage.onChanged.addListener(handleStorageChange);
+
+    // Cleanup
+    return () => {
+      chrome.storage.onChanged.removeListener(handleStorageChange);
+    };
+  }, []); // Empty dependency array as we want this to run once and stay active
+
+  // Effect 8: Apply HubSpot pulse animation CSS (runs once)
   useEffect(() => {
     const styleId = "hubspot-pulse-animation";
     if (document.getElementById(styleId)) return; // Prevent adding multiple times
@@ -930,26 +979,12 @@ export function ChatWidget() {
     );
   }
 
-  // --- Render Logic ---
+  // Compute current theme directly from mode/theme settings instead of using a separate state
   const currentTheme = hubspotMode
     ? hubspotTheme[mode]
     : themeStyles[theme][mode];
   const textColor =
     mode === "light" ? "d4m-text-gray-800" : "d4m-text-gray-200";
-
-  const welcomeSuggestions = hubspotMode
-    ? [
-        "Create contact 'Jane Doe'",
-        "Find company 'example.com'",
-        "List my open deals",
-        "Add note to contact 'jane@...",
-      ]
-    : [
-        "Summarize this page",
-        "Search Google for 'AI news'",
-        "Open twitter.com",
-        "Extract main points",
-      ];
 
   // --- JSX ---
   return (
@@ -957,209 +992,146 @@ export function ChatWidget() {
       {/* Main Widget Container */}
       <div
         ref={widgetContainerRef} // Ref for Siri border hook
-        className={`d4m-w-full d4m-h-full d4m-flex d4m-flex-col ${currentTheme.container} d4m-relative d4m-overflow-hidden`} // Use theme, flex column, hide overflow
+        className={`d4m-w-full d4m-h-full d4m-flex d4m-flex-col ${
+          currentTheme?.container || "d4m-bg-gray-800 d4m-text-gray-200"
+        } d4m-relative d4m-overflow-hidden`} // Use theme, flex column, hide overflow with fallback
         role="log" // ARIA role for chat log area
         aria-live="polite" // Announce changes politely
       >
-        {/* Header Section */}
-        <div className="d4m-flex d4m-justify-end d4m-items-center d4m-px-3 d4m-py-2 d4m-gap-3 d4m-relative d4m-z-30 d4m-flex-shrink-0 d4m-border-b d4m-border-black/10 dark:d4m-border-white/10">
-          {" "}
-          {/* Added border */}
-          {/* New Chat Button */}
-          <button
-            onClick={handleNewChatClick}
-            className={`d4m-p-1.5 d4m-rounded-full d4m-text-gray-600 dark:d4m-text-gray-300 hover:d4m-bg-black/5 dark:hover:d4m-bg-white/10 d4m-transition-colors`}
-            title="New Chat"
-            aria-label="Start a new chat"
-          >
-            <Plus size={18} /> {/* Use Plus icon */}
-          </button>
-          {/* Mode Selector Capsule */}
-          <div
-            className={`d4m-relative d4m-flex d4m-items-center d4m-rounded-full d4m-p-0.5 d4m-overflow-hidden d4m-border ${
-              mode === "light"
-                ? "d4m-bg-gray-200 d4m-border-gray-300"
-                : "d4m-bg-gray-700 d4m-border-gray-600"
-            }`}
-          >
-            {/* Animated background pill */}
-            <div
-              className={`d4m-absolute d4m-top-0.5 d4m-bottom-0.5 d4m-rounded-full d4m-transition-all d4m-duration-300 d4m-ease-in-out ${
-                hubspotMode
-                  ? "d4m-bg-white dark:d4m-bg-gray-900" // Selected pill background
-                  : accentColor === "white"
-                  ? "d4m-bg-orange-500"
-                  : `d4m-bg-${accentColor}-500` // Use orange if D4M is white, else accent
-              }`}
-              style={{
-                left: !hubspotMode ? "2px" : "calc(50%)", // Adjusted for cleaner look
-                width: "calc(50% - 2px)", // Adjusted for cleaner look
-                height: "calc(100% - 4px)", // Take up full height minus padding
-              }}
-              aria-hidden="true"
-            ></div>
+        {/* Header Section using the new ComponentHeader */}
+        <ComponentHeader
+          activeTab="chatWidget"
+          mode={mode}
+          onModeToggle={() => {
+            // Toggle mode
+            const newMode = mode === "light" ? "dark" : "light";
+            setMode(newMode);
 
-            {/* D4M Mode Button */}
-            <button
-              onClick={() => {
-                if (!hubspotMode) return; // No change if already active
+            // Save to storage for persistence
+            chrome.storage.local.set({ mode: newMode });
+            chrome.storage.sync.set({ mode: newMode }); // Also sync for global preference
 
-                // Save current Hubspot chat before switching
-                chrome.storage.local.get(["conversationHistory"], (data) => {
-                  if (
-                    Array.isArray(data.conversationHistory) &&
-                    data.conversationHistory.length > 0
-                  ) {
-                    chrome.storage.local.set({
-                      hubspotConversationHistory: data.conversationHistory,
-                    });
-                    console.log(
-                      "[ChatWidget] Saved Hubspot conversation history"
-                    );
-                  }
-                });
+            console.log(`[ChatWidget] Switched to ${newMode} mode`);
+          }}
+          accentColor={accentColor}
+          hubspotMode={hubspotMode}
+          d4mAccentColor={d4mAccentColor}
+          toggleD4MMode={() => {
+            if (!hubspotMode) return; // No change if already active
 
-                // Switch to D4M mode
-                setHubspotMode(false);
-
-                // Restore visual state
-                const restoredColor = d4mAccentColor || "rose";
-                setAccentColor(restoredColor); // Restore D4M accent color
-
-                // Save mode state
+            // Save current Hubspot chat before switching
+            chrome.storage.local.get(["conversationHistory"], (data) => {
+              if (
+                Array.isArray(data.conversationHistory) &&
+                data.conversationHistory.length > 0
+              ) {
                 chrome.storage.local.set({
-                  hubspotMode: false,
-                  accentColor: restoredColor,
-                }); // Save state
-                chrome.storage.sync.set({ hubspotMode: false }); // Sync preference if needed
-
-                // Restore previous D4M chat or start a new one
-                chrome.storage.local.get(["d4mConversationHistory"], (data) => {
-                  if (
-                    Array.isArray(data.d4mConversationHistory) &&
-                    data.d4mConversationHistory.length > 0
-                  ) {
-                    setMessages(formatMessages(data.d4mConversationHistory));
-                    chrome.storage.local.set({
-                      conversationHistory: data.d4mConversationHistory,
-                    });
-                    console.log(
-                      "[ChatWidget] Restored D4M conversation history"
-                    );
-                  } else {
-                    // Start a new chat if no history exists
-                    setMessages([]);
-                    setProcessedMessages([]);
-                    chrome.storage.local.remove(["conversationHistory"]);
-                    console.log(
-                      "[ChatWidget] Started new D4M chat (no history found)"
-                    );
-                  }
+                  hubspotConversationHistory: data.conversationHistory,
                 });
-              }}
-              className={`d4m-relative d4m-z-10 d4m-flex d4m-items-center d4m-justify-center d4m-px-3 d4m-py-0.5 d4m-rounded-full d4m-transition-colors d4m-duration-300 d4m-w-1/2 ${
-                !hubspotMode
-                  ? mode === "light"
-                    ? "d4m-text-white"
-                    : "d4m-text-white"
-                  : mode === "light"
-                  ? "d4m-text-gray-500"
-                  : "d4m-text-gray-400"
-              }`}
-              title="D4M Mode"
-              aria-pressed={!hubspotMode}
-            >
-              <img
-                src="/icons/icon48.png"
-                alt="D4M"
-                className="d4m-w-5 d4m-h-5"
-              />
-            </button>
-            {/* HubSpot Mode Button */}
-            <button
-              onClick={() => {
-                if (hubspotMode) return; // No change if already active
+                console.log("[ChatWidget] Saved Hubspot conversation history");
+              }
+            });
 
-                // Save current D4M chat before switching
-                chrome.storage.local.get(["conversationHistory"], (data) => {
-                  if (
-                    Array.isArray(data.conversationHistory) &&
-                    data.conversationHistory.length > 0
-                  ) {
-                    chrome.storage.local.set({
-                      d4mConversationHistory: data.conversationHistory,
-                    });
-                    console.log("[ChatWidget] Saved D4M conversation history");
-                  }
-                });
+            // Switch to D4M mode
+            setHubspotMode(false);
 
-                // Save current D4M color before switching if it's not white
-                if (accentColor !== "white") setD4mAccentColor(accentColor);
+            // Restore visual state
+            const restoredColor = d4mAccentColor || "rose";
+            setAccentColor(restoredColor); // Restore D4M accent color
 
-                // Switch to Hubspot mode
-                setHubspotMode(() => true);
-                setAccentColor("white"); // HubSpot visual mode uses white base
+            // Save mode state
+            chrome.storage.local.set({
+              hubspotMode: false,
+              accentColor: restoredColor,
+            }); // Save state
+            chrome.storage.sync.set({ hubspotMode: false }); // Sync preference if needed
 
-                // Save mode state
+            // Restore previous D4M chat or start a new one
+            chrome.storage.local.get(["d4mConversationHistory"], (data) => {
+              if (
+                Array.isArray(data.d4mConversationHistory) &&
+                data.d4mConversationHistory.length > 0
+              ) {
+                setMessages(formatMessages(data.d4mConversationHistory));
                 chrome.storage.local.set({
-                  hubspotMode: true,
-                  accentColor: "white",
-                  d4mAccentColor:
-                    accentColor === "white" ? d4mAccentColor : accentColor,
-                }); // Save state
-                chrome.storage.sync.set({ hubspotMode: true }); // Sync preference if needed
-
-                // Restore previous Hubspot chat or start a new one
-                chrome.storage.local.get(
-                  ["hubspotConversationHistory"],
-                  (data) => {
-                    if (
-                      Array.isArray(data.hubspotConversationHistory) &&
-                      data.hubspotConversationHistory.length > 0
-                    ) {
-                      setMessages(
-                        formatMessages(data.hubspotConversationHistory)
-                      );
-                      chrome.storage.local.set({
-                        conversationHistory: data.hubspotConversationHistory,
-                      });
-                      console.log(
-                        "[ChatWidget] Restored Hubspot conversation history"
-                      );
-                    } else {
-                      // Start a new chat if no history exists
-                      setMessages([]);
-                      setProcessedMessages([]);
-                      chrome.storage.local.remove(["conversationHistory"]);
-                      console.log(
-                        "[ChatWidget] Started new Hubspot chat (no history found)"
-                      );
-                    }
-                  }
+                  conversationHistory: data.d4mConversationHistory,
+                });
+                console.log("[ChatWidget] Restored D4M conversation history");
+              } else {
+                // Start a new chat if no history exists
+                setMessages([]);
+                setProcessedMessages([]);
+                chrome.storage.local.remove(["conversationHistory"]);
+                console.log(
+                  "[ChatWidget] Started new D4M chat (no history found)"
                 );
-              }}
-              className={`d4m-relative d4m-z-10 d4m-flex d4m-items-center d4m-justify-center d4m-px-3 d4m-py-0.5 d4m-rounded-full d4m-transition-colors d4m-duration-300 d4m-w-1/2 ${
-                hubspotMode
-                  ? mode === "light"
-                    ? "d4m-text-orange-600"
-                    : "d4m-text-orange-400" // Text color when selected (Orange)
-                  : mode === "light"
-                  ? "d4m-text-gray-500"
-                  : "d4m-text-gray-400" // Text color when not selected
-              }`}
-              title="Hubspot Mode"
-              aria-pressed={hubspotMode}
-            >
-              <img
-                src="/icons/hubspot/hubspot48.png"
-                alt="Hubspot"
-                className="d4m-w-5 d4m-h-5"
-              />
-            </button>
-          </div>
-          {/* Settings Button (Example) */}
-          {/* <button onClick={() => setIsSettingsOpen(true)} title="Settings" className="d4m-p-1.5 ..."><Settings size={18} /></button> */}
-        </div>
+              }
+            });
+          }}
+          toggleHubspotMode={() => {
+            if (hubspotMode) return; // No change if already active
+
+            // Save current D4M chat before switching
+            chrome.storage.local.get(["conversationHistory"], (data) => {
+              if (
+                Array.isArray(data.conversationHistory) &&
+                data.conversationHistory.length > 0
+              ) {
+                chrome.storage.local.set({
+                  d4mConversationHistory: data.conversationHistory,
+                });
+                console.log("[ChatWidget] Saved D4M conversation history");
+              }
+            });
+
+            // Save current D4M color before switching if it's not white
+            if (accentColor !== "white") setD4mAccentColor(accentColor);
+
+            // Switch to Hubspot mode
+            setHubspotMode(() => true);
+            setAccentColor("white"); // HubSpot visual mode uses white base
+
+            // Save mode state
+            chrome.storage.local.set({
+              hubspotMode: true,
+              accentColor: "white",
+              d4mAccentColor:
+                accentColor === "white" ? d4mAccentColor : accentColor,
+            }); // Save state
+            chrome.storage.sync.set({ hubspotMode: true }); // Sync preference if needed
+
+            // Restore previous Hubspot chat or start a new one
+            chrome.storage.local.get(["hubspotConversationHistory"], (data) => {
+              if (
+                Array.isArray(data.hubspotConversationHistory) &&
+                data.hubspotConversationHistory.length > 0
+              ) {
+                setMessages(formatMessages(data.hubspotConversationHistory));
+                chrome.storage.local.set({
+                  conversationHistory: data.hubspotConversationHistory,
+                });
+                console.log(
+                  "[ChatWidget] Restored Hubspot conversation history"
+                );
+              } else {
+                // Start a new chat if no history exists
+                setMessages([]);
+                setProcessedMessages([]);
+                chrome.storage.local.remove(["conversationHistory"]);
+                console.log(
+                  "[ChatWidget] Started new Hubspot chat (no history found)"
+                );
+              }
+            });
+          }}
+          additionalButtons={[
+            {
+              ...commonButtons.newChat,
+              onClick: handleNewChatClick,
+            },
+            // Add more buttons as needed based on tab
+          ]}
+        />
 
         {/* Toast Notification Area */}
         {toast && (
@@ -1240,12 +1212,17 @@ export function ChatWidget() {
         )}
 
         {/* Input Area Section */}
-        <div className="d4m-flex-shrink-0 d4m-relative d4m-z-20 d4m-border-t d4m-border-black/10 dark:d4m-border-white/10">
+        <div
+          className={`d4m-flex-shrink-0 d4m-relative d4m-z-20 d4m-border-t ${
+            mode === "light" ? "d4m-border-black/10" : "d4m-border-white/10"
+          }`}
+        >
           {isLoading ? (
             // --- Loading Indicator with Star Animation when waiting for AI response ---
             <div
               className={`d4m-flex d4m-items-center d4m-justify-between d4m-w-full d4m-px-4 d4m-py-3 ${
-                currentTheme.loading || ""
+                currentTheme?.loading ||
+                "d4m-bg-gray-800 d4m-border-t d4m-border-gray-700"
               }`}
             >
               <StarfallCascadeAnimation

@@ -374,6 +374,7 @@ export async function callGemini(
     //   mode: FunctionCallingMode.ANY,
     // });
 
+    console.debug({ lastMessageSdkParts });
     // Send message and process response
     const result = await chatSession.sendMessage(lastMessageSdkParts);
 

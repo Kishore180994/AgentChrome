@@ -44,7 +44,7 @@ interface CommandInputAreaProps {
   isLoading: boolean;
   hubspotMode: boolean;
   hasHubspotApiKey: boolean;
-  currentTheme: any;
+  currentTheme: any; // We receive the computed theme directly from ChatWidget
   accentColor: AccentColor;
   textColor: string;
   mode: "light" | "dark";
@@ -726,7 +726,7 @@ export function CommandInputArea({
     : "Enter command or prompt...";
   const sendButtonBg = hubspotMode
     ? "hover:d4m-bg-white focus-visible:d4m-ring-orange-500" // Specific HubSpot orange button
-    : currentTheme.sendButton?.replace("amber", accentColor) ||
+    : currentTheme?.sendButton?.replace("amber", accentColor) ||
       `d4m-bg-${accentColor}-500 hover:d4m-bg-${accentColor}-600 focus-visible:d4m-ring-${accentColor}-500`;
   const isDisabled = isLoading || (hubspotMode && !hasHubspotApiKey);
   const canSubmit =
@@ -828,7 +828,7 @@ export function CommandInputArea({
       <div
         onClick={handleWrapperClick}
         className={`d4m-flex d4m-items-end d4m-w-full d4m-rounded-xl d4m-px-3 d4m-py-2 d4m-space-x-2 ${
-          currentTheme.textarea || ""
+          currentTheme?.textarea || "d4m-bg-gray-800 d4m-text-gray-200"
         } d4m-transition-shadow d4m-duration-150 d4m-focus-within:ring-2 ${focusRingColor} d4m-min-h-[44px]`}
       >
         {/* ContentEditable Div */}

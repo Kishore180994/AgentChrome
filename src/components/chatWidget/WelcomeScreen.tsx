@@ -1,21 +1,13 @@
 import React from "react";
 import { AccentColor } from "../../utils/themes";
 
-// Define ThemeStyle type based on theme structure
-interface ThemeStyle {
-  container?: string;
-  messageBubble?: string;
-  suggestion?: string;
-  [key: string]: string | undefined;
-}
-
 interface WelcomeScreenProps {
   hubspotMode: boolean;
   hasHubspotApiKey: boolean;
   mode: "light" | "dark";
   accentColor: AccentColor;
   textColor: string;
-  currentTheme: ThemeStyle;
+  currentTheme: any; // We receive the computed theme directly from ChatWidget
   handleSuggestionClick: (suggestion: string) => void;
 }
 
@@ -116,7 +108,8 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                 key={suggestion}
                 onClick={() => handleSuggestionClick(suggestion)}
                 className={`d4m-text-xs ${
-                  currentTheme.suggestion || ""
+                  currentTheme?.suggestion ||
+                  "d4m-bg-gray-200 d4m-text-gray-700"
                 } d4m-px-3 d4m-py-1 hover:d4m-opacity-80 d4m-transition-opacity d4m-rounded-full ${
                   mode === "light"
                     ? "d4m-bg-gray-100 d4m-text-gray-700"
