@@ -1316,7 +1316,7 @@ async function handleError(
     const errorMessage = `Command processing failed: ${
       err instanceof Error ? err.message : String(err)
     }`;
-    console.error({ errorMessage });
+    console.log({ errorMessage });
     chrome.tabs.sendMessage(tabIdRef.value, {
       type: "DISPLAY_MESSAGE",
       response: { message: errorMessage },

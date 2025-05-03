@@ -1,16 +1,11 @@
 // src/components/ChatWidget.tsx
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Square } from "lucide-react";
-import ComponentHeader, {
-  commonButtons,
-  HeaderButtonOption,
-  TabOption,
-} from "../common/ComponentHeader";
+import ComponentHeader, { commonButtons } from "../common/ComponentHeader";
 
 import { CommandInputArea } from "./CommandInputArea";
 import WelcomeScreen from "./WelcomeScreen";
 import MessageRenderer from "./MessageRenderer";
-import TaskSection from "./TaskSection";
 import HubspotModularOptions from "./HubspotModularOptions";
 import { ToastNotification } from "../ToastNotifications";
 // import SettingsModal from "../SettingsModal";
@@ -18,14 +13,11 @@ import { ToastNotification } from "../ToastNotifications";
 import { AccentColor, hubspotTheme, themeStyles } from "../../utils/themes";
 import { loadHubSpotConfig } from "../../services/hubspot/api";
 import { HubSpotExecutionResult } from "../../services/ai/interfaces";
-import { StepState } from "../../types/responseFormat";
 import { Message, ProcessedMessage } from "./chatInterface";
-
 import {
   handleSubmit as originalHandleSubmit,
   handleStop,
   handleNewChat,
-  toggleExecutionGroup,
   handleChipClick,
   handleFocus,
   handleBlur,
@@ -33,9 +25,12 @@ import {
 import { useSiriBorderWithRef } from "../../hooks/useSiriBorder";
 import StarfallCascadeAnimation from "../../utils/helpers";
 import { hubspotModularTools } from "../../services/ai/hubspotTool";
+import { TaskProgressDisplay } from "../tasks/TaskProgressDisplay";
+import { MemoryState } from "../../types/memoryTypes";
 
 export function ChatWidget() {
   // State
+  const [isTaskProgressExpanded, setIsTaskProgressExpanded] = useState(true); // State for task progress display
   const [messages, setMessages] = useState<Message[]>([]);
   const [processedMessages, setProcessedMessages] = useState<
     ProcessedMessage[]
@@ -63,11 +58,6 @@ export function ChatWidget() {
   }, []);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [expandedExecutions, setExpandedExecutions] = useState<Set<number>>(
-    new Set()
-  );
-  const [taskHistories, setTaskHistories] = useState<StepState[]>([]);
-  const [isTaskSectionExpanded, setIsTaskSectionExpanded] = useState(true);
   const [isInputAreaFocused, setIsInputAreaFocused] = useState(false);
   const [selectedModel, setSelectedModel] = useState<"gemini" | "claude">(
     "gemini"
@@ -120,6 +110,7 @@ export function ChatWidget() {
     setSlashFilter(filter);
   };
   const [mode, setMode] = useState<"light" | "dark">("dark");
+  const [taskProgress, setTaskProgress] = useState<MemoryState | null>(null);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [showCommandPopup, setShowCommandPopup] = useState(false);
@@ -200,13 +191,6 @@ export function ChatWidget() {
       setToast
     )();
   }, [setMessages, setProcessedMessages, setError, setIsLoading, setToast]);
-
-  const handleToggleExecution = useCallback(
-    (index: number) => {
-      toggleExecutionGroup(index, setExpandedExecutions);
-    },
-    [setExpandedExecutions]
-  );
 
   // --- Effects ---
 
@@ -363,7 +347,7 @@ export function ChatWidget() {
           currentModelGroup = [];
         }
         // Add execution group if it has content
-        const taskHistories = message.content as StepState[];
+        const taskHistories = message.content;
         if (taskHistories.length > 0) {
           processed.push({ type: "executionGroup", taskHistories });
         }
@@ -399,23 +383,11 @@ export function ChatWidget() {
     // Reverse the final array for display with flex-col-reverse
     setProcessedMessages(processed.reverse());
     console.log("[ChatWidget] Messages processed.", processed);
-  }, []); // Add dependencies if this callback uses external state/props, currently none
+  }, []);
 
   useEffect(() => {
     processMessages(messages);
-
-    // Extract the latest task histories from messages
-    const executionMessages = messages.filter(
-      (msg) => msg.role === "execution" && Array.isArray(msg.content)
-    );
-    if (executionMessages.length > 0) {
-      // Get the most recent execution message
-      const latestExecution = executionMessages[executionMessages.length - 1];
-      setTaskHistories(latestExecution.content as StepState[]);
-    } else {
-      setTaskHistories([]);
-    }
-  }, [messages, processMessages]); // Re-process whenever raw messages change
+  }, [messages, processMessages]);
 
   // Effect 4: Scroll messages container to show the latest message
   useEffect(() => {
@@ -448,47 +420,24 @@ export function ChatWidget() {
       try {
         // Add try-catch block for safety within the listener
         if (message?.type === "MEMORY_UPDATE") {
-          const steps = message.response?.steps as StepState[] | undefined;
-          if (steps) {
-            console.log("[ChatWidget] Handling MEMORY_UPDATE");
-            setMessages((prev) => {
-              const lastMsg = prev[prev.length - 1];
-              let updatedMessages: Message[];
-              // If last message was execution, update its content; otherwise add new execution message
-              if (lastMsg?.role === "execution") {
-                updatedMessages = [
-                  ...prev.slice(0, -1),
-                  { ...lastMsg, content: steps },
-                ];
-              } else {
-                updatedMessages = [
-                  ...prev,
-                  {
-                    id: Date.now().toString(),
-                    role: "execution",
-                    content: steps,
-                  },
-                ];
-              }
-              // Save to both the active conversation and mode-specific storage
-              if (hubspotMode) {
-                chrome.storage.local.set({
-                  conversationHistory: updatedMessages,
-                  hubspotConversationHistory: updatedMessages,
-                }); // Persist to active and Hubspot storage
-              } else {
-                chrome.storage.local.set({
-                  conversationHistory: updatedMessages,
-                  d4mConversationHistory: updatedMessages,
-                }); // Persist to active and D4M storage
-              }
-              return updatedMessages;
-            });
-            messageHandled = true;
-          } else {
-            console.warn(
-              "[ChatWidget] MEMORY_UPDATE received without valid steps data."
-            );
+          try {
+            const memoryState = message.response as MemoryState | undefined;
+            // (Basic check: is it an object and does it have the 'phases' array?)
+            if (
+              memoryState &&
+              typeof memoryState === "object" &&
+              Array.isArray(memoryState.phases)
+            ) {
+              console.log(
+                "[ChatWidget] Handling MEMORY_UPDATE with hierarchical MemoryState:",
+                memoryState
+              );
+
+              setTaskProgress(() => memoryState);
+            }
+          } catch (error) {
+            // Log any unexpected errors during processing
+            console.error("[ChatWidget] Error handling MEMORY_UPDATE:", error);
           }
         } else if (message?.type === "COMMAND_RESPONSE") {
           console.log("[ChatWidget] Handling COMMAND_RESPONSE");
@@ -986,6 +935,11 @@ export function ChatWidget() {
   const textColor =
     mode === "light" ? "d4m-text-gray-800" : "d4m-text-gray-200";
 
+  // Handler to toggle task progress display
+  const toggleTaskProgress = useCallback(() => {
+    setIsTaskProgressExpanded((prev) => !prev);
+  }, []);
+
   // --- JSX ---
   return (
     <React.Fragment>
@@ -1142,6 +1096,16 @@ export function ChatWidget() {
           />
         )}
 
+        {/* Task Progress Display */}
+        {taskProgress && ( // Only render if taskProgress data exists
+          <TaskProgressDisplay
+            memory={taskProgress}
+            mode={mode}
+            isExpanded={isTaskProgressExpanded}
+            onToggleExpand={toggleTaskProgress}
+          />
+        )}
+
         {/* Messages Area (Scrollable) */}
         <div
           ref={messagesContainerRef}
@@ -1191,25 +1155,9 @@ export function ChatWidget() {
               currentTheme={currentTheme}
               accentColor={accentColor}
               mode={mode}
-              expandedExecutions={expandedExecutions}
-              handleToggleExecution={handleToggleExecution}
             />
           )}
         </div>
-
-        {/* Task Section */}
-        {taskHistories.length > 0 && (
-          <TaskSection
-            taskHistories={taskHistories}
-            textColor={textColor}
-            accentColor={accentColor}
-            mode={mode}
-            isExpanded={isTaskSectionExpanded}
-            toggleExpanded={() =>
-              setIsTaskSectionExpanded(!isTaskSectionExpanded)
-            }
-          />
-        )}
 
         {/* Input Area Section */}
         <div

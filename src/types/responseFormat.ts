@@ -1,4 +1,7 @@
 // responseFormat.ts
+
+import { MemoryState } from "./memoryTypes";
+
 /**
  * The AI must always return JSON of this shape:
  *
@@ -30,14 +33,6 @@ export interface StepState {
     | "pending"
     | "in_progress"
     | "in progress";
-}
-
-export interface MemoryState {
-  steps: Array<{
-    step_number: string;
-    description: string;
-    status: string;
-  }>;
 }
 
 export interface AgentResponseFormat {

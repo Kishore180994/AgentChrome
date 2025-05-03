@@ -1,12 +1,12 @@
 import React from "react";
-import { Message, ProcessedMessage } from "./chatInterface";
+import { ProcessedMessage } from "./chatInterface";
 import { HubSpotExecutionResult } from "../../services/ai/interfaces";
 import MarkdownWrapper from "../MarkDownWrapper";
 import HubspotErrorCard from "../HubspotErrorCard";
 import HubspotSuccessCard from "../HubspotSuccessCard";
 import { AccentColor } from "../../utils/themes";
 import { linkifyUrls } from "../../utils/helpers";
-import { ChevronUp, ChevronDown, Check, X, HelpCircle } from "lucide-react";
+import { Check, HelpCircle } from "lucide-react";
 
 // Define ThemeStyle type
 interface MessageRendererProps {
@@ -15,8 +15,6 @@ interface MessageRendererProps {
   currentTheme: any; // We receive the computed theme directly from ChatWidget
   accentColor: AccentColor;
   mode: "light" | "dark";
-  expandedExecutions: Set<number>;
-  handleToggleExecution: (index: number) => void;
 }
 
 const MessageRenderer: React.FC<MessageRendererProps> = ({
@@ -25,8 +23,6 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
   currentTheme,
   accentColor,
   mode,
-  expandedExecutions,
-  handleToggleExecution,
 }) => {
   return (
     <React.Fragment>
