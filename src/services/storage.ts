@@ -1,3 +1,6 @@
+export const D4M_CONVERSATION_HISTORY_KEY = "d4mConversationhistory";
+export const HUBSPOT_CONVERSATION_HISTORY_KEY = "hubspotConversationHistory";
+
 export const saveConversationHistory = async (key: string, history: any[]) => {
   try {
     await chrome.storage.local.set({ [key]: history });
@@ -15,9 +18,6 @@ export const loadConversationHistory = async (key: string): Promise<any[]> => {
     return [];
   }
 };
-
-export const D4M_CONVERSATION_HISTORY_KEY = "d4mConversationhistory";
-export const HUBSPOT_CONVERSATION_HISTORY_KEY = "hubspotConversationHistory";
 
 export const clearLocalStorageItem = async (key: string) => {
   try {

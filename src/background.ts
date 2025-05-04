@@ -18,6 +18,7 @@ import { chatWithAI } from "./services/openai/api";
 import { DOMAction, LocalAction } from "./types/actionType.ts";
 import { getGoogleDocUrlFromId } from "./utils/helpers";
 import { MESSAGE_TYPE } from "./components/chatWidget/types.ts";
+import { MemoryState } from "./types/memoryTypes.ts";
 // --- Modularized Tool Handlers ---
 
 /**
@@ -26,7 +27,7 @@ import { MESSAGE_TYPE } from "./components/chatWidget/types.ts";
 async function handleGoogleWorkspaceAction(
   functionName: string,
   args: any,
-  tabId: number,
+  _tabId: number,
   executedActions: string[]
 ) {
   try {
@@ -111,7 +112,7 @@ async function handleHubspotAction(
       const isDuplicate = recentActions.some(
         (action) =>
           action.includes(`Executed HubSpot function: ${functionName}`) &&
-          action.includes(operationKey.substring(0, 20)) // Use first 20 chars of key as a fingerprint
+          action.includes(operationKey.substring(0, 20))
       );
 
       if (isDuplicate) {
@@ -124,7 +125,7 @@ async function handleHubspotAction(
         await chrome.runtime.sendMessage({
           type: MESSAGE_TYPE.HUBSPOT_RESPONSE,
           response: {
-            success: true, // Treat skipping as a successful handling of the situation
+            success: true,
             functionName: functionName,
             message: `Skipped duplicate ${functionName} operation - already executed`,
             details: { args, skipped: true }, // Provide context
@@ -188,7 +189,7 @@ async function handleHubspotAction(
         // Provide a general error type, or try to infer a more specific one if possible
         errorType: (error as any).errorType || "general",
         details: error, // Include the error object for details
-        status: (error as any).status, // Include status if available
+        status: (error as any).status,
       } as HubSpotExecutionResult,
     });
     await findAndUngroupDfmGroup();
@@ -367,7 +368,7 @@ async function handleDomAction(
       await chrome.runtime.sendMessage({
         type: MESSAGE_TYPE.AI_RESPONSE,
         action: "question",
-        question: question, // Use 'question' property for consistency with AskArgs
+        question: question,
       });
       executedActions.push(`Asked question: "${question}"`);
       automationStopped = true;
@@ -411,45 +412,44 @@ async function findDoFormeGroupId(): Promise<number | null> {
     ); // Log check
     try {
       await chrome.tabGroups.get(doFormeGroupId);
-      console.log(`[findDoFormeGroupId] Stored ID ${doFormeGroupId} is valid.`); // Log valid
+      console.log(`[findDoFormeGroupId] Stored ID ${doFormeGroupId} is valid.`);
       return doFormeGroupId;
     } catch (e) {
       // Catch specific error
       console.warn(
         `[findDoFormeGroupId] Stored group ID ${doFormeGroupId} no longer valid. Error: ${
           e instanceof Error ? e.message : String(e)
-        }` // Log invalidation error
+        }`
       );
-      doFormeGroupId = null; // Reset if group was deleted by user
+      doFormeGroupId = null;
     }
   } else {
-    console.log(`[findDoFormeGroupId] No stored ID.`); // Log no stored ID
+    console.log(`[findDoFormeGroupId] No stored ID.`);
   }
 
-  // If no valid stored ID, query existing groups
   try {
     console.log(
       `[findDoFormeGroupId] Querying for group titled '${doFormeGroupName}'...`
-    ); // Log query
+    );
     const groups = await chrome.tabGroups.query({ title: doFormeGroupName });
-    console.log(`[findDoFormeGroupId] Query returned ${groups.length} groups.`); // Log query result count
+    console.log(`[findDoFormeGroupId] Query returned ${groups.length} groups.`);
     if (groups.length > 0) {
-      doFormeGroupId = groups[0].id; // Store the found ID
+      doFormeGroupId = groups[0].id;
       console.log(
-        `[findDoFormeGroupId] Found existing group with ID: ${doFormeGroupId}` // Log found
+        `[findDoFormeGroupId] Found existing group with ID: ${doFormeGroupId}`
       );
       return doFormeGroupId;
     } else {
       console.log(
         `[findDoFormeGroupId] Query found no groups named '${doFormeGroupName}'.`
-      ); // Log not found by query
+      );
     }
   } catch (error) {
-    console.error("[findDoFormeGroupId] Error querying tab groups:", error); // Log query error
+    console.error("[findDoFormeGroupId] Error querying tab groups:", error);
   }
 
-  console.log("[findDoFormeGroupId] Function end. Returning null."); // Log returning null
-  return null; // Group not found
+  console.log("[findDoFormeGroupId] Function end. Returning null.");
+  return null;
 }
 
 /**
@@ -472,20 +472,19 @@ async function ungroupTabsInGroup(groupId: number): Promise<void> {
 
   try {
     // 1. Find all tabs belonging to the specified group
-    // Note: We query the tabs API, filtering by groupId
     const tabsInGroup = await chrome.tabs.query({ groupId: groupId });
 
     if (tabsInGroup.length === 0) {
       console.log(
         `[ungroupTabsInGroup] No tabs found in group ${groupId}. The group might be empty or already removed.`
       );
-      return; // Nothing to do
+      return;
     }
 
     // 2. Extract the valid IDs of the tabs found
     const tabIdsToUngroup = tabsInGroup
-      .map((tab) => tab.id) // Get the ID from each tab object
-      .filter((id) => typeof id === "number") as number[]; // Filter out any potentially undefined IDs and ensure they are numbers
+      .map((tab) => tab.id)
+      .filter((id) => typeof id === "number") as number[];
 
     if (tabIdsToUngroup.length === 0) {
       console.warn(
@@ -505,14 +504,12 @@ async function ungroupTabsInGroup(groupId: number): Promise<void> {
     console.log(
       `[ungroupTabsInGroup] Successfully ungrouped ${tabIdsToUngroup.length} tabs from group ${groupId}.`
     );
-    // NOTE: When a group becomes empty after ungrouping its last tabs,
-    // Chrome usually removes the group entity automatically.
   } catch (error) {
     console.error(
       `[ungroupTabsInGroup] Error during ungrouping process for group ${groupId}:`,
       error
     );
-    // Handle potential errors, e.g., the group or tabs were removed concurrently
+
     if (error instanceof Error) {
       if (error.message.includes("No group with id")) {
         console.warn(
@@ -544,9 +541,6 @@ async function findAndUngroupDfmGroup() {
     console.error("Error finding or ungrouping DFM group:", error);
   }
 }
-
-// Call this new function instead of directly calling ungroupTabsInGroup
-// findAndUngroupDfmGroup();
 
 /**
  * Adds a tab to the 'doForme' group.
@@ -703,7 +697,7 @@ async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
       !tab.url ||
       tab.url.startsWith("chrome://") ||
       tab.url.startsWith("about:") ||
-      tab.url.startsWith("chrome-extension://") // Add this check
+      tab.url.startsWith("chrome-extension://")
     ) {
       console.warn(
         `[background.ts] Skipping injection for invalid tab or URL: ${tabId}, URL: ${tab?.url}`
@@ -718,29 +712,29 @@ async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
     console.log(
       `[background.ts] Content script injection attempt finished for tab ${tabId}`
     );
-    return true; // Assume success (either injected or was already there and executeScript didn't throw)
+    return true;
   } catch (err: any) {
     // Log common non-critical errors, but don't treat them as failures for this function's purpose
     if (
       err.message?.includes("Cannot access a chrome:// URL") ||
       err.message?.includes("No tab with id") ||
       err.message?.includes("The tab was closed") ||
-      err.message?.includes("Cannot access contents of the page") || // Often means script already injected or page denied access
+      err.message?.includes("Cannot access contents of the page") ||
       err.message?.includes("Missing host permission for the tab") ||
-      err.message?.includes("Receiving end does not exist") || // Can indicate script already there or context issues
-      err.message?.includes("Could not establish connection") // Similar to receiving end does not exist
+      err.message?.includes("Receiving end does not exist") ||
+      err.message?.includes("Could not establish connection")
     ) {
       console.warn(
         `[background.ts] Content script injection skipped/ignored for tab ${tabId}: ${err.message}`
       );
-      return false; // Indicate injection didn't happen or wasn't needed
+      return false;
     } else {
       // Log unexpected errors
       console.error(
         `[background.ts] Unexpected injection error for tab ${tabId}:`,
         err
       );
-      return false; // Indicate failure
+      return false;
     }
   }
 }
@@ -837,7 +831,7 @@ async function waitForPotentialNavigation(
     await waitForTabLoad(tabId);
   } else if (lastActionType === "click" || lastActionType === "submit_form") {
     const initialUrl = await getTabUrl(tabId);
-    await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait 2 seconds
+    await new Promise((resolve) => setTimeout(resolve, 2000));
     const currentUrl = await getTabUrl(tabId);
     if (currentUrl !== initialUrl) {
       await waitForTabLoad(tabId);
@@ -857,7 +851,128 @@ export async function getIsHubspotMode(): Promise<boolean> {
     return false;
   }
 }
-async function processCommand(
+
+async function stopAutomationAndCleanup(
+  tabId: number,
+  reason: string,
+  sendMessage: boolean = true
+) {
+  console.log(
+    `[background.ts] Stopping automation for tab ${tabId}. Reason: ${reason}`
+  );
+  automationStopped = true;
+  if (sendMessage) {
+    await chrome.runtime
+      .sendMessage({
+        type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
+        response: reason,
+      })
+      .catch((err) =>
+        console.warn("Failed to send FINISH_PROCESS_COMMAND on stop:", err)
+      );
+  }
+  await findAndUngroupDfmGroup();
+  resetExecutionState(tabId);
+  activeAutomationTabs.delete(tabId);
+}
+
+async function hubspotExecutionBlock(
+  isHubspotMode: boolean,
+  rawAiResponse: any,
+  modeLogPrefix: string,
+  tabId: number
+) {
+  if (isHubspotMode) {
+    console.log(
+      `[background.ts]${modeLogPrefix} Checking AI response for HubSpot functions...`
+    );
+    const hubspotCalls = rawAiResponse.filter(
+      (callWrapper: any) =>
+        callWrapper.functionCall &&
+        typeof callWrapper.functionCall.name === "string" &&
+        callWrapper.functionCall.name.startsWith("hubspot_")
+    );
+
+    if (hubspotCalls.length > 0) {
+      console.log(
+        `[background.ts]${modeLogPrefix} Found ${hubspotCalls.length} HubSpot function calls. Executing immediately.`
+      );
+      for (const callWrapper of hubspotCalls) {
+        const { name, args } = callWrapper.functionCall;
+        console.log(
+          `[background.ts]${modeLogPrefix} Executing HubSpot function:`,
+          { name, args }
+        );
+        try {
+          const result = await executeHubspotFunction({ name, args });
+          console.log(
+            `[background.ts]${modeLogPrefix} HubSpot function executed:`,
+            { name, result }
+          );
+
+          if (result && result.success) {
+            console.warn(
+              `[background.ts]${modeLogPrefix} HubSpot function result indicates processing should stop (result.success is true).`,
+              name
+            );
+            await stopAutomationAndCleanup(
+              tabId,
+              result.message || `HubSpot action ${name} completed successfully.`
+            );
+            break;
+          }
+          // Record action even if not stopping
+          recentActionsMap[tabId] = [
+            ...(recentActionsMap[tabId] || []),
+            `Executed HubSpot action: ${name} with args ${JSON.stringify(
+              args
+            )}`,
+          ].slice(-5);
+        } catch (err) {
+          console.error(
+            `[background.ts]${modeLogPrefix} Error executing HubSpot function ${name}:`,
+            err
+          );
+          // Stop automation on error during HubSpot execution
+          await stopAutomationAndCleanup(
+            tabId,
+            `Error executing HubSpot action ${name}: ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          );
+          break;
+        }
+      }
+
+      console.log(
+        `[background.ts]${modeLogPrefix} Finished immediate HubSpot execution phase. Returning.`
+      );
+      return;
+    } else {
+      console.log(
+        `[background.ts]${modeLogPrefix} No HubSpot functions found in this AI response.`
+      );
+
+      console.log(
+        `[background.ts]${modeLogPrefix} No HubSpot actions to execute. Ending this cycle.`
+      );
+      await chrome.runtime
+        .sendMessage({
+          // Send a message indicating nothing happened? Or use evaluation from reportState?
+          type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
+          response: "No HubSpot actions required in this step.",
+        })
+        .catch(() => {});
+
+      await findAndUngroupDfmGroup();
+      activeAutomationTabs.delete(tabId);
+      resetExecutionState(tabId);
+      return;
+    }
+  }
+}
+
+export async function processCommand(
   tabId: number,
   contextMessage: string,
   initialCommand: string,
@@ -867,52 +982,68 @@ async function processCommand(
   retryCount: number = 0
 ) {
   const isHubspotMode = await getIsHubspotMode();
+  const modeLogPrefix = isHubspotMode ? "[HubSpot Mode]" : "[D4M Mode]";
 
-  if (isHubspotMode) {
-    console.log(`[background.ts][HubSpot Mode] processCommand ENTRY`, {
+  console.log(
+    `[background.ts]${modeLogPrefix} processCommand ENTRY (Retry: ${retryCount})`,
+    {
       tabId,
       contextMessage,
       initialCommand,
-      actionHistory,
+      actionHistory: actionHistory.slice(-3),
       model,
-      retryCount,
-    });
-  }
+    }
+  );
 
   if (automationStopped) {
-    console.log("[background.ts] Automation stopped. Not processing.");
+    console.log(
+      "[background.ts] Automation stopped flag is true. Not processing."
+    );
+    // Ensure cleanup if stopped abruptly
+    if (activeAutomationTabs.has(tabId)) {
+      resetExecutionState(tabId);
+      activeAutomationTabs.delete(tabId);
+      await findAndUngroupDfmGroup();
+    }
     return;
   }
-  // Add the new tab to the group immediately
-  await addTabToDoFormeGroup(tabId);
-  activeAutomationTabs.add(tabId);
-  recentActionsMap[tabId] = recentActionsMap[tabId] || [];
+
+  // Ensure tab is tracked and potentially grouped
+  if (!activeAutomationTabs.has(tabId)) {
+    await addTabToDoFormeGroup(tabId);
+    activeAutomationTabs.add(tabId);
+    recentActionsMap[tabId] = recentActionsMap[tabId] || [];
+  }
 
   let pageState: PageElement[] = [];
   let screenshotDataUrl: string | null = null;
   let tabUrl: string = "";
   let allTabs: string[] = [];
+  let current_state: ReportCurrentStateArgs["current_state"] | null = null;
 
   try {
+    // --- 1. Fetch Environment State (DOM, Screenshot, Tabs) ---
     if (!isHubspotMode) {
-      // --- Fetch initial state ---
-      console.log(
-        `[background.ts processCommand ${tabId}] Attempting to fetch page elements...`
-      );
-      const fetchStart = Date.now();
+      console.log(`[background.ts]${modeLogPrefix} Fetching DOM elements...`);
       try {
         const pageElementsResult = await fetchPageElements(tabId);
         pageState = pageElementsResult.compressed;
         console.log(
-          `[background.ts processCommand ${tabId}] Page elements fetched in ${
-            Date.now() - fetchStart
-          }ms`
+          `[background.ts]${modeLogPrefix} Fetched ${pageState.length} DOM elements.`
         );
+        if (pageState.length === 0) {
+          console.warn(
+            `[background.ts]${modeLogPrefix} No DOM elements found. Aborting D4M task.`
+          );
+          await chrome.runtime.sendMessage({
+            type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
+            response: "No page elements found to interact with.",
+          });
+          throw new Error("No DOM elements found");
+        }
       } catch (err) {
         console.error(
-          `[background.ts processCommand ${tabId}] Failed to fetch page elements after ${
-            Date.now() - fetchStart
-          }ms:`,
+          `[background.ts]${modeLogPrefix} Failed to fetch page elements:`,
           err
         );
         await chrome.runtime.sendMessage({
@@ -921,250 +1052,133 @@ async function processCommand(
             "Failed to fetch page elements: " +
             (err instanceof Error ? err.message : String(err)),
         });
-        await findAndUngroupDfmGroup();
-        return; // Stop processing if page elements fail
+        throw err;
       }
-    }
-    if (isHubspotMode) {
+
+      console.log(`[background.ts]${modeLogPrefix} Capturing screenshot...`);
+      // Screenshot capturing logic (simplified, ensure it handles errors)
+      try {
+        const targetTab = await chrome.tabs.get(tabId);
+        if (targetTab && typeof targetTab.windowId === "number") {
+          screenshotDataUrl = await new Promise((resolve) => {
+            chrome.tabs.captureVisibleTab(
+              targetTab.windowId!,
+              { format: "jpeg", quality: 60 },
+              (dataUrl) => {
+                if (chrome.runtime.lastError || !dataUrl) {
+                  console.warn(
+                    "[background.ts] Screenshot capture failed:",
+                    chrome.runtime.lastError?.message
+                  );
+                  resolve(null);
+                } else {
+                  // Optional: Resize screenshot via content script if needed
+                  chrome.tabs.sendMessage(
+                    tabId,
+                    { type: "RESIZE_SCREENSHOT", dataUrl },
+                    (response) => {
+                      resolve(response?.resizedDataUrl || dataUrl);
+                    }
+                  );
+                }
+              }
+            );
+          });
+          console.log(
+            `[background.ts]${modeLogPrefix} Screenshot ${
+              screenshotDataUrl ? "captured" : "failed"
+            }.`
+          );
+        }
+      } catch (tabErr) {
+        console.warn(
+          `[background.ts]${modeLogPrefix} Error getting tab for screenshot:`,
+          tabErr
+        );
+      }
+    } else {
       console.log(
-        "[background.ts][HubSpot Mode] Skipping DOM and screenshot logic for HubSpot mode."
+        `[background.ts]${modeLogPrefix} Skipping DOM/Screenshot fetch.`
       );
     }
 
-    !isHubspotMode &&
-      (await new Promise<void>(async (resolve) => {
-        try {
-          const targetTab = await chrome.tabs.get(tabId);
-          if (!targetTab || typeof targetTab.windowId !== "number") {
-            console.error("[background.ts] No valid tab or window");
-            resolve();
-            return;
-          }
-          chrome.tabs.captureVisibleTab(
-            targetTab.windowId,
-            { format: "jpeg", quality: 60 },
-            (dataUrl) => {
-              if (chrome.runtime.lastError || !dataUrl) {
-                console.error(
-                  "[background.ts] Failed to capture screenshot:",
-                  chrome.runtime.lastError?.message || "No data URL returned"
-                );
-                resolve(); // Resolve even if screenshot fails
-                return;
-              }
-              chrome.tabs.sendMessage(
-                tabId,
-                { type: "RESIZE_SCREENSHOT", dataUrl },
-                (response) => {
-                  if (response?.resizedDataUrl) {
-                    screenshotDataUrl = response.resizedDataUrl;
-                    console.log(
-                      "[background.ts] Screenshot resized via content.js"
-                    );
-                  } else {
-                    console.warn(
-                      "[background.ts] Failed to compress screenshot in content.js"
-                    );
-                    screenshotDataUrl = dataUrl; // Use original if resize fails
-                  }
-                  resolve();
-                }
-              );
-            }
-          );
-        } catch (err) {
-          console.error("[background.ts] Error getting tab info:", err);
-          resolve();
-        }
-      }));
-
+    // Fetch tab info regardless of mode
     try {
       allTabs = await getAllTabs();
       tabUrl = await getTabUrl(tabId);
     } catch (error) {
-      console.error("[background.ts] Tab URL/List error:", error);
+      console.error("[background.ts] Failed to get tab URL/List:", error);
       await chrome.runtime.sendMessage({
         type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
         response:
-          "Failed to get tab URL/List: " +
+          "Failed to get tab information: " +
           (error instanceof Error ? error.message : String(error)),
       });
-      await findAndUngroupDfmGroup();
-      return;
+      throw error;
     }
 
-    if (!pageState.length) {
-      if (await getIsHubspotMode()) {
-        console.warn(
-          "[background.ts] No elements found, but continuing because HubSpot mode is active"
-        );
-      } else {
-        console.warn("[background.ts] No elements found, aborting");
-        await chrome.runtime.sendMessage({
-          type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
-          response: "No page elements found, aborting command processing.",
-        });
-        await findAndUngroupDfmGroup();
-        return;
-      }
-    }
-
-    // --- Call AI ---
-    // First check if we're in HubSpot mode from storage
-    // HubSpot mode already determined at top of function, use isHubspotMode directly.
-
-    // Check ONLY if we're in HubSpot mode - no longer looking at message keywords
-    // This strictly separates API mode (HubSpot) from DOM interaction mode (D4M)
-
-    // A message is HubSpot-related ONLY if we're in HubSpot mode
-    // Create aiCurrentState with appropriate values
+    // --- 2. Call AI ---
     const aiCurrentState = {
-      elements: pageState, // Don't send DOM elements for HubSpot commands
+      // Data sent *to* the AI
+      elements: pageState,
       tabs: allTabs,
       currentTabUrl: tabUrl,
       actionHistory: actionHistory.slice(-3),
     };
 
-    // Enhanced debug logging
-    if (isHubspotMode) {
-      console.log(
-        "[background.ts][HubSpot Mode] HubSpot command detected - sending with NO screenshots and NO DOM elements"
-      );
-    }
-
-    const recentActionsStr = isHubspotMode
-      ? actionHistory.length
-        ? `Recent actions: ${actionHistory.slice(-3).join(", ")}.`
-        : ""
-      : "";
-    const fullContextMessage = `${contextMessage}. ${recentActionsStr}`;
     console.log(
-      "[background.ts] Sending context message to AI:",
-      fullContextMessage
+      `[background.ts]${modeLogPrefix} Calling AI with context: "${contextMessage}"`
     );
-
-    if (isHubspotMode) {
-      console.log(
-        "[background.ts][HubSpot Mode] Calling chatWithAI with context:",
-        fullContextMessage
-      );
-    }
-    const raw = await chatWithAI(
-      fullContextMessage,
-      "session-id",
-      isHubspotMode ? [] : aiCurrentState,
+    const rawAiResponse: GeminiFunctionCallWrapper[] | null = await chatWithAI(
+      contextMessage,
+      initialCommand,
+      `session-${tabId}`,
+      isHubspotMode ? undefined : aiCurrentState,
       isHubspotMode,
       selectedSlashCommand,
       screenshotDataUrl || undefined,
       model as "gemini" | "claude"
     );
-    if (isHubspotMode) {
-      console.log("[background.ts][HubSpot Mode] Raw response from AI:", raw);
 
-      // --- HubSpot Mode: Execute HubSpot function calls from AI response ---
-      if (raw) {
-        const hubspotCalls = raw.filter(
-          (callWrapper: any) =>
-            callWrapper.functionCall &&
-            typeof callWrapper.functionCall.name === "string" &&
-            callWrapper.functionCall.name.startsWith("hubspot_")
-        );
-        if (hubspotCalls.length === 0) {
-          console.warn(
-            "[background.ts][HubSpot Mode] No HubSpot function calls found in AI response."
-          );
-        } else {
-          for (const callWrapper of hubspotCalls) {
-            const { name, args } = callWrapper.functionCall;
-            console.log(
-              "[background.ts][HubSpot Mode] Executing HubSpot function from AI response:",
-              { name, args }
-            );
-            try {
-              const result = await executeHubspotFunction({ name, args });
-              console.log(
-                "[background.ts][HubSpot Mode] HubSpot function executed successfully:",
-                { name, result }
-              );
-              if (result && result.success) {
-                // TODO: Send error to UI and stop further processing
-                chrome.runtime.sendMessage({
-                  type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
-                  response: result,
-                });
-                await findAndUngroupDfmGroup();
-                activeAutomationTabs.delete(tabId);
-                automationStopped = true;
-                return;
-              }
-              // Optionally, send result to UI or handle as needed
-            } catch (err) {
-              console.error(
-                "[background.ts][HubSpot Mode] Error executing HubSpot function:",
-                { name, err }
-              );
-            }
-          }
-        }
-      }
-    } else {
-      console.log("[background.ts] Raw response from AI:", raw);
-    }
-
-    if (!raw) {
-      if (isHubspotMode) {
-        console.error(
-          "[background.ts][HubSpot Mode] Received null response from chatWithAI."
-        );
-      } else {
-        console.error(
-          "[background.ts] Received null response from chatWithAI."
-        );
-      }
-      chrome.runtime.sendMessage({
+    if (!rawAiResponse) {
+      console.error(
+        `[background.ts]${modeLogPrefix} AI provider returned null response.`
+      );
+      await chrome.runtime.sendMessage({
         type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
         response: "AI provider returned no response.",
       });
-      await findAndUngroupDfmGroup();
-      activeAutomationTabs.delete(tabId);
-      return;
+      throw new Error("AI provider returned null response.");
     }
 
-    // --- Process AI Response ---
-    const reportStateCall = raw.find(
-      (callWrapper: GeminiFunctionCallWrapper) =>
+    console.log(
+      `[background.ts]${modeLogPrefix} Raw AI Response:`,
+      JSON.stringify(rawAiResponse)
+    );
+
+    // hubspotExecutionBlock(isHubspotMode, rawAiResponse, modeLogPrefix, tabId);
+
+    // --- 3. Validate AI Response Structure ---
+    const reportStateCallWrapper = rawAiResponse.find(
+      (callWrapper) =>
         callWrapper.functionCall.name === DOMAction.reportCurrentState.name
     );
 
-    if (!reportStateCall) {
-      if (isHubspotMode) {
-        console.log(
-          "[background.ts][HubSpot Mode] Mandatory 'dom_reportCurrentState' function call missing in AI response."
-        );
-      } else {
-        console.log(
-          "[background.ts] Mandatory 'dom_reportCurrentState' function call missing in AI response."
-        );
-      }
+    // A) Check if dom_reportCurrentState exists
+    if (!reportStateCallWrapper) {
+      console.error(
+        `[background.ts]${modeLogPrefix} Mandatory 'dom_reportCurrentState' missing in AI response.`
+      );
       if (retryCount < MAX_STATE_RETRIES) {
-        if (isHubspotMode) {
-          console.warn(
-            `[background.ts][HubSpot Mode] Retrying processCommand due to missing reportCurrentState (retry ${
-              retryCount + 1
-            })`
-          );
-        } else {
-          console.warn(
-            `[background.ts] Retrying processCommand due to missing reportCurrentState (retry ${
-              retryCount + 1
-            })`
-          );
-        }
-        const retryContextMessage = `Previous response was missing ${DOMAction.reportCurrentState.name}. Please include it in your next response.\n
-          ${contextMessage}`;
+        console.warn(
+          `[background.ts] Retrying processCommand due to missing reportCurrentState (retry ${
+            retryCount + 1
+          })`
+        );
+        const retryContext = `Invalid response: You MUST include the '${DOMAction.reportCurrentState.name}' function call.\n${contextMessage}`;
         await processCommand(
           tabId,
-          retryContextMessage,
+          retryContext,
           initialCommand,
           actionHistory,
           model,
@@ -1172,28 +1186,28 @@ async function processCommand(
           retryCount + 1
         );
       } else {
-        chrome.runtime.sendMessage({
+        await chrome.runtime.sendMessage({
           type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
-          response:
-            "AI response missing mandatory state report. Aborting after retry.",
+          response: "AI response missing mandatory state report. Aborting.",
         });
-        await findAndUngroupDfmGroup();
-        activeAutomationTabs.delete(tabId);
+        throw new Error("AI response missing mandatory state report.");
       }
       return;
     }
+    // B) Extract current_state and check its validity
+    const reportArgs = reportStateCallWrapper.functionCall.args as
+      | ReportCurrentStateArgs
+      | undefined;
+    current_state = reportArgs?.current_state ?? null;
 
-    const reportArgs = reportStateCall.functionCall
-      .args as ReportCurrentStateArgs;
-    const current_state = reportArgs.current_state; // Define current_state here
-    console.log(
-      "[background.ts] Extracted current_state from dom_reportCurrentState args:",
-      current_state
-    );
-
-    if (!current_state) {
-      console.warn(
-        "[background.ts] No valid current_state found, retrying or stopping"
+    if (
+      !current_state ||
+      typeof current_state !== "object" ||
+      !current_state.memory
+    ) {
+      console.error(
+        `[background.ts]${modeLogPrefix} Invalid or missing 'current_state' object in dom_reportCurrentState.`,
+        reportArgs
       );
       if (retryCount < MAX_STATE_RETRIES) {
         console.warn(
@@ -1201,12 +1215,10 @@ async function processCommand(
             retryCount + 1
           })`
         );
-        const retryContextMessage =
-          "Previous response had invalid 'current_state'. Please provide a valid state in your next response.\n" +
-          contextMessage;
+        const retryContext = `Invalid response: The '${DOMAction.reportCurrentState.name}' function call MUST contain a valid 'current_state' object with a 'memory' property.\n${contextMessage}`;
         await processCommand(
           tabId,
-          retryContextMessage,
+          retryContext,
           initialCommand,
           actionHistory,
           model,
@@ -1216,61 +1228,39 @@ async function processCommand(
       } else {
         await chrome.runtime.sendMessage({
           type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
-          response: "No valid state returned from AI, aborting after retry.",
+          response: "AI response contained invalid state report. Aborting.",
         });
-        await findAndUngroupDfmGroup();
+        throw new Error("AI response contained invalid state report.");
       }
       return;
     }
 
-    // Filter out reportCurrentState to get action calls
-    const actionCalls = raw.filter(
-      (callWrapper: GeminiFunctionCallWrapper) =>
+    console.log(
+      `[background.ts]${modeLogPrefix} Extracted valid current_state:`,
+      JSON.stringify(current_state)
+    );
+
+    // C) Filter out reportCurrentState to get action/done/ask calls
+    const nonReportActionCalls = rawAiResponse.filter(
+      (callWrapper) =>
         callWrapper.functionCall.name !== DOMAction.reportCurrentState.name
     );
-    console.log("[background.ts] Extracted action calls:", actionCalls);
 
-    // Add initial command to state
-    current_state.user_command = initialCommand;
-
-    const {
-      evaluation_previous_goal: evaluation,
-      memory,
-      user_command,
-    } = current_state;
-
-    const tabIdRef = { value: tabId };
-
-    // Update memory if available
-    if (memory) {
-      chrome.runtime.sendMessage({
-        type: MESSAGE_TYPE.MEMORY_UPDATE,
-        response: memory,
-      });
-      chrome.tabs.sendMessage(tabIdRef.value, {
-        type: MESSAGE_TYPE.MEMORY_UPDATE,
-        response: memory,
-      });
-    } else {
-      console.warn("[background.ts] No memory object found in current_state");
-    }
-
-    if (!actionCalls.length) {
-      console.log(
-        "[background.ts] No actions besides dom_reportCurrentState, process complete"
+    // D) Check if *only* dom_reportCurrentState was returned (Invalid according to prompt rules)
+    if (nonReportActionCalls.length === 0) {
+      console.error(
+        `[background.ts]${modeLogPrefix} Invalid AI Response: Only dom_reportCurrentState was returned. At least one other action (or done/ask) is required.`
       );
       if (retryCount < MAX_STATE_RETRIES) {
         console.warn(
-          `[background.ts] Retrying processCommand due to empty action list (retry ${
+          `[background.ts] Retrying processCommand due to only reportCurrentState returned (retry ${
             retryCount + 1
           })`
         );
-        const retryContextMessage =
-          "Previous response had no actions specified. Please provide a valid actions in your next response.\n" +
-          contextMessage;
+        const retryContext = `Invalid response: You MUST return at least one action, 'dom_done', or 'dom_ask' call BEFORE the final '${DOMAction.reportCurrentState.name}' call.\n${contextMessage}`;
         await processCommand(
           tabId,
-          retryContextMessage,
+          retryContext,
           initialCommand,
           actionHistory,
           model,
@@ -1278,33 +1268,73 @@ async function processCommand(
           retryCount + 1
         );
       } else {
-        chrome.runtime.sendMessage({
+        await chrome.runtime.sendMessage({
           type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
-          response: evaluation || "Task likely completed (no further actions).",
+          response:
+            "AI failed to provide required actions before state report. Aborting.",
         });
-        await findAndUngroupDfmGroup();
-        resetExecutionState(tabId);
-        activeAutomationTabs.clear();
-        return;
+        throw new Error(
+          "AI failed to provide required actions before state report."
+        );
       }
+      return;
     }
 
-    // Execute function calls in sequence
-    const executedActions: string[] = [];
-    let result: any = null;
-    let lastActionType: string | null = null;
+    console.log(
+      `[background.ts]${modeLogPrefix} Validated AI response structure.`
+    );
 
-    // Process each function call in order
-    for (let i = 0; i < actionCalls.length; i++) {
-      const functionCall = actionCalls[i].functionCall;
+    // --- 4. Send Memory Update to UI ---
+    // Use the extracted and validated current_state
+    if (current_state.memory) {
+      console.log(
+        `[background.ts]${modeLogPrefix} Sending MEMORY_UPDATE to UI.`
+      );
+      chrome.runtime
+        .sendMessage({
+          type: MESSAGE_TYPE.MEMORY_UPDATE,
+          response: current_state.memory,
+        })
+        .catch((err) =>
+          console.warn("Failed to send MEMORY_UPDATE to runtime:", err)
+        );
+
+      chrome.tabs
+        .sendMessage(tabId, {
+          type: MESSAGE_TYPE.MEMORY_UPDATE,
+          response: current_state.memory,
+        })
+        .catch((err) =>
+          console.warn("Failed to send MEMORY_UPDATE to tab:", err)
+        );
+    } else {
+      console.warn(
+        `[background.ts]${modeLogPrefix} Memory object missing in validated current_state. Cannot send update.`
+      );
+    }
+
+    // --- 5. Execute Action Calls ---
+    const executedActions: string[] = [];
+    let lastActionType: string | null = null;
+    const tabIdRef = { value: tabId };
+
+    for (let i = 0; i < nonReportActionCalls.length; i++) {
+      if (automationStopped) {
+        console.log(
+          "[background.ts] Stopping action execution loop as automationStopped is true."
+        );
+        break;
+      }
+
+      const functionCall = nonReportActionCalls[i].functionCall;
       const functionName = functionCall.name;
       const args = functionCall.args;
 
       console.log(
-        `[background.ts] Executing function call ${i + 1}/${
-          actionCalls.length
+        `[background.ts] Executing call ${i + 1}/${
+          nonReportActionCalls.length
         }: ${functionName}`,
-        args
+        args ?? "{}"
       );
 
       try {
@@ -1312,106 +1342,16 @@ async function processCommand(
           await handleGoogleWorkspaceAction(
             functionName,
             args,
-            tabId,
+            tabIdRef.value,
             executedActions
           );
-          continue;
-        }
-
-        // Handle HubSpot functions
-        else if (functionName.startsWith("hubspot_")) {
-          console.log("[background.ts] Received HubSpot action:", {
+        } else if (functionName.startsWith("hubspot_")) {
+          await handleHubspotAction(
             functionName,
             args,
-            tabId,
-            executedActions,
-          });
-          await handleHubspotAction(functionName, args, tabId, executedActions);
-          continue;
-        }
-
-        // Handle DOM interaction functions
-        else if (functionName === DOMAction.keyPress.name) {
-          const index = (args as any).index;
-          const key = (args as any).key;
-          if (typeof index !== "number") {
-            throw new Error(`Invalid index for ${functionName}: ${index}`);
-          }
-          if (typeof key !== "string") {
-            throw new Error(`Invalid key for ${functionName}: ${key}`);
-          }
-          await sendActionToTab(
-            {
-              id: Date.now().toString(),
-              type: DOMAction.keyPress.name, // Map to valid LocalActionType
-              data: { index, key },
-              description: functionName, // Keep original name here
-            },
-            tabIdRef.value
+            tabIdRef.value,
+            executedActions
           );
-          executedActions.push(`Pressed key "${key}" at index ${index}`);
-        } else if (functionName === DOMAction.extractContent.name) {
-          const index = (args as any).index;
-          if (typeof index !== "number") {
-            throw new Error(`Invalid index for ${functionName}: ${index}`);
-          }
-          result = await sendActionToTab(
-            {
-              id: Date.now().toString(),
-              type: DOMAction.extractContent.name, // Map to valid LocalActionType
-              data: { index },
-              description: functionName, // Keep original name here
-            },
-            tabIdRef.value
-          );
-          executedActions.push(
-            `Extracted content from element at index ${index}: "${result}"`
-          );
-        } else if (functionName === DOMAction.goToExistingTab.name) {
-          const url = (args as any).url;
-          if (!url) {
-            throw new Error(`No URL provided for ${functionName}`);
-          }
-          const existingTab = await navigateTab(
-            url,
-            initialCommand,
-            actionHistory,
-            model
-          );
-          if (existingTab.id) tabIdRef.value = existingTab.id;
-          executedActions.push(`Switched to tab: ${url}`);
-          lastActionType = DOMAction.goToExistingTab.name;
-        } else if (functionName === DOMAction.openTab.name) {
-          const url = (args as any).url;
-          if (!url) {
-            throw new Error(`No URL provided for ${functionName}`);
-          }
-          const newTab = await createTab(url);
-          if (newTab.id) tabIdRef.value = newTab.id;
-          executedActions.push(`Opened new tab with URL ${url}`);
-          lastActionType = DOMAction.openTab.name;
-        } else if (functionName === DOMAction.scroll.name) {
-          const direction = (args as any).direction;
-          const offset = (args as any).offset;
-          if (direction !== "up" && direction !== "down") {
-            throw new Error(`Invalid direction for scroll: ${direction}`);
-          }
-          if (typeof offset !== "number") {
-            throw new Error(`Invalid offset for scroll: ${offset}`);
-          }
-          await sendActionToTab(
-            {
-              id: Date.now().toString(),
-              type: DOMAction.scroll.name, // Map to valid LocalActionType
-              data: { direction, offset },
-              description: functionName, // Keep original name here
-            },
-            tabIdRef.value
-          );
-          executedActions.push(`Scrolled ${direction} by ${offset} pixels`);
-        } else if (functionName === DOMAction.refetch.name) {
-          console.log("[background.ts] Refetch action detected, will loop...");
-          executedActions.push("Re-fetched page elements");
         } else if (functionName.startsWith("dom_")) {
           await handleDomAction(
             functionName,
@@ -1424,141 +1364,149 @@ async function processCommand(
             initialCommand,
             model
           );
-          continue;
         } else {
           console.warn(
-            `[background.ts] Unknown function call: ${functionName}`,
-            args
+            `[background.ts] Unknown function call type skipped: ${functionName}`
           );
-          executedActions.push(`Unknown function: ${functionName}`);
+          executedActions.push(`Skipped unknown function: ${functionName}`);
         }
 
-        // Check if navigation might have occurred and wait if needed
-        if (lastActionType) {
+        // If action caused automationStopped, break immediately
+        if (automationStopped) {
+          console.log(
+            `[background.ts] Automation stopped after executing: ${functionName}`
+          );
+          break;
+        }
+
+        // Wait after potential navigation actions handled by handleDomAction
+        if (lastActionType && functionName.startsWith("dom_")) {
+          console.log(
+            `[background.ts] Waiting after potential navigation action: ${lastActionType}`
+          );
           await waitForPotentialNavigation(tabIdRef.value, lastActionType);
           lastActionType = null;
         }
       } catch (error) {
         console.error(
-          `[background.ts] Error executing function ${functionName}:`,
+          `[background.ts] Error executing ${functionName}:`,
           error
         );
-        const errorMessage = `Function ${functionName} failed: ${
+        const errorMsg = `Action ${functionName} failed: ${
           error instanceof Error ? error.message : String(error)
         }`;
+        // Send error to UI
         chrome.runtime.sendMessage({
           type: "DISPLAY_MESSAGE",
-          response: { message: errorMessage },
+          response: { message: errorMsg },
         });
-
-        // TODO: For critical errors, stop automation
-        // if (["navigate", "open_tab", "verify"].includes(functionName)) {
-        //   automationStopped = true;
-        //   await chrome.runtime.sendMessage({
-        //     type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
-        //     response: errorMessage,
-        //   });
-        //   resetExecutionState(tabId);
-        //   activeAutomationTabs.delete(tabId);
-        //   return;
-        // }
+        // Stop automation on *any* action execution error
+        automationStopped = true;
+        await chrome.runtime.sendMessage({
+          type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
+          response: errorMsg,
+        });
+        console.log(
+          "[background.ts] Automation stopped due to action execution error."
+        );
+        break;
       }
     }
 
-    // Update recent actions
-    recentActionsMap[tabId] = [
-      ...recentActionsMap[tabId],
-      ...executedActions,
-    ].slice(-5);
+    // --- 6. Update Action History ---
+    // Add descriptions logged by handlers to the persistent history map
+    if (executedActions.length > 0) {
+      recentActionsMap[tabIdRef.value] = [
+        // Use potentially updated tabId
+        ...(recentActionsMap[tabIdRef.value] || []),
+        ...executedActions,
+      ].slice(-5);
+    }
 
-    // Prepare prompt for next iteration
-    const promptParts = [
-      evaluation ? `Evaluation: ${evaluation}` : "",
-      memory ? `Memory: ${JSON.stringify(memory)}` : "",
-      user_command ? `Objective: ${user_command}` : "",
-      result && typeof result === "string" ? `Extracted: ${result}` : "",
-      "Provide next actions to achieve the goal.",
-    ]
-      .filter(Boolean)
-      .join(". ");
-
-    // Continue processing if not stopped
+    // --- 7. Recursive Call or Finish ---
     if (!automationStopped) {
+      console.log(
+        "[background.ts] Actions executed, preparing for next iteration."
+      );
+
+      // Prepare the CONCISE context for the NEXT AI call
+      const evaluation = current_state?.evaluation_previous_goal;
+      const currentGoal = current_state?.current_goal;
+      const reportedMemory = current_state?.memory as MemoryState | undefined;
+
+      const lastPhase =
+        reportedMemory?.phases?.[reportedMemory.phases.length - 1];
+      const lastStepInPhase = lastPhase?.steps?.[lastPhase.steps.length - 1];
+      // Status reported by AI *for the last planned step* after evaluating this turn's actions
+      const lastReportedStepStatus = lastStepInPhase?.status;
+
+      // Description of the action physically executed *in this turn*
+      const lastExecutedActionDesc =
+        executedActions.length > 0
+          ? executedActions[executedActions.length - 1]
+          : "No actions executed in this step.";
+
+      const nextContextMessage = [
+        `Previous Step Evaluation: ${evaluation || "N/A"}.`,
+        `Action Just Executed: ${lastExecutedActionDesc}.`,
+        lastReportedStepStatus
+          ? `Reported Status of Action: ${lastReportedStepStatus}.`
+          : "No specific step status reported.",
+        // Use the goal AI set for *itself* last turn, fallback to overall
+        `Current Goal: ${
+          currentGoal || reportedMemory?.overall_goal || initialCommand
+        }.`,
+        "Based on the latest Page Elements and Screenshot provided, determine the single next action (or use 'dom_done'/'dom_ask') and report the updated state.",
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      // Make the recursive call
       await processCommand(
         tabIdRef.value,
-        promptParts,
+        nextContextMessage,
         initialCommand,
-        recentActionsMap[tabId],
+        recentActionsMap[tabIdRef.value],
         model,
         selectedSlashCommand,
-        retryCount
+        0
       );
+    } else {
+      console.log(
+        "[background.ts] Automation stopped. Ending processCommand task."
+      );
+      // Cleanup if stopped during this iteration
+      await findAndUngroupDfmGroup();
+      resetExecutionState(tabIdRef.value);
+      activeAutomationTabs.delete(tabIdRef.value);
     }
   } catch (err) {
-    console.error("[background.ts] Error in processCommand:", err);
-    await handleError(
-      err,
-      tabId,
-      contextMessage,
-      initialCommand,
-      actionHistory,
-      model
+    // Catch errors from initial setup, AI call, or action execution loop
+    console.error(
+      "[background.ts] Unhandled error in processCommand main block:",
+      err
     );
-  }
-}
-
-async function handleError(
-  err: any,
-  tabId: number,
-  contextMessage: string,
-  initialCommand: string,
-  actionHistory: string[],
-  model: string
-) {
-  const tabIdRef = { value: tabId };
-  if (err.message?.includes("quota") || err.message?.includes("429")) {
-    const message = err.message.includes("quota")
-      ? "API Quota Exhausted. Try again later."
-      : "Rate limit hit. Retrying in 60s.";
-    chrome.tabs.sendMessage(tabIdRef.value, {
-      type: "DISPLAY_MESSAGE",
-      response: { message },
-    });
-    if (err.message.includes("quota")) {
-      await chrome.runtime.sendMessage({
+    // Ensure automation is marked as stopped
+    automationStopped = true;
+    // Send a generic failure message if not already handled
+    await chrome.runtime
+      .sendMessage({
         type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
-        response: message,
-      });
-      await findAndUngroupDfmGroup();
-      automationStopped = true;
-    } else if (err.message.includes("429")) {
-      setTimeout(
-        () =>
-          processCommand(
-            tabId,
-            contextMessage,
-            initialCommand,
-            actionHistory,
-            model,
-            ""
-          ),
-        60000
-      );
-    }
-  } else {
-    const errorMessage = `Command processing failed: ${
-      err instanceof Error ? err.message : String(err)
-    }`;
-    console.log({ errorMessage });
-    chrome.tabs.sendMessage(tabIdRef.value, {
-      type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
-      response: { message: errorMessage },
-    });
+        response: `Command processing failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      })
+      .catch(() => {});
+
+    // Final cleanup
     await findAndUngroupDfmGroup();
+    resetExecutionState(tabId);
+    activeAutomationTabs.delete(tabId);
+  } finally {
+    // This block might run too early if processCommand is async recursive.
+    // Cleanup is better handled at points where the process definitively stops.
+    // console.log(`[background.ts] processCommand finally block for tab ${tabId}`);
   }
-  resetExecutionState(tabId);
-  activeAutomationTabs.delete(tabId);
-  automationStopped = true;
 }
 
 function resetExecutionState(tabId: number) {
@@ -1580,11 +1528,8 @@ async function sendActionToTab(
 ): Promise<any> {
   await ensureContentScriptInjected(tabId);
 
-  // Create a GeminiFunctionCall object from the LocalAction
-  // Use action.description (original AI function name) for the name sent to content script
-  // Cast action.data to any to avoid TypeScript errors with optional properties
   const functionCall: GeminiFunctionCall = {
-    name: action.description || action.type, // Prioritize original name from description
+    name: action.description || action.type,
     args: action.data as any,
   };
 
@@ -1660,10 +1605,10 @@ function sendStatusUpdateToUI(details?: { message?: string }) {
   });
   chrome.runtime
     .sendMessage({
-      type: details?.message ? "STATUS_UPDATE" : "RECORDING_STATE_UPDATE", // Use STATUS_UPDATE if message is provided
+      type: details?.message ? "STATUS_UPDATE" : "RECORDING_STATE_UPDATE",
       isRecording: isRecordingActive,
-      isConnected: isWebSocketConnected, // Include websocket status
-      message: details?.message, // Include the message
+      isConnected: isWebSocketConnected,
+      message: details?.message,
     })
     .catch((error) => {
       // Catch potential errors if side panel is not open or listening
@@ -1785,19 +1730,18 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
       return true; // Indicate async response
     }
     recentActionsMap[activeTab.id] = [];
-    currentTasks[activeTab.id] = msg.command; // Store the initial command as the task
+    currentTasks[activeTab.id] = msg.command;
 
     // Always send immediate success response to prevent "Error starting command processing" toast
     sendResponse({ success: true });
-    const selectedSlashCommand = msg.slashCommand;
 
     processCommand(
       activeTab.id,
-      msg.command,
-      msg.command,
+      msg.prompt,
+      msg.fullInput,
       [],
       msg.model || "gemini",
-      selectedSlashCommand
+      msg.slashCommand
     ).catch((err) => {
       console.debug("Error during processCommand:", err);
     });
@@ -1844,8 +1788,8 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
     try {
       // Update background state to indicate start attempt
       isRecordingActive = true;
-      isWebSocketConnected = false; // Assume not connected yet
-      sendStatusUpdateToUI({ message: "Starting recording setup..." }); // Notify UI that start is in progress
+      isWebSocketConnected = false;
+      sendStatusUpdateToUI({ message: "Starting recording setup..." });
 
       // 1. Ensure the offscreen document is open
       sendStatusUpdateToUI({
@@ -1861,10 +1805,9 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
         console.error(errorMsg);
         // Signal failure and clean up background state
         isRecordingActive = false;
-        sendStatusUpdateToUI({ message: `Error: ${errorMsg}` }); // Update UI with inactive state and error
+        sendStatusUpdateToUI({ message: `Error: ${errorMsg}` });
         sendResponse({ success: false, error: errorMsg });
-        // Consider closing offscreen document if it was just opened solely for this
-        // closeOffscreenDocument(); // Optional based on desired lifecycle
+        closeOffscreenDocument();
         return true;
       }
 
@@ -1895,12 +1838,12 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
         console.error("Background:", errorMsg);
         // Signal failure and clean up background state
         isRecordingActive = false;
-        sendStatusUpdateToUI({ message: `Error: ${errorMsg}` }); // Update UI with inactive state and error
+        sendStatusUpdateToUI({ message: `Error: ${errorMsg}` });
         sendResponse({
           success: false,
           error: `Failed to start tab capture: ${errorMsg}`,
         });
-        // closeOffscreenDocument(); // Optional based on desired lifecycle
+        closeOffscreenDocument(); // Optional based on desired lifecycle
         return true;
       }
 
@@ -1914,11 +1857,10 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
       chrome.runtime
         .sendMessage({
           type: "START_RECORDING_OFFSCREEN",
-          target: "offscreen", // Target the offscreen document
+          target: "offscreen",
           data: {
-            // Pass necessary data
             tabStreamId: tabStreamId,
-            meetingName: msg.meetingName, // Pass meeting name if needed by offscreen/backend
+            meetingName: msg.meetingName,
           },
         })
         .catch((error) => {
@@ -1940,7 +1882,7 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
               error.message || error
             }`,
           });
-          // closeOffscreenDocument(); // Optional
+          closeOffscreenDocument(); // Optional
         });
 
       // Send success response back to the Side Panel immediately after messaging offscreen
@@ -1963,25 +1905,17 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
           error: error.message || "Unknown error during start setup.",
         });
       }
-      // Note: Specific errors during getUserMedia or getMediaStreamId are caught and handle stopRecording within their blocks
     }
 
-    // ALWAYS return true from async listeners that send responses
     return true;
   } else if (msg.type === "STOP_RECORDING") {
     console.log("Background: Received STOP_RECORDING message from UI.");
-
-    // Update background state to indicate stop attempt
-    // isRecordingActive will be set to false definitely when offscreen confirms stop
-    // but setting it here can provide immediate UI feedback depending on messaging
-    // isRecordingActive = false; // Maybe let offscreen drive this state change
-    // sendStatusUpdateToUI(); // Notify UI that stop is in progress
     isRecordingActive = false;
     // Send message to offscreen document to stop recording
     chrome.runtime
       .sendMessage({
         type: "STOP_RECORDING_OFFSCREEN",
-        target: "offscreen", // Target the offscreen document
+        target: "offscreen",
       })
       .catch((error) => {
         console.error(
@@ -1995,9 +1929,8 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
           message: `Error: Failed to communicate stop command: ${
             error.message || error
           }`,
-        }); // Update UI
-        // Consider closing offscreen forcibly?
-        // closeOffscreenDocument();
+        });
+        closeOffscreenDocument();
         sendResponse({
           success: false,
           error: `Failed to communicate stop command: ${
@@ -2029,22 +1962,20 @@ chrome.runtime.onConnect.addListener((port) => {
     port.onDisconnect.addListener(() => {
       console.log(`[background.ts] Port disconnected: ${port.name}`);
       delete activePorts[tabId];
-      // Optionally stop automation if the sidepanel disconnects?
-      // if (activeAutomationTabs.has(tabId)) {
-      //   console.log(`[background.ts] Stopping automation for disconnected tab ${tabId}`);
-      //   automationStopped = true;
-      //   activeAutomationTabs.delete(tabId);
-      //   resetExecutionState(tabId);
-      // }
+      if (activeAutomationTabs.has(tabId)) {
+        console.log(
+          `[background.ts] Stopping automation for disconnected tab ${tabId}`
+        );
+        automationStopped = true;
+        activeAutomationTabs.delete(tabId);
+        resetExecutionState(tabId);
+      }
     });
   } else {
     console.error(
       `[background.ts] Invalid port name (not a number): ${port.name}`
     );
   }
-
-  // Note: Keep_Alive listener removed as it's not standard practice
-  // and might prevent the background script from becoming inactive.
 });
 
 function waitForTabLoad(tabId: number): Promise<void> {
@@ -2052,7 +1983,7 @@ function waitForTabLoad(tabId: number): Promise<void> {
     let observer: MutationObserver | null = null as MutationObserver | null;
     let contentScriptChecked = false;
     const startTime = Date.now();
-    const MAX_WAIT = 5000; // Reduced to 5 seconds max
+    const MAX_WAIT = 5000;
     const POLL_INTERVAL = 500;
     console.log(
       `[background.ts waitForTabLoad ${tabId}] Starting wait (max ${MAX_WAIT}ms)`
@@ -2141,7 +2072,7 @@ function waitForTabLoad(tabId: number): Promise<void> {
         `[background.ts waitForTabLoad ${tabId}] Timeout after ${MAX_WAIT}ms`
       );
       cleanup();
-      resolve(); // Resolve even on timeout
+      resolve();
     }, MAX_WAIT);
   });
 }
@@ -2169,15 +2100,15 @@ async function navigateTab(
   activeAutomationTabs.add(existingTab.id!);
   await waitForTabLoad(existingTab.id!);
   await ensureContentScriptInjected(existingTab.id!);
-  // processCommand(
-  //   existingTab.id!,
-  //   "navigated to new tab",
-  //   initialCommand,
-  //   actionHistory,
-  //   model,
-  //   "",
-  //   0
-  // );
+  processCommand(
+    existingTab.id!,
+    "navigated to new tab",
+    initialCommand,
+    actionHistory,
+    model,
+    "",
+    0
+  );
   return existingTab;
 }
 
@@ -2192,7 +2123,7 @@ async function createTab(url: string): Promise<chrome.tabs.Tab> {
   // Add the new tab to the group immediately
   await addTabToDoFormeGroup(tab.id);
 
-  activeAutomationTabs.add(tab.id); // Keep tracking if needed elsewhere
+  activeAutomationTabs.add(tab.id);
   await waitForTabLoad(tab.id);
   await ensureContentScriptInjected(tab.id);
   return tab;

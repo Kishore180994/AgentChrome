@@ -6,6 +6,14 @@ import {
   GeminiChatMessage,
   GeminiResponse,
 } from "../ai/interfaces";
+
+import {
+  saveConversationHistory,
+  loadConversationHistory,
+  D4M_CONVERSATION_HISTORY_KEY,
+  HUBSPOT_CONVERSATION_HISTORY_KEY,
+} from "../storage.ts";
+
 import { AIProvider, callAI } from "../ai/providers";
 
 const MAX_RETRIES = 3;
@@ -23,6 +31,7 @@ let currentProvider: AIProvider = "gemini"; // Default provider, can be overridd
  */
 export async function chatWithAI(
   userMessage: string,
+  initialUserMessage: string,
   sessionId: string,
   currentState: Record<string, any> = {},
   isHubspotMode: boolean = false,
@@ -44,9 +53,10 @@ export async function chatWithAI(
     }
     const conversation = await prepareConversation(
       userMessage,
+      initialUserMessage,
       currentState,
       provider,
-      isHubspotMode // Pass isHubspotMode
+      isHubspotMode
     );
     const response = await sendWithRetry(
       conversation,
@@ -88,14 +98,18 @@ export async function chatWithAI(
  */
 async function prepareConversation(
   userMsg: string,
+  initialUserMessage: string, // Add initialUserMessage parameter
   currentState: Record<string, any> = {},
   provider: "gemini" | "claude",
   isHubspotMode: boolean // Add isHubspotMode parameter
 ): Promise<GeminiChatMessage[] | ClaudeChatMessage[]> {
-  const existingHistory = await getConversationHistory(isHubspotMode); // Pass isHubspotMode
+  const existingHistory = await getConversationHistory(isHubspotMode);
   console.log("[prepareConversation] existingHistory", existingHistory);
 
-  await storeUserMessage(userMsg, isHubspotMode); // Pass isHubspotMode
+  // Only store the initial user message, not subsequent iterative messages
+  if (userMsg === initialUserMessage) {
+    await storeUserMessage(userMsg, isHubspotMode);
+  }
 
   // Get previously stored AI current state
   const storedState = await getStoredCurrentState();
@@ -163,7 +177,7 @@ async function storeUserMessage(
   userMsg: string,
   isHubspotMode: boolean // Add isHubspotMode parameter
 ): Promise<void> {
-  const existingHistory = await getConversationHistory(isHubspotMode); // Pass isHubspotMode
+  const existingHistory = await getConversationHistory(isHubspotMode);
   const newHistory: ConversationHistory[] = [
     ...existingHistory,
     { role: "user", content: userMsg },
@@ -171,7 +185,7 @@ async function storeUserMessage(
   const key = isHubspotMode
     ? HUBSPOT_CONVERSATION_HISTORY_KEY
     : D4M_CONVERSATION_HISTORY_KEY;
-  await saveConversationHistory(key, newHistory); // Use new storage API
+  await saveConversationHistory(key, newHistory);
 }
 
 /**
@@ -331,13 +345,6 @@ async function updateConversationHistory(
     await chrome.storage.local.set({ conversationHistory: newHistory });
   }
 }
-
-import {
-  saveConversationHistory,
-  loadConversationHistory,
-  D4M_CONVERSATION_HISTORY_KEY,
-  HUBSPOT_CONVERSATION_HISTORY_KEY,
-} from "../storage.ts";
 
 /**
  * Retrieves the conversation history from local storage.
