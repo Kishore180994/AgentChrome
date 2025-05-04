@@ -1,7 +1,15 @@
-import React from "react";
+import React, { useState } from "react";
 import { Mic, Search, RefreshCw, Download } from "lucide-react";
 import ComponentHeader from "./common/ComponentHeader";
 import { AccentColor, themeStyles } from "../utils/themes";
+import RecordingChat from "./chatWidget/RecordingChat";
+
+interface Recording {
+  id: number;
+  title: string;
+  duration: string;
+  date: string;
+}
 
 interface PreviousRecordingsPageProps {
   theme: "neumorphism" | "glassmorphism" | "claymorphism";
@@ -23,6 +31,11 @@ export function PreviousRecordingsPage({
   accentColor,
   mode,
 }: PreviousRecordingsPageProps) {
+  const [showChat, setShowChat] = useState(false);
+  const [selectedRecording, setSelectedRecording] = useState<Recording | null>(
+    null
+  );
+
   // Always use the current theme from our themes.ts file for consistency
   const currentTheme = themeStyles[theme][mode];
   // Extract text color from the currentTheme's container
@@ -74,6 +87,13 @@ export function PreviousRecordingsPage({
             <div
               key={recording.id}
               className={`${currentTheme.messageBubble} d4m-p-3 d4m-cursor-pointer d4m-hover:bg-opacity-90 d4m-transition-colors`}
+              onClick={() => {
+                setSelectedRecording(recording);
+                // Add a small delay to allow the component to render in its initial state
+                setTimeout(() => {
+                  setShowChat(true);
+                }, 50); // Adjust delay as needed
+              }}
             >
               <div className="d4m-flex d4m-items-center d4m-gap-3">
                 <div
@@ -105,6 +125,35 @@ export function PreviousRecordingsPage({
           ))}
         </div>
       </div>
+      {selectedRecording !== null && (
+        <div
+          className={`d4m-fixed d4m-inset-0 d4m-z-50 d4m-flex d4m-items-end d4m-justify-center d4m-transition-opacity d4m-duration-300 ${
+            showChat
+              ? "d4m-opacity-100 d4m-pointer-events-auto"
+              : "d4m-opacity-0 d4m-pointer-events-none"
+          }`}
+        >
+          {/* Overlay */}
+          <div
+            className="d4m-absolute d4m-inset-0 d4m-bg-black d4m-opacity-50"
+            onClick={() => setShowChat(false)}
+          ></div>
+          {/* Chat Window */}
+          <div
+            className={`d4m-relative d4m-w-full d4m-max-w-lg d4m-h-2/3 d4m-bg-white d4m-rounded-t-lg d4m-shadow-lg d4m-transform d4m-transition-transform d4m-duration-300 d4m-ease-out ${
+              showChat ? "d4m-translate-y-0" : "d4m-translate-y-full"
+            }`}
+          >
+            <RecordingChat
+              recording={selectedRecording}
+              onClose={() => setShowChat(false)}
+              theme={theme}
+              accentColor={accentColor}
+              mode={mode}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
