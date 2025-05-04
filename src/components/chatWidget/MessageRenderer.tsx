@@ -6,7 +6,8 @@ import HubspotErrorCard from "../HubspotErrorCard";
 import HubspotSuccessCard from "../HubspotSuccessCard";
 import { AccentColor } from "../../utils/themes";
 import { linkifyUrls } from "../../utils/helpers";
-import { Check, HelpCircle } from "lucide-react";
+import { HelpCircle, CheckCircle } from "lucide-react"; // Import necessary icons
+import { OutcomeDisplay } from "../tasks/OutcomeDisplay"; // Import OutcomeDisplay
 
 // Define ThemeStyle type
 interface MessageRendererProps {
@@ -61,7 +62,7 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
               ? "d4m-max-w-[85%] md:d4m-max-w-[75%]"
               : "d4m-w-full";
 
-          // Apply futuristic styles to AI messages - make AI messages truly take full width
+          // Apply futuristic styles to AI message bubbles - make AI messages truly take full width
           const messageContainerStyle =
             message.role === "user"
               ? `d4m-flex ${widthClass} ${alignment} d4m-mb-3`
@@ -84,162 +85,133 @@ const MessageRenderer: React.FC<MessageRendererProps> = ({
               <div className={enhancedBubbleStyle}>
                 {message.role === "model" ? (
                   // --- Model Message Content ---
-                  "type" in message && message.type === "hubspot_error" ? (
-                    // The Message type can have both standalone props and content
-                    // Try to use the top-level props first, then fall back to content
-                    <HubspotErrorCard
-                      errorType={
-                        message.errorType ||
-                        (message.content &&
-                        typeof message.content === "object" &&
-                        "errorType" in message.content
-                          ? message.content.errorType
-                          : "general")
-                      }
-                      message={
-                        message.message ||
-                        (message.content &&
-                        typeof message.content === "object" &&
-                        "error" in message.content
-                          ? message.content.error
-                          : "An error occurred")
-                      }
-                      details={JSON.stringify(
-                        message.details ||
-                          (message.content &&
-                          typeof message.content === "object"
-                            ? message.content
-                            : {}),
-                        null,
-                        2
-                      )}
-                      status={message.status || 0}
-                      mode={mode}
-                    />
-                  ) : "type" in message &&
-                    message.type === "hubspot_success" &&
-                    typeof message.content === "object" ? (
-                    <HubspotSuccessCard
-                      result={message.content as HubSpotExecutionResult}
-                      mode={mode}
-                      accentColor={accentColor}
-                      currentTheme={currentTheme}
-                    />
-                  ) : "type" in message && message.type === "question" ? (
-                    // Question message from AI with futuristic design
-                    <div className="d4m-flex d4m-flex-col d4m-gap-3">
-                      <div
-                        className={`d4m-flex d4m-items-center d4m-gap-2 ${
-                          mode === "light"
-                            ? "d4m-bg-black/10"
-                            : "d4m-bg-white/10"
-                        } d4m-p-2 d4m-rounded-md d4m-backdrop-blur-sm`}
-                      >
-                        <HelpCircle
-                          size={18}
-                          className={
-                            accentColor === "white"
-                              ? "d4m-text-orange-400"
-                              : `d4m-text-${accentColor}-400`
-                          }
-                        />
-                        <span className="d4m-font-medium d4m-text-base d4m-tracking-wide">
-                          AI Question
-                        </span>
-                      </div>
-                      <div className="d4m-pl-2">
-                        <MarkdownWrapper content={message.content as string} />
-                      </div>
-                    </div>
-                  ) : "type" in message && message.type === "completion" ? (
-                    // Completion message from AI with futuristic design
-                    <div className="d4m-flex d4m-flex-col d4m-gap-3">
-                      <div className="d4m-flex d4m-items-center d4m-gap-2 d4m-bg-green-500/20 d4m-p-2 d4m-rounded-md d4m-backdrop-blur-sm">
-                        <Check
-                          size={18}
-                          className={
-                            mode === "light"
-                              ? "d4m-text-green-500"
-                              : "d4m-text-green-400"
-                          }
-                        />
-                        <span
-                          className={`d4m-font-medium d4m-text-base d4m-tracking-wide ${
-                            mode === "light"
-                              ? "d4m-text-green-700"
-                              : "d4m-text-green-400"
-                          }`}
-                        >
-                          Task Completed
-                        </span>
-                      </div>
-                      <div className="d4m-pl-2">
-                        <MarkdownWrapper content={message.content as string} />
-                      </div>
-                    </div>
-                  ) : typeof message.content === "string" ? (
-                    // Standard markdown for string content
-                    <MarkdownWrapper content={message.content} />
-                  ) : typeof message.content === "object" &&
-                    message.content !== null &&
-                    !Array.isArray(message.content) &&
-                    "success" in message.content ? (
-                    // Handle HubSpot result that wasn't properly typed
-                    message.content.success === true ? (
-                      <HubspotSuccessCard
-                        result={message.content as HubSpotExecutionResult}
-                        mode={mode}
-                        accentColor={accentColor}
-                        currentTheme={currentTheme}
-                      />
-                    ) : (
-                      <HubspotErrorCard
-                        errorType={message.content.errorType || "general"}
-                        message={message.content.error || "Unknown error"}
-                        details={message.content.details}
-                        status={0}
-                        mode={mode}
-                      />
-                    )
-                  ) : (
-                    // Fallback for unknown model content - display as JSON with futuristic styling
-                    <pre
-                      className={`d4m-text-xs d4m-whitespace-pre-wrap ${
-                        mode === "light" ? "d4m-bg-black/20" : "d4m-bg-white/5"
-                      } d4m-p-3 d4m-rounded-md d4m-overflow-auto d4m-max-h-[300px] d4m-border ${
-                        mode === "light"
-                          ? "d4m-border-gray-200/30"
-                          : "d4m-border-gray-700/30"
-                      } d4m-backdrop-blur-sm d4m-font-mono`}
-                    >
-                      <div
-                        className={`d4m-flex d4m-items-center d4m-justify-between d4m-mb-2 d4m-pb-2 d4m-border-b ${
-                          mode === "light"
-                            ? "d4m-border-gray-200/30"
-                            : "d4m-border-gray-700/30"
-                        }`}
-                      >
-                        <span
-                          className={`d4m-text-xs d4m-font-medium ${
-                            accentColor === "white"
-                              ? "d4m-text-orange-400"
-                              : `d4m-text-${accentColor}-400`
-                          }`}
-                        >
-                          JSON Data
-                        </span>
-                      </div>
-                      <code
-                        className={
-                          mode === "light"
-                            ? "d4m-text-gray-800"
-                            : "d4m-text-gray-200"
-                        }
-                      >
-                        {JSON.stringify(message.content, null, 2)}
-                      </code>
-                    </pre>
-                  )
+                  (() => {
+                    switch (message.type) {
+                      case "hubspot_error":
+                        return (
+                          <HubspotErrorCard
+                            errorType={
+                              message.errorType ||
+                              (message.content &&
+                              typeof message.content === "object" &&
+                              "errorType" in message.content
+                                ? message.content.errorType
+                                : "general")
+                            }
+                            message={
+                              message.message ||
+                              (message.content &&
+                              typeof message.content === "object" &&
+                              "error" in message.content
+                                ? message.content.error
+                                : "An error occurred")
+                            }
+                            details={JSON.stringify(
+                              message.details ||
+                                (message.content &&
+                                typeof message.content === "object"
+                                  ? message.content
+                                  : {}),
+                              null,
+                              2
+                            )}
+                            status={message.status || 0}
+                            mode={mode}
+                          />
+                        );
+                      case "hubspot_success":
+                        return typeof message.content === "object" ? (
+                          <HubspotSuccessCard
+                            result={message.content as HubSpotExecutionResult}
+                            mode={mode}
+                            accentColor={accentColor}
+                            currentTheme={currentTheme}
+                          />
+                        ) : (
+                          // Fallback for unexpected content type
+                          <MarkdownWrapper
+                            content={`Hubspot Success: ${JSON.stringify(
+                              message.content
+                            )}`}
+                          />
+                        );
+                      case "question":
+                        return (
+                          <OutcomeDisplay
+                            title="Clarification Needed"
+                            message={message.content as string}
+                            type="info"
+                            mode={mode}
+                            icon={
+                              <HelpCircle
+                                size={18}
+                                className={`d4m-text-blue-500 d4m-mr-2 d4m-flex-shrink-0`}
+                              />
+                            }
+                          />
+                        );
+                      case "completion":
+                        return (
+                          <OutcomeDisplay
+                            title="Task Completed"
+                            message={message.content as string}
+                            type="success"
+                            mode={mode}
+                            icon={
+                              <CheckCircle
+                                size={18}
+                                className="d4m-text-green-500 d4m-mr-2 d4m-flex-shrink-0"
+                              />
+                            }
+                          />
+                        );
+                      default:
+                        // Standard markdown for string content or fallback for unknown object types
+                        return typeof message.content === "string" ? (
+                          <MarkdownWrapper content={message.content} />
+                        ) : (
+                          // Fallback for unknown model content - display as JSON with futuristic styling
+                          <pre
+                            className={`d4m-text-xs d4m-whitespace-pre-wrap ${
+                              mode === "light"
+                                ? "d4m-bg-black/20"
+                                : "d4m-bg-white/5"
+                            } d4m-p-3 d4m-rounded-md d4m-overflow-auto d4m-max-h-[300px] d4m-border ${
+                              mode === "light"
+                                ? "d4m-border-gray-200/30"
+                                : "d4m-border-gray-700/30"
+                            } d4m-backdrop-blur-sm d4m-font-mono`}
+                          >
+                            <div
+                              className={`d4m-flex d4m-items-center d4m-justify-between d4m-mb-2 d4m-pb-2 d4m-border-b ${
+                                mode === "light"
+                                  ? "d4m-border-gray-200/30"
+                                  : "d4m-border-gray-700/30"
+                              }`}
+                            >
+                              <span
+                                className={`d4m-text-xs d4m-font-medium ${
+                                  accentColor === "white"
+                                    ? "d4m-text-orange-400"
+                                    : `d4m-text-${accentColor}-400`
+                                }`}
+                              >
+                                JSON Data
+                              </span>
+                            </div>
+                            <code
+                              className={
+                                mode === "light"
+                                  ? "d4m-text-gray-800"
+                                  : "d4m-text-gray-200"
+                              }
+                            >
+                              {JSON.stringify(message.content, null, 2)}
+                            </code>
+                          </pre>
+                        );
+                    }
+                  })()
                 ) : (
                   // --- User message content ---
                   <span className="d4m-whitespace-pre-wrap d4m-break-words">

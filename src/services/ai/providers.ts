@@ -291,13 +291,12 @@ export async function callGemini(
       lastMsg.parts.length > 0 &&
       lastMsg.parts[0].text
     ) {
-      console.log("[callGemini] Entered main condition block."); // Did we get inside?
+      console.log("[callGemini] Entered main condition block.");
       const originalText = lastMsg.parts[0].text;
       const delimiter = " && ";
       const delimiterIndex = originalText.indexOf(delimiter);
       if (delimiterIndex !== -1) {
         const truncatedText = originalText.substring(0, delimiterIndex).trim();
-        // *** This is the modification line ***
         lastMsg.parts[0].text = truncatedText;
       } else {
         console.log("[callGemini] Delimiter '&&' not found in text.");
@@ -308,12 +307,6 @@ export async function callGemini(
       );
     }
 
-    // Log the state *after* the potential modification attempt
-    // console.log("[callGemini] Final last message object logged below:");
-    // console.log("[callGemini] Last message:", JSON.stringify(lastMsg, null, 2));
-    // Also check the original array if possible
-    // console.log("[callGemini] Last message text in original array:", messages[messages.length - 1]?.parts?.[0]?.text);
-    // console.log("[callGemini] Last message:", JSON.stringify(lastMsg, null, 2));
     if (!lastMsg) {
       console.error("[callGemini] No last message found in messages array.");
       return null;
@@ -352,27 +345,6 @@ export async function callGemini(
     console.debug(
       `[callGemini] Sending ${lastMessageSdkParts.length} SDK part(s) to Gemini.`
     );
-
-    // Add detailed debugging information about what we're sending
-    // console.debug("[callGemini] DETAILED REQUEST DEBUG:");
-    // console.debug(
-    //   "[callGemini] Last message parts:",
-    //   JSON.stringify(lastMessageSdkParts, null, 2)
-    // );
-    // console.debug("[callGemini] Message history length:", sdkHistory.length);
-    // console.debug("[callGemini] Has screenshot:", !!screenShotDataUrl);
-    // console.debug("[callGemini] Tools config:", {
-    //   toolsCount: geminiTools.length,
-    //   // Check if the first tool has functionDeclarations property before accessing it
-    //   functionDeclarationsCount: Array.isArray(
-    //     geminiTools[0] && "functionDeclarations" in geminiTools[0]
-    //       ? geminiTools[0].functionDeclarations
-    //       : []
-    //   )
-    //     ? (geminiTools[0] as any).functionDeclarations.length
-    //     : 0,
-    //   mode: FunctionCallingMode.ANY,
-    // });
 
     console.debug({ lastMessageSdkParts });
     // Send message and process response
@@ -413,9 +385,7 @@ export async function callGemini(
 
     // Validate presence of reportCurrentState
     const hasReportCurrentState = functionCallParts.some(
-      (part) =>
-        part.functionCall.name === "dom_reportCurrentState" ||
-        part.functionCall.name === "google_workspace_reportCurrentState"
+      (part) => part.functionCall.name === "dom_reportCurrentState"
     );
     if (!hasReportCurrentState) {
       console.error(

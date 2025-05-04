@@ -1,4 +1,4 @@
-import { DOMAction } from "./../../types/actionType";
+import { DOMAction } from "../../types/actionType";
 import { SchemaType, Tool } from "@google/generative-ai";
 
 export const commonTools: Tool[] = [

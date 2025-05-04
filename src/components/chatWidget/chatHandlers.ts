@@ -1,3 +1,11 @@
+import {
+  saveConversationHistory,
+  loadConversationHistory,
+  D4M_CONVERSATION_HISTORY_KEY,
+  HUBSPOT_CONVERSATION_HISTORY_KEY,
+  clearLocalStorageItem,
+} from "../../services/storage.ts";
+
 // src/components/chatHandlers.ts
 import { Message, ProcessedMessage } from "./chatInterface"; // Ensure path is correct
 import { HubSpotExecutionResult } from "../../services/ai/interfaces"; // Ensure path is correct and type exists
@@ -24,7 +32,7 @@ export const handleSubmit = async (
   setIsInputAreaFocused: (value: boolean) => void, // Use corrected name
   // Config/Context from ChatWidget:
   selectedModel: "gemini" | "claude",
-  hubspotMode: boolean
+  hubspotMode: boolean // Add hubspotMode parameter
   // Optional animation setter
   // setCurrentAnimation?: (value: "starfallCascade") => void,
 ) => {
@@ -67,7 +75,10 @@ export const handleSubmit = async (
   };
   setMessages((prev) => {
     const updatedMessages = [...prev, userMsg];
-    chrome.storage.local.set({ conversationHistory: updatedMessages });
+    const key = hubspotMode
+      ? HUBSPOT_CONVERSATION_HISTORY_KEY
+      : D4M_CONVERSATION_HISTORY_KEY;
+    saveConversationHistory(key, updatedMessages); // Use new storage API
     return updatedMessages;
   });
 
@@ -221,7 +232,8 @@ export const handleStop =
     setError: (value: string | null) => void,
     setToast: (
       value: { message: string; type: "success" | "info" | "error" } | null
-    ) => void
+    ) => void,
+    hubspotMode: boolean // Add hubspotMode parameter
   ) =>
   async () => {
     // Make async if using await inside
@@ -259,7 +271,10 @@ export const handleStop =
             };
             setMessages((prev) => {
               const updated = [...prev, modelMsg];
-              storage.local.set({ conversationHistory: updated }); // Save history
+              const key = hubspotMode
+                ? HUBSPOT_CONVERSATION_HISTORY_KEY
+                : D4M_CONVERSATION_HISTORY_KEY;
+              saveConversationHistory(key, updated); // Use new storage API
               return updated;
             });
 
@@ -352,12 +367,14 @@ export const handleNewChat =
 
       // --- Clear Local Storage ---
       // Clear both the active conversation and mode-specific conversation histories
+      // Use the new storage API to clear conversation histories
+      saveConversationHistory(D4M_CONVERSATION_HISTORY_KEY, []);
+      saveConversationHistory(HUBSPOT_CONVERSATION_HISTORY_KEY, []);
+      clearLocalStorageItem("aiCurrentState"); // Clear aiCurrentState
       storage.local.remove([
         "currentChat",
-        "conversationHistory",
-        "hubspotConversationHistory",
-        "d4mConversationHistory",
-      ]); // Clear all chat history
+        "conversationHistory", // Remove old generic key
+      ]); // Clear other chat-related storage
 
       // --- Inform Background Script (Optional) ---
       // If the background script maintains state related to the current chat, notify it.

@@ -43,3 +43,11 @@ export interface SpeakerNameEditorProps {
   speakerNames: Record<string, string>;
   setSpeakerNames: (names: Record<string, string>) => void;
 }
+
+export const MESSAGE_TYPE = {
+  MEMORY_UPDATE: "MEMORY_UPDATE",
+  AI_RESPONSE: "AI_RESPONSE",
+  COMMAND_RESPONSE: "COMMAND_RESPONSE",
+  HUBSPOT_RESPONSE: "HUBSPOT_RESPONSE",
+  FINISH_PROCESS_COMMAND: "FINISH_PROCESS_COMMAND",
+};

@@ -1,13 +1,9 @@
-import React, { useEffect, useState } from "react";
-import {
-  FinalOutcome,
-  MemoryState,
-  Phase,
-  Step,
-} from "../../types/memoryTypes";
+import React, { useState } from "react";
+import { MemoryState, Phase, Step } from "../../types/memoryTypes";
 import { StatusIcon } from "./StatusIcon";
 import { CollapsibleSection } from "./CollapsibleSection";
-import { ChevronDown, Target, CheckCircle, XCircle } from "lucide-react";
+import { ChevronDown, Target } from "lucide-react";
+import { OutcomeDisplay } from "./OutcomeDisplay";
 
 interface TaskProgressDisplayProps {
   memory: MemoryState | null; // Allow null if state might not be ready
@@ -99,7 +95,7 @@ const PhaseItem: React.FC<{
         } ${getPhaseBgColor()} d4m-overflow-hidden`}
       >
         <button
-          className="d4m-w-full d4m-flex d4m-items-center d4m-justify-between d4m-p-2.5 d4m-text-left d4m-cursor-pointer hover:d4m-brightness-95 d4m-transition"
+          className="d4m-w-full d4m-flex d4m-items-center d4m-justify-between d4m-text-left d4m-cursor-pointer hover:d4m-brightness-95 d4m-transition"
           onClick={toggleExpanded}
           aria-expanded={isExpanded}
         >
@@ -143,71 +139,6 @@ const PhaseItem: React.FC<{
           )}
         </CollapsibleSection>
       </div>
-    </div>
-  );
-};
-
-const FinalOutcomeDisplay: React.FC<{
-  outcome: FinalOutcome;
-  mode: "light" | "dark";
-}> = ({ outcome, mode }) => {
-  const isSuccess = outcome.status === "PASS";
-  return (
-    <div
-      className={`d4m-p-3 d4m-mt-4 d4m-rounded-lg d4m-border ${
-        isSuccess
-          ? mode === "light"
-            ? "d4m-bg-green-50/80 d4m-border-green-200"
-            : "d4m-bg-green-900/30 d4m-border-green-700/50"
-          : mode === "light"
-          ? "d4m-bg-red-50/80 d4m-border-red-200"
-          : "d4m-bg-red-900/30 d4m-border-red-700/50"
-      }`}
-    >
-      <div className="d4m-flex d4m-items-center">
-        {isSuccess ? (
-          <CheckCircle
-            size={18}
-            className="d4m-text-green-500 d4m-mr-2 d4m-flex-shrink-0"
-          />
-        ) : (
-          <XCircle
-            size={18}
-            className="d4m-text-red-500 d4m-mr-2 d4m-flex-shrink-0"
-          />
-        )}
-        <h3
-          className={`d4m-text-sm d4m-font-semibold ${
-            isSuccess
-              ? mode === "light"
-                ? "d4m-text-green-800"
-                : "d4m-text-green-300"
-              : mode === "light"
-              ? "d4m-text-red-800"
-              : "d4m-text-red-300"
-          }`}
-        >
-          Task {isSuccess ? "Completed" : "Failed"}
-        </h3>
-      </div>
-      <p
-        className={`d4m-mt-1 d4m-text-xs ${
-          mode === "light" ? "d4m-text-gray-700" : "d4m-text-gray-300"
-        }`}
-      >
-        {outcome.message}
-      </p>
-      {outcome.output && (
-        <div
-          className={`d4m-mt-2 d4m-p-2 d4m-rounded d4m-text-xs d4m-font-mono ${
-            mode === "light"
-              ? "d4m-bg-gray-100 d4m-text-gray-800"
-              : "d4m-bg-gray-800 d4m-text-gray-200"
-          }`}
-        >
-          <span className="d4m-font-semibold">Output:</span> {outcome.output}
-        </div>
-      )}
     </div>
   );
 };
@@ -299,7 +230,16 @@ export const TaskProgressDisplay: React.FC<TaskProgressDisplayProps> = ({
 
         {/* Final Outcome */}
         {final_outcome && (
-          <FinalOutcomeDisplay outcome={final_outcome} mode={mode} />
+          <OutcomeDisplay
+            title={`Task ${
+              final_outcome.status === "PASS" ? "Completed" : "Failed"
+            }`}
+            message={final_outcome.message}
+            type={final_outcome.status === "PASS" ? "success" : "fail"}
+            mode={mode}
+            output={final_outcome.output}
+            // Icon will be handled by the component based on type
+          />
         )}
       </CollapsibleSection>
     </div>

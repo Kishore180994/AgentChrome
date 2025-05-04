@@ -149,9 +149,9 @@ export interface ScrollArgs {
 }
 
 /**
- * Represents the arguments for a `goToUrl` function call.
+ * Represents the arguments for a `GotoExistingTab` function call.
  */
-export interface GoToUrlArgs {
+export interface GotoExistingTabArgs {
   url: string;
 }
 
@@ -222,7 +222,7 @@ export interface GeminiFunctionCall {
     | SubmitFormArgs
     | KeyPressArgs
     | ScrollArgs
-    | GoToUrlArgs
+    | GotoExistingTabArgs
     | OpenTabArgs
     | ExtractContentArgs
     | VerifyArgs
