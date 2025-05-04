@@ -431,7 +431,7 @@ export function ChatWidget() {
 
           case MESSAGE_TYPE.AI_RESPONSE:
             console.log("[ChatWidget] Handling AI_RESPONSE");
-            setIsLoading(false); // Stop loading on any AI response
+            setIsLoading(false);
 
             const {
               action,
@@ -771,7 +771,7 @@ export function ChatWidget() {
           toggleD4MMode={() => {
             if (!hubspotMode) return; // No change if already active
 
-            // Save current Hubspot chat before switching
+            // TODO: Save current Hubspot chat before switching
             saveConversationHistory(HUBSPOT_CONVERSATION_HISTORY_KEY, messages);
             console.log("[ChatWidget] Saved Hubspot conversation history");
 
@@ -808,7 +808,7 @@ export function ChatWidget() {
           toggleHubspotMode={() => {
             if (hubspotMode) return; // No change if already active
 
-            // Save current D4M chat before switching
+            //TODO:  Save current D4M chat before switching
             saveConversationHistory(D4M_CONVERSATION_HISTORY_KEY, messages);
             console.log("[ChatWidget] Saved D4M conversation history");
 

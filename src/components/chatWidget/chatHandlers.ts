@@ -1,86 +1,66 @@
 import {
   saveConversationHistory,
-  loadConversationHistory,
   D4M_CONVERSATION_HISTORY_KEY,
   HUBSPOT_CONVERSATION_HISTORY_KEY,
   clearLocalStorageItem,
 } from "../../services/storage.ts";
 
-// src/components/chatHandlers.ts
-import { Message, ProcessedMessage } from "./chatInterface"; // Ensure path is correct
-import { HubSpotExecutionResult } from "../../services/ai/interfaces"; // Ensure path is correct and type exists
+import { Message, ProcessedMessage } from "./chatInterface";
+import { HubSpotExecutionResult } from "../../services/ai/interfaces";
 
-const storage = chrome.storage; // Use Chrome storage API
-// --- MODIFIED handleSubmit ---
+const storage = chrome.storage;
 // Handles submitting the prompt/command from the input area
 export const handleSubmit = async (
-  prompt: string, // Text part of the input
-  command: string | null, // Selected slash command (e.g., 'contact') or null
+  prompt: string,
+  command: string | null,
   isLoading: boolean,
-  // State Setters from ChatWidget:
   setInput: (value: string) => void,
-  setSelectedCommand: (value: string | null) => void, // Setter for command state
+  setSelectedCommand: (value: string | null) => void,
   setError: (value: string | null) => void,
   setIsLoading: (value: boolean) => void,
-  setShowCommandPopup: (value: boolean) => void, // History popup visibility
+  setShowCommandPopup: (value: boolean) => void,
   setCommandHistory: (value: (prev: string[]) => string[]) => void,
   setHistoryIndex: (value: number | null) => void,
   setMessages: (value: (prev: Message[]) => Message[]) => void,
   setToast: (
     value: { message: string; type: "success" | "info" | "error" } | null
   ) => void,
-  setIsInputAreaFocused: (value: boolean) => void, // Use corrected name
-  // Config/Context from ChatWidget:
+  setIsInputAreaFocused: (value: boolean) => void,
   selectedModel: "gemini" | "claude",
-  hubspotMode: boolean // Add hubspotMode parameter
-  // Optional animation setter
-  // setCurrentAnimation?: (value: "starfallCascade") => void,
+  hubspotMode: boolean
 ) => {
-  // Combine command and prompt for history and user message display
   const userMessage = (command ? `/${command} ${prompt}` : prompt).trim();
-
-  // Prevent submission if already loading or message is empty
   if (!userMessage || isLoading) return;
+  const messageToSend = prompt;
 
-  const messageToSend = prompt; // Use only the text part for AI processing
+  if (typeof messageToSend !== "string" || messageToSend.trim() === "") {
+    console.error(
+      "[Handlers] Attempted to send PROCESS_COMMAND with invalid prompt:",
+      messageToSend
+    );
+    setError("Cannot process an empty command.");
+    setIsLoading(false);
+    return;
+  }
 
   console.log("[Handlers] handleSubmit:", { command, prompt, userMessage });
 
-  // --- Update UI State Immediately ---
-  setInput(""); // Clear text input state
-  setSelectedCommand(null); // Clear command chip state
-  setError(null); // Clear any previous error
-  setIsLoading(true); // Set loading indicator
-  setShowCommandPopup(false); // Hide history popup
-  setIsInputAreaFocused(false); // Defocus input visually (optional)
-  // setCurrentAnimation?.("starfallCascade"); // Start animation if setter provided
-
-  // --- Update Command History ---
+  setInput("");
+  setSelectedCommand(null);
+  setError(null);
+  setIsLoading(true);
+  setShowCommandPopup(false);
+  setIsInputAreaFocused(false);
   setCommandHistory((prev) => {
     // Avoid duplicates and limit size
     const updatedHistory = [
       userMessage,
       ...prev.filter((cmd) => cmd !== userMessage),
     ].slice(0, 50);
-    storage.local.set({ commandHistory: updatedHistory }); // Persist history
+    storage.local.set({ commandHistory: updatedHistory });
     return updatedHistory;
   });
-  setHistoryIndex(null); // Reset history navigation index
-
-  // --- Add User Message to Chat UI ---
-  const userMsg: Message = {
-    id: Date.now().toString(),
-    role: "user" as const,
-    content: userMessage,
-  };
-  setMessages((prev) => {
-    const updatedMessages = [...prev, userMsg];
-    const key = hubspotMode
-      ? HUBSPOT_CONVERSATION_HISTORY_KEY
-      : D4M_CONVERSATION_HISTORY_KEY;
-    saveConversationHistory(key, updatedMessages); // Use new storage API
-    return updatedMessages;
-  });
+  setHistoryIndex(null);
 
   // --- Sync Message to Backend (if logged in) ---
   try {
@@ -94,7 +74,7 @@ export const handleSubmit = async (
       : null;
     const token = storageData.agentchrome_token;
     const currentChat = storageData.currentChat;
-    const isLoggedIn = !!(user && token && !user.isGuest); // Check isGuest property
+    const isLoggedIn = !!(user && token && !user.isGuest);
 
     if (isLoggedIn) {
       let chatIdToSend: string | null = null;
@@ -142,7 +122,6 @@ export const handleSubmit = async (
           console.log("[Handlers] Message sent to backend.");
         } catch (error) {
           console.error("[Handlers] Failed to send message to backend:", error);
-          // Optional: Toast notification for backend sync failure?
         }
       }
     } else {
@@ -166,16 +145,13 @@ export const handleSubmit = async (
     chrome.runtime.sendMessage(
       {
         type: "PROCESS_COMMAND",
-        slashCommand: command, // The selected slash command (e.g., 'contact') or null
-        prompt: messageToSend, // The text part typed by the user
-        fullInput: userMessage, // The combined original input for context
+        slashCommand: command,
+        prompt: messageToSend,
+        fullInput: userMessage,
         model: selectedModel,
-        mode: hubspotMode ? "hubspot" : "d4m", // Provide mode context
+        mode: hubspotMode ? "hubspot" : "d4m",
       },
       (response) => {
-        // This callback handles the *initial* response from sendMessage.
-        // Often, the background script starts processing and sends results later
-        // via separate messages (like MEMORY_UPDATE, COMMAND_RESPONSE).
         if (chrome.runtime.lastError) {
           console.error(
             "[Handlers] Error receiving immediate response from background:",
@@ -194,23 +170,19 @@ export const handleSubmit = async (
           );
           // Check if the *immediate* response indicates a failure (e.g., validation)
           if (response && response.success === false && response.error) {
-            setIsLoading(false); // Stop loading
-            // Add error message to UI. The ChatWidget listener might also add it, so check needed there.
+            setIsLoading(false);
             const errorMsg: Message = {
               id: Date.now().toString() + "-error",
               role: "model",
-              type: "hubspot_error", // Assume error is HubSpot-related if structured like this
-              content: response as HubSpotExecutionResult, // Store the whole response object
+              type: "hubspot_error",
+              content: response as HubSpotExecutionResult,
             };
             setMessages((prev) => {
               const updated = [...prev, errorMsg];
               storage.local.set({ conversationHistory: updated });
               return updated;
             });
-            setToast({ message: `Error: ${response.error}`, type: "error" });
           }
-          // Otherwise, assume processing started successfully in the background.
-          // The loading state remains true, waiting for further updates.
         }
       }
     );
@@ -218,11 +190,10 @@ export const handleSubmit = async (
     console.error("[Handlers] Failed to send message to background:", err);
     setError(`Failed to send command: ${err.message || err}`);
     setToast({ message: "Failed to send command", type: "error" });
-    setIsLoading(false); // Stop loading if send message itself fails
+    setIsLoading(false);
   }
 };
 
-// --- handleStop ---
 // Handles clicking the stop button during loading
 export const handleStop =
   (
@@ -233,12 +204,12 @@ export const handleStop =
     setToast: (
       value: { message: string; type: "success" | "info" | "error" } | null
     ) => void,
-    hubspotMode: boolean // Add hubspotMode parameter
+    hubspotMode: boolean
   ) =>
   async () => {
     // Make async if using await inside
     console.log("[Handlers] handleStop called");
-    setError(null); // Clear previous errors
+    setError(null);
 
     try {
       chrome.runtime.sendMessage(
@@ -250,18 +221,17 @@ export const handleStop =
               "[Handlers] Non-critical error stopping automation:",
               chrome.runtime.lastError.message
             );
-            // Still update UI even if background script communication fails? Maybe.
             setToast({
               message: "Request sent, but confirmation failed.",
               type: "info",
             });
-            setIsLoading(false); // Attempt to stop loading anyway
+            setIsLoading(false);
           } else {
             console.log(
               "[Handlers] Automation stop confirmed by background:",
               response
             );
-            setIsLoading(false); // Stop loading indicator
+            setIsLoading(false);
 
             // Add "Automation stopped" message to chat UI
             const modelMsg: Message = {
@@ -274,7 +244,7 @@ export const handleStop =
               const key = hubspotMode
                 ? HUBSPOT_CONVERSATION_HISTORY_KEY
                 : D4M_CONVERSATION_HISTORY_KEY;
-              saveConversationHistory(key, updated); // Use new storage API
+              saveConversationHistory(key, updated);
               return updated;
             });
 
@@ -302,7 +272,7 @@ export const handleStop =
                   currentChat._id
                 );
                 try {
-                  const api = await import("../../services/api"); // Adjust path
+                  const api = await import("../../services/api");
                   const messageStats = {
                     messageLength: modelMsg.content.length,
                     tokenLength: Math.ceil(modelMsg.content.length / 4),
@@ -339,17 +309,16 @@ export const handleStop =
       console.error("[Handlers] Failed to send STOP_AUTOMATION message:", err);
       setError(`Failed to stop automation: ${err.message || err}`);
       setToast({ message: "Failed to stop automation", type: "error" });
-      setIsLoading(false); // Ensure loading stops
+      setIsLoading(false);
     }
   };
 
-// --- handleNewChat ---
 // Handles clicking the new chat button
 export const handleNewChat =
   (
     // State Setters from ChatWidget:
     setMessages: (value: Message[]) => void,
-    setProcessedMessages: (value: ProcessedMessage[]) => void, // Setter for processed messages state
+    setProcessedMessages: (value: ProcessedMessage[]) => void,
     setError: (value: string | null) => void,
     setIsLoading: (value: boolean) => void,
     setToast: (
@@ -361,25 +330,14 @@ export const handleNewChat =
     try {
       // --- Clear UI State Immediately ---
       setMessages([]);
-      setProcessedMessages([]); // Clear processed messages if used
+      setProcessedMessages([]);
       setError(null);
-      setIsLoading(false); // Ensure loading is stopped
+      setIsLoading(false);
 
-      // --- Clear Local Storage ---
-      // Clear both the active conversation and mode-specific conversation histories
-      // Use the new storage API to clear conversation histories
       saveConversationHistory(D4M_CONVERSATION_HISTORY_KEY, []);
       saveConversationHistory(HUBSPOT_CONVERSATION_HISTORY_KEY, []);
       clearLocalStorageItem("aiCurrentState"); // Clear aiCurrentState
-      storage.local.remove([
-        "currentChat",
-        "conversationHistory", // Remove old generic key
-      ]); // Clear other chat-related storage
-
-      // --- Inform Background Script (Optional) ---
-      // If the background script maintains state related to the current chat, notify it.
-      // chrome.runtime.sendMessage({ type: "NEW_CHAT_SESSION_STARTED" });
-
+      storage.local.remove(["currentChat", "conversationHistory"]);
       // --- Handle Backend Chat Creation (if logged in) ---
       storage.local
         .get(["agentchrome_user", "agentchrome_token"])
@@ -404,7 +362,7 @@ export const handleNewChat =
                   const newChat = await api.default.chats.createChat({
                     title: `Chat ${new Date().toLocaleString()}`,
                   });
-                  await storage.local.set({ currentChat: newChat }); // Set the new backend chat as current
+                  await storage.local.set({ currentChat: newChat });
                   console.log(
                     "[Handlers] New Chat: Backend chat created and set as current:",
                     newChat
@@ -414,12 +372,10 @@ export const handleNewChat =
                     "[Handlers] New Chat: Failed to create backend chat:",
                     error
                   );
-                  // Inform user that backend chat failed, but local chat is active
                   setToast({
                     message: "New chat started (failed to sync to cloud)",
                     type: "info",
                   });
-                  // No need to call handleLocalNewChat as UI/storage are already cleared
                 }
               })
               .catch((err) =>
@@ -450,97 +406,54 @@ export const handleNewChat =
     }
   };
 
-// --- handlePopupSelect ---
 // Handles selecting an item from the command history popup
 export const handlePopupSelect = (
-  commandText: string, // Full text from history item
-  // State Setters from ChatWidget:
+  commandText: string,
   setInput: (value: string) => void,
-  setSelectedCommand: (value: string | null) => void, // Added: Need to clear chip state
+  setSelectedCommand: (value: string | null) => void,
   setShowCommandPopup: (value: boolean) => void,
   setHistoryIndex: (value: number | null) => void
-  // REMOVED: textareaRef - Focus handled elsewhere
 ) => {
   console.log("[Handlers] handlePopupSelect called with:", commandText);
-  setInput(commandText); // Set input text to the selected history item
-  setSelectedCommand(null); // Clear any active command chip
-  setShowCommandPopup(false); // Hide the history popup
-  setHistoryIndex(null); // Reset history navigation index
-  // Focus should ideally return to the input area after selection.
-  // This might happen naturally or require explicit focus() call in CommandInputArea/ChatWidget.
+  setInput(commandText);
+  setSelectedCommand(null);
+  setShowCommandPopup(false);
+  setHistoryIndex(null);
 };
 
-// --- toggleExecutionGroup --- (No changes needed from previous version)
-// Toggles the visibility of execution step details
-export const toggleExecutionGroup = (
-  index: number,
-  setExpandedExecutions: (value: (prev: Set<number>) => Set<number>) => void
-) => {
-  setExpandedExecutions((prev) => {
-    const newSet = new Set(prev);
-    if (newSet.has(index)) {
-      newSet.delete(index);
-    } else {
-      newSet.add(index);
-    }
-    return newSet;
-  });
-};
-
-// --- handleChipClick ---
 // Handles clicking a suggestion chip below the input area
 export const handleChipClick = (
   suggestion: string, // The suggestion text
   // State Setters from ChatWidget:
   setInput: (value: string) => void,
-  setSelectedCommand: (value: string | null) => void // Added: Need to clear chip state
-  // REMOVED: textareaRef - Focus handled elsewhere
+  setSelectedCommand: (value: string | null) => void
 ) => {
-  console.log("[Handlers] handleChipClick called with:", suggestion);
-  setInput(suggestion); // Set input text to the suggestion
-  setSelectedCommand(null); // Clear any active command chip
-  // Focus should ideally move to the input area after clicking a chip.
-  // This might happen naturally or require explicit focus() call in CommandInputArea/ChatWidget.
+  setInput(suggestion);
+  setSelectedCommand(null);
 };
 
-// --- toggleWatching --- (Keep if this state exists and is used)
-// export const toggleWatching = (setIsWatching: (value: (prev: boolean) => boolean) => void) => () => {
-//     setIsWatching((prev) => !prev);
-// };
-
-// --- handleFocus ---
 // Handles the input area gaining focus
 export const handleFocus =
   (
-    // State Setters from ChatWidget:
-    setIsInputAreaFocused: (value: boolean) => void, // Use corrected name
-    setShowCommandPopup: (value: boolean) => void // History popup visibility setter
+    setIsInputAreaFocused: (value: boolean) => void,
+    setShowCommandPopup: (value: boolean) => void
   ) =>
   () => {
     console.log("[Handlers] handleFocus triggered");
-    setIsInputAreaFocused(true); // Set focused state for potential overlays/styling
-    // Optionally show history popup on focus? Or only on key press?
-    // setShowCommandPopup(true); // Decide if history should show immediately on focus
+    setIsInputAreaFocused(true);
   };
 
-// --- handleBlur ---
 // Handles the input area losing focus
 export const handleBlur =
   (
-    // State Setters from ChatWidget:
-    setIsInputAreaFocused: (value: boolean) => void, // Use corrected name
-    setShowCommandPopup: (value: boolean) => void // History popup visibility setter
+    setIsInputAreaFocused: (value: boolean) => void,
+    setShowCommandPopup: (value: boolean) => void
   ) =>
   () => {
     console.log("[Handlers] handleBlur triggered, scheduling hide");
-    // Delay hiding popups to allow clicks within them (e.g., history item, slash command item)
-    // If focus moves to an element *within* a popup, the popup shouldn't hide.
-    // This requires more complex logic involving relatedTarget, often handled within the component's blur handler.
-    // This basic version hides popups after a short delay.
     setTimeout(() => {
       console.log("[Handlers] handleBlur timeout executing");
-      setIsInputAreaFocused(false); // Hide focus state indicator/overlay
-      setShowCommandPopup(false); // Hide history popup
-      // Note: Hiding the slash command popup should be handled within CommandInputArea's blur logic
-    }, 150); // 150ms delay - adjust as needed
+      setIsInputAreaFocused(false);
+      setShowCommandPopup(false);
+    }, 150);
   };

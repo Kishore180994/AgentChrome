@@ -6,6 +6,14 @@ import {
   GeminiChatMessage,
   GeminiResponse,
 } from "../ai/interfaces";
+
+import {
+  saveConversationHistory,
+  loadConversationHistory,
+  D4M_CONVERSATION_HISTORY_KEY,
+  HUBSPOT_CONVERSATION_HISTORY_KEY,
+} from "../storage.ts";
+
 import { AIProvider, callAI } from "../ai/providers";
 
 const MAX_RETRIES = 3;
@@ -171,7 +179,7 @@ async function storeUserMessage(
   const key = isHubspotMode
     ? HUBSPOT_CONVERSATION_HISTORY_KEY
     : D4M_CONVERSATION_HISTORY_KEY;
-  await saveConversationHistory(key, newHistory); // Use new storage API
+  await saveConversationHistory(key, newHistory);
 }
 
 /**
@@ -331,13 +339,6 @@ async function updateConversationHistory(
     await chrome.storage.local.set({ conversationHistory: newHistory });
   }
 }
-
-import {
-  saveConversationHistory,
-  loadConversationHistory,
-  D4M_CONVERSATION_HISTORY_KEY,
-  HUBSPOT_CONVERSATION_HISTORY_KEY,
-} from "../storage.ts";
 
 /**
  * Retrieves the conversation history from local storage.
