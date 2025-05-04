@@ -852,6 +852,126 @@ export async function getIsHubspotMode(): Promise<boolean> {
   }
 }
 
+async function stopAutomationAndCleanup(
+  tabId: number,
+  reason: string,
+  sendMessage: boolean = true
+) {
+  console.log(
+    `[background.ts] Stopping automation for tab ${tabId}. Reason: ${reason}`
+  );
+  automationStopped = true;
+  if (sendMessage) {
+    await chrome.runtime
+      .sendMessage({
+        type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
+        response: reason,
+      })
+      .catch((err) =>
+        console.warn("Failed to send FINISH_PROCESS_COMMAND on stop:", err)
+      );
+  }
+  await findAndUngroupDfmGroup();
+  resetExecutionState(tabId);
+  activeAutomationTabs.delete(tabId);
+}
+
+async function hubspotExecutionBlock(
+  isHubspotMode: boolean,
+  rawAiResponse: any,
+  modeLogPrefix: string,
+  tabId: number
+) {
+  if (isHubspotMode) {
+    console.log(
+      `[background.ts]${modeLogPrefix} Checking AI response for HubSpot functions...`
+    );
+    const hubspotCalls = rawAiResponse.filter(
+      (callWrapper: any) =>
+        callWrapper.functionCall &&
+        typeof callWrapper.functionCall.name === "string" &&
+        callWrapper.functionCall.name.startsWith("hubspot_")
+    );
+
+    if (hubspotCalls.length > 0) {
+      console.log(
+        `[background.ts]${modeLogPrefix} Found ${hubspotCalls.length} HubSpot function calls. Executing immediately.`
+      );
+      for (const callWrapper of hubspotCalls) {
+        const { name, args } = callWrapper.functionCall;
+        console.log(
+          `[background.ts]${modeLogPrefix} Executing HubSpot function:`,
+          { name, args }
+        );
+        try {
+          const result = await executeHubspotFunction({ name, args });
+          console.log(
+            `[background.ts]${modeLogPrefix} HubSpot function executed:`,
+            { name, result }
+          );
+
+          if (result && result.success) {
+            console.warn(
+              `[background.ts]${modeLogPrefix} HubSpot function result indicates processing should stop (result.success is true).`,
+              name
+            );
+            await stopAutomationAndCleanup(
+              tabId,
+              result.message || `HubSpot action ${name} completed successfully.`
+            );
+            break;
+          }
+          // Record action even if not stopping
+          recentActionsMap[tabId] = [
+            ...(recentActionsMap[tabId] || []),
+            `Executed HubSpot action: ${name} with args ${JSON.stringify(
+              args
+            )}`,
+          ].slice(-5);
+        } catch (err) {
+          console.error(
+            `[background.ts]${modeLogPrefix} Error executing HubSpot function ${name}:`,
+            err
+          );
+          // Stop automation on error during HubSpot execution
+          await stopAutomationAndCleanup(
+            tabId,
+            `Error executing HubSpot action ${name}: ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          );
+          break;
+        }
+      }
+
+      console.log(
+        `[background.ts]${modeLogPrefix} Finished immediate HubSpot execution phase. Returning.`
+      );
+      return;
+    } else {
+      console.log(
+        `[background.ts]${modeLogPrefix} No HubSpot functions found in this AI response.`
+      );
+
+      console.log(
+        `[background.ts]${modeLogPrefix} No HubSpot actions to execute. Ending this cycle.`
+      );
+      await chrome.runtime
+        .sendMessage({
+          // Send a message indicating nothing happened? Or use evaluation from reportState?
+          type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
+          response: "No HubSpot actions required in this step.",
+        })
+        .catch(() => {});
+
+      await findAndUngroupDfmGroup();
+      activeAutomationTabs.delete(tabId);
+      resetExecutionState(tabId);
+      return;
+    }
+  }
+}
+
 export async function processCommand(
   tabId: number,
   contextMessage: string,
@@ -1011,6 +1131,7 @@ export async function processCommand(
     );
     const rawAiResponse: GeminiFunctionCallWrapper[] | null = await chatWithAI(
       contextMessage,
+      initialCommand,
       `session-${tabId}`,
       isHubspotMode ? undefined : aiCurrentState,
       isHubspotMode,
@@ -1034,6 +1155,8 @@ export async function processCommand(
       `[background.ts]${modeLogPrefix} Raw AI Response:`,
       JSON.stringify(rawAiResponse)
     );
+
+    // hubspotExecutionBlock(isHubspotMode, rawAiResponse, modeLogPrefix, tabId);
 
     // --- 3. Validate AI Response Structure ---
     const reportStateCallWrapper = rawAiResponse.find(
@@ -1170,7 +1293,7 @@ export async function processCommand(
       chrome.runtime
         .sendMessage({
           type: MESSAGE_TYPE.MEMORY_UPDATE,
-          response: { current_state },
+          response: current_state.memory,
         })
         .catch((err) =>
           console.warn("Failed to send MEMORY_UPDATE to runtime:", err)
@@ -1179,7 +1302,7 @@ export async function processCommand(
       chrome.tabs
         .sendMessage(tabId, {
           type: MESSAGE_TYPE.MEMORY_UPDATE,
-          response: { current_state },
+          response: current_state.memory,
         })
         .catch((err) =>
           console.warn("Failed to send MEMORY_UPDATE to tab:", err)

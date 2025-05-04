@@ -269,6 +269,7 @@ export const commonRules = `
      **Core Object Management (Contacts, Companies, Deals, Tickets)**
      - \`hubspot_createContact({ email: string, firstName?: string, lastName?: string, ... })\`: Create a new contact.
      - \`hubspot_getContactById({ contactId: string, properties?: string[] })\`: Get a single contact by ID.
+     - \`hubspot_findContact({ name?: string, email?: string, limit?: number, after?: string })\`: Find contacts by name or email.
      - \`hubspot_updateContact({ contactId: string, email?: string, ... })\`: Update an existing contact.
      - \`hubspot_deleteContact({ contactId: string })\`: Delete a contact by ID (use with caution).
      - \`hubspot_createCompany({ name: string, domain?: string, ... })\`: Create a new company.

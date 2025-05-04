@@ -62,6 +62,20 @@ export const handleSubmit = async (
   });
   setHistoryIndex(null);
 
+  const userMsg: Message = {
+    id: Date.now().toString(),
+    role: "user" as const,
+    content: userMessage,
+  };
+  setMessages((prev) => {
+    const updatedMessages = [...prev, userMsg];
+    const key = hubspotMode
+      ? HUBSPOT_CONVERSATION_HISTORY_KEY
+      : D4M_CONVERSATION_HISTORY_KEY;
+    saveConversationHistory(key, updatedMessages); // Use new storage API
+    return updatedMessages;
+  });
+
   // --- Sync Message to Backend (if logged in) ---
   try {
     const storageData = await storage.local.get([

@@ -79,6 +79,9 @@ export async function executeHubspotFunction(
       case "hubspot_getContactById":
         result = await getContactById(args); // IMPLEMENTED
         break;
+      case "hubspot_findContact":
+        result = await findContact(args);
+        break;
       case "hubspot_updateContact":
         result = await updateContact(args);
         break;
@@ -166,7 +169,7 @@ export async function executeHubspotFunction(
       case "hubspot_logCall":
         result = await logCall(args); // IMPLEMENTED
         break;
-      case "hubspot_sendEmail": // Assumes 1-to-1 send/log
+      case "hubspot_sendEmail": // Assumes 1-to-one send/log
         result = await sendEmail(args);
         break;
       case "hubspot_updateTask":
@@ -521,12 +524,48 @@ async function createContact(
     });
     const result = await hubspotApi.createContact(properties);
     console.log("[executor.ts] createContact SUCCESS", { result });
-    // Return a standard success structure
-    return {
-      success: true,
-      data: result,
-      message: `Contact created with ID ${result.id}`,
-    };
+
+    // After creating the contact, fetch the full details using the returned ID
+    const contactId = result.id;
+    if (contactId) {
+      console.log(
+        "[executor.ts] createContact - Fetching full contact details for ID:",
+        contactId
+      );
+      // Fetch the contact by ID, requesting the properties needed for the card
+      // The list of properties to fetch should ideally be defined elsewhere or
+      // match the displayProperties in HubspotCard.tsx. For now, hardcode common ones.
+      const fetchedContact = await hubspotApi.getContactById(contactId, [
+        "firstname",
+        "lastname",
+        "email",
+        "phone",
+        "company",
+        "jobtitle",
+        "lifecyclestage",
+        "createdate", // Include creation date as it's often useful
+      ]);
+      console.log("[executor.ts] createContact - Fetched contact details:", {
+        fetchedContact,
+      });
+
+      // Return a standard success structure with the fetched data
+      return {
+        success: true,
+        data: fetchedContact, // Use the fetched data with full properties
+        message: `Contact created and details fetched for ID ${contactId}`,
+      };
+    } else {
+      // If for some reason the ID is not returned, still return success but with limited data
+      console.warn(
+        "[executor.ts] createContact - Contact ID not returned after creation."
+      );
+      return {
+        success: true,
+        data: result, // Return the original result if ID is missing
+        message: `Contact created, but full details could not be fetched (ID missing).`,
+      };
+    }
   } catch (error) {
     console.error("[executor.ts] createContact ERROR", error);
     throw error; // Let the main catch block handle error formatting
@@ -3141,5 +3180,63 @@ async function batchAssociateRecords(args: Record<string, any>): Promise<any> {
       error
     );
     throw error; // Propagate the error
+  }
+}
+
+/**
+ * Find contacts in HubSpot by name or email
+ * @param args - { name?: string, email?: string, limit?: number, after?: string }
+ */
+async function findContact(args: any): Promise<any> {
+  console.log("Executing: findContact", args);
+  const { name, email, limit = 10, after } = args;
+
+  if (!name && !email) {
+    return {
+      success: false,
+      error:
+        "Missing required arguments: either name or email must be provided.",
+      errorType: "validation",
+    };
+  }
+
+  const filterGroups: any[] = [];
+
+  if (email) {
+    filterGroups.push({
+      filters: [{ propertyName: "email", operator: "EQ", value: email }],
+    });
+  }
+
+  if (name) {
+    // Assuming a simple search by name might involve searching across name properties
+    // This is a basic implementation; a more robust search might use multiple filters or a dedicated search endpoint
+    filterGroups.push({
+      filters: [
+        { propertyName: "firstname", operator: "CONTAINS_TOKEN", value: name },
+        { propertyName: "lastname", operator: "CONTAINS_TOKEN", value: name },
+      ],
+    });
+  }
+
+  const searchPayload = {
+    filterGroups: filterGroups,
+    properties: ["firstname", "lastname", "email", "phone", "company"], // Default properties to return
+    limit: limit,
+    after: after,
+    sorts: [{ propertyName: "createdate", direction: "DESCENDING" }], // Default sort
+  };
+
+  try {
+    // Use the generic searchObjects function for contacts
+    const result = await hubspotApi.searchObjects("contacts", searchPayload);
+    return {
+      success: true,
+      message: `Found ${result.total || 0} contacts matching the criteria.`,
+      data: result,
+    };
+  } catch (error) {
+    console.error(`Error finding contacts by name/email:`, error);
+    throw error;
   }
 }

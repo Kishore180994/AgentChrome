@@ -1576,6 +1576,7 @@ const toolGroups: { [key: string]: string[] } = {
   contact: [
     "hubspot_createContact",
     "hubspot_getContactById",
+    "hubspot_findContact",
     "hubspot_updateContact",
     "hubspot_deleteContact",
     "hubspot_sendEmail",
@@ -1609,7 +1610,6 @@ const toolGroups: { [key: string]: string[] } = {
   meeting: ["hubspot_scheduleMeeting"],
   call: ["hubspot_logCall"],
   search: [
-    // All search functions
     "hubspot_searchContacts",
     "hubspot_searchCompanies",
     "hubspot_searchDeals",
