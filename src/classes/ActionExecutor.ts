@@ -1,11 +1,15 @@
-// ActionExecutor.ts
+// TODO: DON'T IMPORT ACTION TYPES IN THIS FILE. KEEP THE HARD-CODED STRINGS. FIX THIS IMPORT ISSUE LATER.
 import {
   ClickElementArgs,
   ExtractContentArgs,
   GeminiFunctionCall,
+  GotoExistingTabArgs,
   InputTextArgs,
   KeyPressArgs,
   ScrollArgs,
+  SelectDropdownArgs,
+  SelectMultiDropdownArgs,
+  SelectRadioButtonArgs,
   SubmitFormArgs,
 } from "../services/ai/interfaces";
 import { DOMManager } from "./DOMManager";
@@ -85,8 +89,6 @@ export class ActionExecutor {
 
       // List of actions handled directly in background.ts
       const backgroundHandledActions = [
-        "dom_goToUrl",
-        "dom_openTab",
         "dom_verify",
         "dom_done",
         "dom_ask",
@@ -103,6 +105,25 @@ export class ActionExecutor {
       } else {
         // Handle actions meant for the content script (DOM interactions)
         switch (name) {
+          case "dom_openTab":
+            console.log("[ActionExecutor] Handling openTab action.");
+            // Assuming a messaging system to the background script exists
+            chrome.runtime.sendMessage({
+              action: "dom_openTab",
+              url: (args as GotoExistingTabArgs).url,
+            });
+            break;
+          case "dom_goToExistingTab":
+            args = args as { url: string };
+            console.log(
+              `[ActionExecutor] Handling goToUrl action for URL: ${args.url}`
+            );
+            // Assuming a messaging system to the background script exists
+            chrome.runtime.sendMessage({
+              action: "dom_goToExistingTab",
+              url: args.url,
+            });
+            break;
           case "dom_clickElement":
             args = args as ClickElementArgs;
             await this.handleClick(args.index as number);
@@ -133,7 +154,7 @@ export class ActionExecutor {
               (args as KeyPressArgs).key
             );
             break;
-          case "wait": // Keep wait here if needed for content-script specific pauses
+          case "dom_wait":
             const waitDuration =
               typeof (args as any).duration === "number"
                 ? (args as any).duration
@@ -141,28 +162,23 @@ export class ActionExecutor {
             console.log(`[ActionExecutor] Waiting ${waitDuration}ms`);
             await new Promise((resolve) => setTimeout(resolve, waitDuration));
             break;
-          // Removed cases for goToUrl, openTab, verify, done, ask as they are handled in background.ts
           case "dom_selectRadioButton":
-            // args: SelectRadioButtonArgs
             {
-              const { index, value, selector } =
-                args as import("../services/ai/interfaces").SelectRadioButtonArgs;
+              const { index, value, selector } = args as SelectRadioButtonArgs;
               await this.domManager.selectRadioButton(index, value, selector);
             }
             break;
           case "dom_selectDropdown":
             {
               // args: SelectDropdownArgs
-              const { index, value, selector } =
-                args as import("../services/ai/interfaces").SelectDropdownArgs;
+              const { index, value, selector } = args as SelectDropdownArgs;
               await this.domManager.selectDropdown(index, value, selector);
             }
             break;
           case "dom_selectMultiDropdown":
             {
-              // args: SelectMultiDropdownArgs
               const { index, values, selector } =
-                args as import("../services/ai/interfaces").SelectMultiDropdownArgs;
+                args as SelectMultiDropdownArgs;
               await this.domManager.selectMultiDropdown(
                 index,
                 values,

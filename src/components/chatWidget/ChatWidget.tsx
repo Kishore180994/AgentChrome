@@ -1,31 +1,24 @@
 // src/components/ChatWidget.tsx
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Square } from "lucide-react";
-import ComponentHeader, {
-  commonButtons,
-  HeaderButtonOption,
-  TabOption,
-} from "../common/ComponentHeader";
+import ComponentHeader, { commonButtons } from "../common/ComponentHeader";
 
 import { CommandInputArea } from "./CommandInputArea";
 import WelcomeScreen from "./WelcomeScreen";
 import MessageRenderer from "./MessageRenderer";
-import TaskSection from "./TaskSection";
 import HubspotModularOptions from "./HubspotModularOptions";
 import { ToastNotification } from "../ToastNotifications";
 // import SettingsModal from "../SettingsModal";
 
 import { AccentColor, hubspotTheme, themeStyles } from "../../utils/themes";
+import { updateAndSaveMessages } from "../../utils/messageUtils";
 import { loadHubSpotConfig } from "../../services/hubspot/api";
 import { HubSpotExecutionResult } from "../../services/ai/interfaces";
-import { StepState } from "../../types/responseFormat";
 import { Message, ProcessedMessage } from "./chatInterface";
-
 import {
   handleSubmit as originalHandleSubmit,
   handleStop,
   handleNewChat,
-  toggleExecutionGroup,
   handleChipClick,
   handleFocus,
   handleBlur,
@@ -33,9 +26,20 @@ import {
 import { useSiriBorderWithRef } from "../../hooks/useSiriBorder";
 import StarfallCascadeAnimation from "../../utils/helpers";
 import { hubspotModularTools } from "../../services/ai/hubspotTool";
+import { TaskProgressDisplay } from "../tasks/TaskProgressDisplay";
+import { MemoryState } from "../../types/memoryTypes";
+
+import {
+  saveConversationHistory,
+  loadConversationHistory,
+  D4M_CONVERSATION_HISTORY_KEY,
+  HUBSPOT_CONVERSATION_HISTORY_KEY,
+} from "../../services/storage.ts";
+import { MESSAGE_TYPE } from "./types.ts";
 
 export function ChatWidget() {
   // State
+  const [isTaskProgressExpanded, setIsTaskProgressExpanded] = useState(true); // State for task progress display
   const [messages, setMessages] = useState<Message[]>([]);
   const [processedMessages, setProcessedMessages] = useState<
     ProcessedMessage[]
@@ -63,11 +67,6 @@ export function ChatWidget() {
   }, []);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [expandedExecutions, setExpandedExecutions] = useState<Set<number>>(
-    new Set()
-  );
-  const [taskHistories, setTaskHistories] = useState<StepState[]>([]);
-  const [isTaskSectionExpanded, setIsTaskSectionExpanded] = useState(true);
   const [isInputAreaFocused, setIsInputAreaFocused] = useState(false);
   const [selectedModel, setSelectedModel] = useState<"gemini" | "claude">(
     "gemini"
@@ -120,6 +119,7 @@ export function ChatWidget() {
     setSlashFilter(filter);
   };
   const [mode, setMode] = useState<"light" | "dark">("dark");
+  const [taskProgress, setTaskProgress] = useState<MemoryState | null>(null);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [showCommandPopup, setShowCommandPopup] = useState(false);
@@ -167,7 +167,7 @@ export function ChatWidget() {
       setToast,
       setIsInputAreaFocused,
       selectedModel,
-      hubspotMode
+      hubspotMode // Pass hubspotMode
     );
   }, [
     input,
@@ -188,8 +188,8 @@ export function ChatWidget() {
   ]);
 
   const handleStopClick = useCallback(() => {
-    handleStop(setIsLoading, setMessages, setError, setToast)();
-  }, [setIsLoading, setMessages, setError, setToast]);
+    handleStop(setIsLoading, setMessages, setError, setToast, hubspotMode)(); // Pass hubspotMode
+  }, [setIsLoading, setMessages, setError, setToast, hubspotMode]);
 
   const handleNewChatClick = useCallback(() => {
     handleNewChat(
@@ -201,13 +201,6 @@ export function ChatWidget() {
     )();
   }, [setMessages, setProcessedMessages, setError, setIsLoading, setToast]);
 
-  const handleToggleExecution = useCallback(
-    (index: number) => {
-      toggleExecutionGroup(index, setExpandedExecutions);
-    },
-    [setExpandedExecutions]
-  );
-
   // --- Effects ---
 
   // Effect 1: Load initial state from chrome.storage on component mount
@@ -217,9 +210,6 @@ export function ChatWidget() {
       try {
         // Fetch multiple keys at once
         const data = await chrome.storage.local.get([
-          "conversationHistory",
-          "d4mConversationHistory",
-          "hubspotConversationHistory",
           "commandHistory",
           "theme",
           "accentColor",
@@ -248,47 +238,27 @@ export function ChatWidget() {
         // Set the active accentColor based on the mode
         if (initialHubspotMode) {
           setAccentColor("white");
-
-          // Load appropriate conversation history based on mode
-          if (
-            Array.isArray(data.hubspotConversationHistory) &&
-            data.hubspotConversationHistory.length > 0
-          ) {
-            console.log("[ChatWidget] Loading Hubspot conversation history");
-            setMessages(formatMessages(data.hubspotConversationHistory));
-            // Also set as active conversation
-            chrome.storage.local.set({
-              conversationHistory: data.hubspotConversationHistory,
-            });
-          } else if (Array.isArray(data.conversationHistory)) {
-            // Fallback to generic conversation history if mode-specific one doesn't exist
-            console.log(
-              "[ChatWidget] No Hubspot history found, using generic conversation history"
-            );
-            setMessages(formatMessages(data.conversationHistory));
-          }
+          // Load Hubspot conversation history using the new API
+          const hubspotHistory = await loadConversationHistory(
+            HUBSPOT_CONVERSATION_HISTORY_KEY
+          );
+          console.log(
+            "[ChatWidget] Loaded Hubspot conversation history:",
+            hubspotHistory
+          );
+          setMessages(formatMessages(hubspotHistory));
         } else {
-          // D4M mode: use D4M accent color
+          // D4M mode: use D4m accent color
           setAccentColor(data.d4mAccentColor || data.accentColor || "rose");
-
-          // Load D4M conversation history
-          if (
-            Array.isArray(data.d4mConversationHistory) &&
-            data.d4mConversationHistory.length > 0
-          ) {
-            console.log("[ChatWidget] Loading D4M conversation history");
-            setMessages(formatMessages(data.d4mConversationHistory));
-            // Also set as active conversation
-            chrome.storage.local.set({
-              conversationHistory: data.d4mConversationHistory,
-            });
-          } else if (Array.isArray(data.conversationHistory)) {
-            // Fallback to generic conversation history if mode-specific one doesn't exist
-            console.log(
-              "[ChatWidget] No D4M history found, using generic conversation history"
-            );
-            setMessages(formatMessages(data.conversationHistory));
-          }
+          // Load D4M conversation history using the new API
+          const d4mHistory = await loadConversationHistory(
+            D4M_CONVERSATION_HISTORY_KEY
+          );
+          console.log(
+            "[ChatWidget] Loaded D4M conversation history:",
+            d4mHistory
+          );
+          setMessages(formatMessages(d4mHistory));
         }
 
         console.log("[ChatWidget] Initial state set.");
@@ -354,7 +324,6 @@ export function ChatWidget() {
       ) {
         // Finalize previous model group
         if (currentModelGroup.length > 0) {
-          // Use ID of the first message in the group as timestamp anchor
           processed.push({
             type: "modelGroup",
             messages: currentModelGroup,
@@ -363,7 +332,7 @@ export function ChatWidget() {
           currentModelGroup = [];
         }
         // Add execution group if it has content
-        const taskHistories = message.content as StepState[];
+        const taskHistories = message.content;
         if (taskHistories.length > 0) {
           processed.push({ type: "executionGroup", taskHistories });
         }
@@ -399,23 +368,11 @@ export function ChatWidget() {
     // Reverse the final array for display with flex-col-reverse
     setProcessedMessages(processed.reverse());
     console.log("[ChatWidget] Messages processed.", processed);
-  }, []); // Add dependencies if this callback uses external state/props, currently none
+  }, []);
 
   useEffect(() => {
     processMessages(messages);
-
-    // Extract the latest task histories from messages
-    const executionMessages = messages.filter(
-      (msg) => msg.role === "execution" && Array.isArray(msg.content)
-    );
-    if (executionMessages.length > 0) {
-      // Get the most recent execution message
-      const latestExecution = executionMessages[executionMessages.length - 1];
-      setTaskHistories(latestExecution.content as StepState[]);
-    } else {
-      setTaskHistories([]);
-    }
-  }, [messages, processMessages]); // Re-process whenever raw messages change
+  }, [messages, processMessages]);
 
   // Effect 4: Scroll messages container to show the latest message
   useEffect(() => {
@@ -433,7 +390,7 @@ export function ChatWidget() {
 
   // Effect 5: Listen for messages from the background script
   useEffect(() => {
-    const handleBackgroundMessage = (
+    const handleBackgroundMessage = async (
       message: any, // Consider defining a more specific type for background messages
       _sender: chrome.runtime.MessageSender,
       sendResponse: (response?: any) => void
@@ -447,409 +404,199 @@ export function ChatWidget() {
 
       try {
         // Add try-catch block for safety within the listener
-        if (message?.type === "MEMORY_UPDATE") {
-          const steps = message.response?.steps as StepState[] | undefined;
-          if (steps) {
-            console.log("[ChatWidget] Handling MEMORY_UPDATE");
-            setMessages((prev) => {
-              const lastMsg = prev[prev.length - 1];
-              let updatedMessages: Message[];
-              // If last message was execution, update its content; otherwise add new execution message
-              if (lastMsg?.role === "execution") {
-                updatedMessages = [
-                  ...prev.slice(0, -1),
-                  { ...lastMsg, content: steps },
-                ];
-              } else {
-                updatedMessages = [
-                  ...prev,
-                  {
-                    id: Date.now().toString(),
-                    role: "execution",
-                    content: steps,
-                  },
-                ];
+        switch (message?.type) {
+          case MESSAGE_TYPE.MEMORY_UPDATE:
+            try {
+              const memoryState = message.response as MemoryState | undefined;
+              // (Basic check: is it an object and does it have the 'phases' array?)
+              if (
+                memoryState &&
+                typeof memoryState === "object" &&
+                Array.isArray(memoryState.phases)
+              ) {
+                console.log(
+                  "[ChatWidget] Handling MEMORY_UPDATE with hierarchical MemoryState:",
+                  memoryState
+                );
+                setTaskProgress(() => memoryState);
               }
-              // Save to both the active conversation and mode-specific storage
-              if (hubspotMode) {
-                chrome.storage.local.set({
-                  conversationHistory: updatedMessages,
-                  hubspotConversationHistory: updatedMessages,
-                }); // Persist to active and Hubspot storage
-              } else {
-                chrome.storage.local.set({
-                  conversationHistory: updatedMessages,
-                  d4mConversationHistory: updatedMessages,
-                }); // Persist to active and D4M storage
-              }
-              return updatedMessages;
-            });
-            messageHandled = true;
-          } else {
-            console.warn(
-              "[ChatWidget] MEMORY_UPDATE received without valid steps data."
-            );
-          }
-        } else if (message?.type === "COMMAND_RESPONSE") {
-          console.log("[ChatWidget] Handling COMMAND_RESPONSE");
-          setIsLoading(false); // Stop loading on any command response
-          const responseData = message.response;
-
-          if (responseData) {
-            // Check if responseData exists
-            let newMessage: Message | null = null;
-
-            // Check if it's a HubSpot API response that needs to be displayed as a card
-            const isHubspotResult =
-              typeof responseData === "object" &&
-              (responseData.success === true ||
-                responseData.success === false) &&
-              (responseData.functionName?.includes("hubspot") ||
-                message.source === "hubspot" ||
-                (responseData.details &&
-                  typeof responseData.details === "object"));
-
-            if (isHubspotResult) {
-              console.log(
-                "[ChatWidget] Processing HubSpot API response:",
-                responseData
+            } catch (error) {
+              console.error(
+                "[ChatWidget] Error handling MEMORY_UPDATE:",
+                error
               );
-              // Force the response into the right structure for a card
-              if (responseData.success === true) {
-                // Create a structured message for HubSpot success
-                newMessage = {
-                  id: Date.now().toString(),
-                  role: "model",
-                  type: "hubspot_success",
-                  content: responseData as HubSpotExecutionResult, // Store the whole object
-                };
-                console.log(
-                  `[ChatWidget] Created hubspot_success card message.`
-                );
-              } else {
-                // Create a properly structured message for HubSpot error
-                // For debugging
-                console.log(
-                  "[ChatWidget] Creating hubspot_error with data:",
-                  responseData
-                );
+            }
+            messageHandled = true;
+            break;
 
-                // Extract details and ensure it's a string for display
-                let detailsString = "";
-                try {
-                  if (responseData.details) {
-                    detailsString =
-                      typeof responseData.details === "string"
-                        ? responseData.details
-                        : JSON.stringify(responseData.details, null, 2);
-                  } else {
-                    // If no details, use the full response for debugging
-                    detailsString = JSON.stringify(responseData, null, 2);
-                  }
-                } catch (err) {
-                  console.error("Error stringifying details:", err);
-                  detailsString = "Error parsing details";
-                }
+          case MESSAGE_TYPE.AI_RESPONSE:
+            console.log("[ChatWidget] Handling AI_RESPONSE");
+            setIsLoading(false); // Stop loading on any AI response
 
-                // Create message with properly formatted properties
-                newMessage = {
-                  id: Date.now().toString(),
-                  role: "model",
-                  type: "hubspot_error",
-                  // Ensure all required properties are explicitly set
-                  errorType: responseData.errorType || "general",
-                  message:
-                    responseData.error ||
-                    "An error occurred with the HubSpot operation",
-                  details: detailsString,
-                  status: responseData.status || 0,
-                  // Use undefined instead of null to comply with the type definition
-                  content: undefined,
-                };
+            const {
+              action,
+              question,
+              message: completionMessage,
+              output,
+            } = message;
+            let aiNewMessage: Message | null = null;
 
-                console.log(
-                  `[ChatWidget] Created hubspot_error card message:`,
-                  newMessage
-                );
-              }
-            } else if (typeof responseData === "object") {
-              // Check for specific message types
-              if (responseData.type === "question") {
-                // This is an "ask" action from AI
-                newMessage = {
-                  id: Date.now().toString(),
-                  role: "model",
-                  type: "question",
-                  content: responseData.message,
-                };
-                console.log(
-                  `[ChatWidget] Created question message: "${responseData.message}"`
-                );
-              } else if (responseData.type === "completion") {
-                // This is a "done" action from AI
-                newMessage = {
-                  id: Date.now().toString(),
-                  role: "model",
-                  type: "completion",
-                  content:
-                    responseData.message +
-                    (responseData.output ? `: ${responseData.output}` : ""),
-                };
-                console.log(
-                  `[ChatWidget] Created completion message: "${responseData.message}"`
-                );
-              } else if (
-                responseData.success === false ||
-                !!responseData.error
-              ) {
-                // Create a properly structured message for HubSpot error
-                newMessage = {
-                  id: Date.now().toString(),
-                  role: "model",
-                  type: "hubspot_error",
-                  // Ensure all required properties are present for HubspotErrorCard
-                  errorType: responseData.errorType || "general",
-                  message: responseData.error || "An error occurred",
-                  details: responseData.details || responseData,
-                  status: responseData.status || 0,
-                  content: responseData as HubSpotExecutionResult, // Also store the full object
-                };
-                console.log(
-                  `[ChatWidget] Created structured hubspot_error message:`,
-                  newMessage
-                );
-              } else if (
-                Array.isArray(responseData) &&
-                responseData.length > 0 &&
-                responseData[0]?.functionCall
-              ) {
-                // This is a raw function call array from Gemini - don't display as raw JSON
-                console.log(
-                  "[ChatWidget] Detected raw function call array:",
-                  responseData
-                );
-
-                // Extract a user-friendly message
-                let friendlyMessage = "Processing your request...";
-
-                // Look for Hubspot actions specifically
-                const hubspotAction = responseData.find((item) =>
-                  item?.functionCall?.name?.includes("hubspot_")
-                );
-
-                if (hubspotAction) {
-                  const functionName = hubspotAction.functionCall.name.replace(
-                    "hubspot_",
-                    ""
-                  );
-                  const args = hubspotAction.functionCall.args;
-
-                  // Create a friendly message based on the action
-                  if (functionName.includes("create")) {
-                    const entityType = functionName
-                      .replace("create", "")
-                      .toLowerCase();
-                    friendlyMessage = `Creating ${entityType} with the provided information...`;
-                  } else if (functionName.includes("get")) {
-                    const entityType = functionName
-                      .replace("get", "")
-                      .toLowerCase();
-                    friendlyMessage = `Retrieving ${entityType} information...`;
-                  } else if (functionName.includes("update")) {
-                    const entityType = functionName
-                      .replace("update", "")
-                      .toLowerCase();
-                    friendlyMessage = `Updating ${entityType} with the provided information...`;
-                  } else {
-                    friendlyMessage = `Processing ${functionName
-                      .replace(/([A-Z])/g, " $1")
-                      .toLowerCase()} request...`;
-                  }
-                }
-
-                newMessage = {
-                  id: Date.now().toString(),
-                  role: "model",
-                  content: friendlyMessage,
-                };
-                console.log(
-                  `[ChatWidget] Created friendly model message: "${friendlyMessage}"`
-                );
-              } else {
-                // Fallback for other object structures - try to get meaningful text
-                let contentText =
-                  responseData.message ||
-                  responseData.output ||
-                  responseData.text ||
-                  (typeof responseData === "object"
-                    ? "Processing your request..." // Don't stringify objects
-                    : JSON.stringify(responseData));
-
-                newMessage = {
-                  id: Date.now().toString(),
-                  role: "model",
-                  content: contentText,
-                };
-                console.log(
-                  "[ChatWidget] Created fallback model message from object."
-                );
-              }
-            } else if (typeof responseData === "string") {
-              // Handle plain string response
-              newMessage = {
+            if (action === "question") {
+              aiNewMessage = {
                 id: Date.now().toString(),
                 role: "model",
-                content: responseData,
+                type: "question",
+                content: question,
               };
-              console.log("[ChatWidget] Created model message from string.");
+              console.log(
+                `[ChatWidget] Created question message: "${question}"`
+              );
+            } else if (action === "completion") {
+              aiNewMessage = {
+                id: Date.now().toString(),
+                role: "model",
+                type: "completion",
+                content: completionMessage + (output ? `: ${output}` : ""),
+              };
+              console.log(
+                `[ChatWidget] Created completion message: "${completionMessage}"`
+              );
             }
 
-            // Add the new message to state if one was created
-            if (newMessage) {
+            if (aiNewMessage) {
               setMessages((prev) => {
-                // Optional: Check for duplicate messages before adding
-                const lastMsgContent = prev[prev.length - 1]?.content;
-                if (
-                  JSON.stringify(lastMsgContent) ===
-                  JSON.stringify(newMessage!.content)
-                ) {
-                  console.warn(
-                    "[ChatWidget] Duplicate message content detected, skipping add."
-                  );
-                  return prev;
-                }
-                const updated = [...prev, newMessage!];
-                // Save to both the active conversation and mode-specific storage
-                if (hubspotMode) {
-                  chrome.storage.local.set({
-                    conversationHistory: updated,
-                    hubspotConversationHistory: updated,
-                  }); // Persist to active and Hubspot storage
-                } else {
-                  chrome.storage.local.set({
-                    conversationHistory: updated,
-                    d4mConversationHistory: updated,
-                  }); // Persist to active and D4M storage
-                }
-                return updated;
+                updateAndSaveMessages(prev, aiNewMessage, hubspotMode);
+                return [...prev, aiNewMessage];
               });
             }
-          } else {
-            console.warn(
-              "[ChatWidget] COMMAND_RESPONSE received with null/undefined data."
-            );
-          }
-          messageHandled = true;
-        } else if (message?.type === "FINISH_PROCESS_COMMAND") {
-          console.log("[ChatWidget] Handling FINISH_PROCESS_COMMAND");
-          setIsLoading(false); // Ensure loading stops
+            messageHandled = true;
+            break;
 
-          // Process the response
-          const response = message.response;
+          case MESSAGE_TYPE.HUBSPOT_RESPONSE:
+            console.log("[ChatWidget] Handling HUBSPOT_RESPONSE");
+            setIsLoading(false); // Stop loading on any Hubspot response
 
-          // Handle HubSpot success response with card view
-          if (
-            typeof response === "object" &&
-            response.success === true &&
-            (response.functionName?.includes("hubspot") ||
-              message.source === "hubspot")
-          ) {
-            console.log(
-              "[ChatWidget] Processing HubSpot success response as card:",
-              response
-            );
+            const hubspotResult = message.response as HubSpotExecutionResult;
+            let hubspotNewMessage: Message | null = null;
 
-            // Create a data structure that HubspotSuccessCard can properly display
-            const hubspotResponse = {
-              success: true,
-              functionName: response.functionName || "hubspot_operation",
-              message: response.message || "Operation completed successfully",
-              // Ensure we have a details object with the full API response
-              details: response.data || response.details || response,
-            };
-
-            // Add a structured message for display in the chat
-            setMessages((prev) => {
-              // Create a properly typed message with correct structure
-              const newMessage: Message = {
+            if (hubspotResult.success === true) {
+              hubspotNewMessage = {
                 id: Date.now().toString(),
-                role: "model", // Must be 'model' not just string
-                type: "hubspot_success", // This must be a valid type
-                content: hubspotResponse as HubSpotExecutionResult, // Ensure proper typing
+                role: "model",
+                type: "hubspot_success",
+                content: hubspotResult,
               };
-              const updated = [...prev, newMessage];
-              // Save to both the active conversation and mode-specific storage
-              if (hubspotMode) {
-                chrome.storage.local.set({
-                  conversationHistory: updated,
-                  hubspotConversationHistory: updated,
-                }); // Persist to active and Hubspot storage
-              } else {
-                chrome.storage.local.set({
-                  conversationHistory: updated,
-                  d4mConversationHistory: updated,
-                }); // Persist to active and D4M storage
-              }
-              return updated;
-            });
-
-            // Skip toast since we're showing a card
-            console.log("[ChatWidget] Added hubspot_success card to messages");
-          } else {
-            // For non-card responses, just show a toast
-            const msg =
-              typeof response === "string"
-                ? response
-                : response?.message || "Task completed";
-            setToast({ message: msg, type: "success" });
-          }
-
-          messageHandled = true;
-        }
-        // Handle UPDATE_SIDEPANEL messages sent by the background script
-        else if (message?.type === "UPDATE_SIDEPANEL" && message.question) {
-          console.log(
-            "[ChatWidget] Handling UPDATE_SIDEPANEL with question:",
-            message.question
-          );
-          setIsLoading(false); // Stop loading indicator
-
-          // Create a question message
-          const newMessage: Message = {
-            id: Date.now().toString(),
-            role: "model",
-            type: "question",
-            content: message.question,
-          };
-
-          // Add the question to the chat
-          setMessages((prev) => {
-            const updated = [...prev, newMessage];
-            // Save to both the active conversation and mode-specific storage
-            if (hubspotMode) {
-              chrome.storage.local.set({
-                conversationHistory: updated,
-                hubspotConversationHistory: updated,
-              }); // Persist to active and Hubspot storage
+              console.log(`[ChatWidget] Created hubspot_success card message.`);
             } else {
-              chrome.storage.local.set({
-                conversationHistory: updated,
-                d4mConversationHistory: updated,
-              }); // Persist to active and D4M storage
-            }
-            return updated;
-          });
+              let detailsString = "";
+              try {
+                if (hubspotResult.details) {
+                  detailsString =
+                    typeof hubspotResult.details === "string"
+                      ? hubspotResult.details
+                      : JSON.stringify(hubspotResult.details, null, 2);
+                } else {
+                  detailsString = JSON.stringify(hubspotResult, null, 2);
+                }
+              } catch (err) {
+                console.error("Error stringifying details:", err);
+                detailsString = "Error parsing details";
+              }
 
-          messageHandled = true;
+              hubspotNewMessage = {
+                id: Date.now().toString(),
+                role: "model",
+                type: "hubspot_error",
+                errorType: hubspotResult.errorType || "general",
+                message:
+                  hubspotResult.error ||
+                  "An error occurred with the HubSpot operation",
+                details: detailsString,
+                status: hubspotResult.status || 0,
+                content: undefined,
+              };
+              console.log(
+                `[ChatWidget] Created hubspot_error card message:`,
+                hubspotNewMessage
+              );
+            }
+
+            if (hubspotNewMessage) {
+              setMessages((prev) => {
+                updateAndSaveMessages(prev, hubspotNewMessage, hubspotMode);
+                return [...prev, hubspotNewMessage];
+              });
+            }
+            messageHandled = true;
+            break;
+
+          case MESSAGE_TYPE.COMMAND_RESPONSE:
+            console.log("[ChatWidget] Handling COMMAND_RESPONSE (D4M)");
+            setIsLoading(false); // Stop loading on any command response
+            const responseData = message.response;
+
+            if (responseData) {
+              let commandNewMessage: Message | null = null;
+              let contentText =
+                typeof responseData === "string"
+                  ? responseData
+                  : responseData.message ||
+                    responseData.output ||
+                    responseData.text ||
+                    (typeof responseData === "object"
+                      ? "Processing your request..."
+                      : JSON.stringify(responseData));
+
+              commandNewMessage = {
+                id: Date.now().toString(),
+                role: "model",
+                content: contentText,
+              };
+              console.log("[ChatWidget] Created D4M model message.");
+
+              if (commandNewMessage) {
+                setMessages((prev) => {
+                  updateAndSaveMessages(prev, commandNewMessage, hubspotMode);
+                  return [...prev, commandNewMessage];
+                });
+              }
+            } else {
+              console.warn(
+                "[ChatWidget] COMMAND_RESPONSE received with null/undefined data."
+              );
+            }
+            messageHandled = true;
+            break;
+
+          case MESSAGE_TYPE.FINISH_PROCESS_COMMAND:
+            // Responsible for Toast Messages
+            console.log("[ChatWidget] Handling FINISH_PROCESS_COMMAND");
+            setIsLoading(false);
+            const finishResponse = message.response;
+            const msg =
+              typeof finishResponse === "string"
+                ? finishResponse
+                : finishResponse?.message || "Task completed";
+            setToast({ message: msg, type: "success" });
+            messageHandled = true;
+            break;
+
+          // Add other message type handlers here (e.g., "ERROR_MESSAGE", "STATUS_UPDATE")
+          default:
+            console.log(
+              "[ChatWidget] Background message type not handled:",
+              message?.type
+            );
+            // No handler matched, send default sync response or do nothing
+            sendResponse(); // Close channel immediately
+            return false; // Indicate not handled
         }
-        // Add other message type handlers here (e.g., "ERROR_MESSAGE", "STATUS_UPDATE")
       } catch (error) {
         console.error(
           "[ChatWidget] Error processing background message:",
           message?.type,
           error
         );
-        // Optionally set a general error state or toast
         setError("Error processing background message.");
       }
 
@@ -986,6 +733,11 @@ export function ChatWidget() {
   const textColor =
     mode === "light" ? "d4m-text-gray-800" : "d4m-text-gray-200";
 
+  // Handler to toggle task progress display
+  const toggleTaskProgress = useCallback(() => {
+    setIsTaskProgressExpanded((prev) => !prev);
+  }, []);
+
   // --- JSX ---
   return (
     <React.Fragment>
@@ -1020,17 +772,8 @@ export function ChatWidget() {
             if (!hubspotMode) return; // No change if already active
 
             // Save current Hubspot chat before switching
-            chrome.storage.local.get(["conversationHistory"], (data) => {
-              if (
-                Array.isArray(data.conversationHistory) &&
-                data.conversationHistory.length > 0
-              ) {
-                chrome.storage.local.set({
-                  hubspotConversationHistory: data.conversationHistory,
-                });
-                console.log("[ChatWidget] Saved Hubspot conversation history");
-              }
-            });
+            saveConversationHistory(HUBSPOT_CONVERSATION_HISTORY_KEY, messages);
+            console.log("[ChatWidget] Saved Hubspot conversation history");
 
             // Switch to D4M mode
             setHubspotMode(false);
@@ -1047,42 +790,27 @@ export function ChatWidget() {
             chrome.storage.sync.set({ hubspotMode: false }); // Sync preference if needed
 
             // Restore previous D4M chat or start a new one
-            chrome.storage.local.get(["d4mConversationHistory"], (data) => {
-              if (
-                Array.isArray(data.d4mConversationHistory) &&
-                data.d4mConversationHistory.length > 0
-              ) {
-                setMessages(formatMessages(data.d4mConversationHistory));
-                chrome.storage.local.set({
-                  conversationHistory: data.d4mConversationHistory,
-                });
-                console.log("[ChatWidget] Restored D4M conversation history");
-              } else {
-                // Start a new chat if no history exists
-                setMessages([]);
-                setProcessedMessages([]);
-                chrome.storage.local.remove(["conversationHistory"]);
-                console.log(
-                  "[ChatWidget] Started new D4M chat (no history found)"
-                );
-              }
-            });
+            const d4mHistory = loadConversationHistory(
+              D4M_CONVERSATION_HISTORY_KEY
+            );
+            if (Array.isArray(d4mHistory) && d4mHistory.length > 0) {
+              setMessages(formatMessages(d4mHistory));
+              console.log("[ChatWidget] Restored D4M conversation history");
+            } else {
+              // Start a new chat if no history exists
+              setMessages([]);
+              setProcessedMessages([]);
+              console.log(
+                "[ChatWidget] Started new D4M chat (no history found)"
+              );
+            }
           }}
           toggleHubspotMode={() => {
             if (hubspotMode) return; // No change if already active
 
             // Save current D4M chat before switching
-            chrome.storage.local.get(["conversationHistory"], (data) => {
-              if (
-                Array.isArray(data.conversationHistory) &&
-                data.conversationHistory.length > 0
-              ) {
-                chrome.storage.local.set({
-                  d4mConversationHistory: data.conversationHistory,
-                });
-                console.log("[ChatWidget] Saved D4M conversation history");
-              }
-            });
+            saveConversationHistory(D4M_CONVERSATION_HISTORY_KEY, messages);
+            console.log("[ChatWidget] Saved D4M conversation history");
 
             // Save current D4M color before switching if it's not white
             if (accentColor !== "white") setD4mAccentColor(accentColor);
@@ -1101,28 +829,20 @@ export function ChatWidget() {
             chrome.storage.sync.set({ hubspotMode: true }); // Sync preference if needed
 
             // Restore previous Hubspot chat or start a new one
-            chrome.storage.local.get(["hubspotConversationHistory"], (data) => {
-              if (
-                Array.isArray(data.hubspotConversationHistory) &&
-                data.hubspotConversationHistory.length > 0
-              ) {
-                setMessages(formatMessages(data.hubspotConversationHistory));
-                chrome.storage.local.set({
-                  conversationHistory: data.hubspotConversationHistory,
-                });
-                console.log(
-                  "[ChatWidget] Restored Hubspot conversation history"
-                );
-              } else {
-                // Start a new chat if no history exists
-                setMessages([]);
-                setProcessedMessages([]);
-                chrome.storage.local.remove(["conversationHistory"]);
-                console.log(
-                  "[ChatWidget] Started new Hubspot chat (no history found)"
-                );
-              }
-            });
+            const hubspotHistory = loadConversationHistory(
+              HUBSPOT_CONVERSATION_HISTORY_KEY
+            );
+            if (Array.isArray(hubspotHistory) && hubspotHistory.length > 0) {
+              setMessages(formatMessages(hubspotHistory));
+              console.log("[ChatWidget] Restored Hubspot conversation history");
+            } else {
+              // Start a new chat if no history exists
+              setMessages([]);
+              setProcessedMessages([]);
+              console.log(
+                "[ChatWidget] Started new Hubspot chat (no history found)"
+              );
+            }
           }}
           additionalButtons={[
             {
@@ -1139,6 +859,16 @@ export function ChatWidget() {
             {...toast}
             onClose={() => setToast(null)}
             duration={4000}
+          />
+        )}
+
+        {/* Task Progress Display */}
+        {taskProgress && ( // Only render if taskProgress data exists
+          <TaskProgressDisplay
+            memory={taskProgress}
+            mode={mode}
+            isExpanded={isTaskProgressExpanded}
+            onToggleExpand={toggleTaskProgress}
           />
         )}
 
@@ -1191,25 +921,9 @@ export function ChatWidget() {
               currentTheme={currentTheme}
               accentColor={accentColor}
               mode={mode}
-              expandedExecutions={expandedExecutions}
-              handleToggleExecution={handleToggleExecution}
             />
           )}
         </div>
-
-        {/* Task Section */}
-        {taskHistories.length > 0 && (
-          <TaskSection
-            taskHistories={taskHistories}
-            textColor={textColor}
-            accentColor={accentColor}
-            mode={mode}
-            isExpanded={isTaskSectionExpanded}
-            toggleExpanded={() =>
-              setIsTaskSectionExpanded(!isTaskSectionExpanded)
-            }
-          />
-        )}
 
         {/* Input Area Section */}
         <div

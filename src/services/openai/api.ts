@@ -45,7 +45,8 @@ export async function chatWithAI(
     const conversation = await prepareConversation(
       userMessage,
       currentState,
-      provider
+      provider,
+      isHubspotMode // Pass isHubspotMode
     );
     const response = await sendWithRetry(
       conversation,
@@ -70,7 +71,8 @@ export async function chatWithAI(
     const historyConversation = convertToConversationHistory(conversation);
     await updateConversationHistory(
       historyConversation,
-      JSON.stringify(response)
+      JSON.stringify(response),
+      isHubspotMode // Pass isHubspotMode
     );
 
     return response;
@@ -87,12 +89,13 @@ export async function chatWithAI(
 async function prepareConversation(
   userMsg: string,
   currentState: Record<string, any> = {},
-  provider: "gemini" | "claude"
+  provider: "gemini" | "claude",
+  isHubspotMode: boolean // Add isHubspotMode parameter
 ): Promise<GeminiChatMessage[] | ClaudeChatMessage[]> {
-  const existingHistory = await getConversationHistory();
+  const existingHistory = await getConversationHistory(isHubspotMode); // Pass isHubspotMode
   console.log("[prepareConversation] existingHistory", existingHistory);
 
-  await storeUserMessage(userMsg);
+  await storeUserMessage(userMsg, isHubspotMode); // Pass isHubspotMode
 
   // Get previously stored AI current state
   const storedState = await getStoredCurrentState();
@@ -156,13 +159,19 @@ async function prepareConversation(
 /**
  * Stores just the user message in conversation history without DOM elements
  */
-async function storeUserMessage(userMsg: string): Promise<void> {
-  const existingHistory = await getConversationHistory();
+async function storeUserMessage(
+  userMsg: string,
+  isHubspotMode: boolean // Add isHubspotMode parameter
+): Promise<void> {
+  const existingHistory = await getConversationHistory(isHubspotMode); // Pass isHubspotMode
   const newHistory: ConversationHistory[] = [
     ...existingHistory,
     { role: "user", content: userMsg },
   ];
-  await chrome.storage.local.set({ conversationHistory: newHistory });
+  const key = isHubspotMode
+    ? HUBSPOT_CONVERSATION_HISTORY_KEY
+    : D4M_CONVERSATION_HISTORY_KEY;
+  await saveConversationHistory(key, newHistory); // Use new storage API
 }
 
 /**
@@ -233,7 +242,8 @@ function convertToConversationHistory(
  */
 async function updateConversationHistory(
   conversation: ConversationHistory[],
-  agentJSON: string
+  agentJSON: string,
+  isHubspotMode: boolean // Add isHubspotMode parameter
 ): Promise<void> {
   try {
     // Parse the agent JSON to extract function calls
@@ -297,7 +307,10 @@ async function updateConversationHistory(
         content: userFriendlyMessage, // Store user-friendly message instead of raw JSON
       },
     ];
-    await chrome.storage.local.set({ conversationHistory: newHistory });
+    const key = isHubspotMode
+      ? HUBSPOT_CONVERSATION_HISTORY_KEY
+      : D4M_CONVERSATION_HISTORY_KEY;
+    await saveConversationHistory(key, newHistory); // Use new storage API
 
     // Also store the current state separately if available
     if (currentState) {
@@ -319,12 +332,23 @@ async function updateConversationHistory(
   }
 }
 
+import {
+  saveConversationHistory,
+  loadConversationHistory,
+  D4M_CONVERSATION_HISTORY_KEY,
+  HUBSPOT_CONVERSATION_HISTORY_KEY,
+} from "../storage.ts";
+
 /**
  * Retrieves the conversation history from local storage.
  */
-async function getConversationHistory(): Promise<ConversationHistory[]> {
-  const result = await chrome.storage.local.get("conversationHistory");
-  return result.conversationHistory || [];
+async function getConversationHistory(
+  isHubspotMode: boolean
+): Promise<ConversationHistory[]> {
+  const key = isHubspotMode
+    ? HUBSPOT_CONVERSATION_HISTORY_KEY
+    : D4M_CONVERSATION_HISTORY_KEY;
+  return loadConversationHistory(key);
 }
 
 /**

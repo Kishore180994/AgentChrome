@@ -1,4 +1,4 @@
-import { DOMAction } from "./../../types/actionType";
+import { DOMAction } from "../../types/actionType";
 import { SchemaType, Tool } from "@google/generative-ai";
 
 export const domTools: Tool[] = [
@@ -203,8 +203,8 @@ export const domTools: Tool[] = [
         },
       },
       {
-        name: DOMAction.goToUrl.name,
-        description: DOMAction.goToUrl.description,
+        name: DOMAction.goToExistingTab.name,
+        description: DOMAction.goToExistingTab.description,
         parameters: {
           type: SchemaType.OBJECT,
           properties: {
@@ -225,20 +225,6 @@ export const domTools: Tool[] = [
             url: {
               type: SchemaType.STRING,
               description: "Required URL for the new tab",
-            },
-          },
-          required: ["url"],
-        },
-      },
-      {
-        name: DOMAction.verify.name,
-        description: DOMAction.verify.description,
-        parameters: {
-          type: SchemaType.OBJECT,
-          properties: {
-            url: {
-              type: SchemaType.STRING,
-              description: "Required URL to verify",
             },
           },
           required: ["url"],

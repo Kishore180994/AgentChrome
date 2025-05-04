@@ -1,4 +1,10 @@
 import {
+  saveConversationHistory,
+  D4M_CONVERSATION_HISTORY_KEY,
+  HUBSPOT_CONVERSATION_HISTORY_KEY,
+} from "./services/storage.ts";
+
+import {
   GeminiFunctionCall,
   GeminiFunctionCallWrapper,
   HubSpotExecutionResult,
@@ -9,8 +15,9 @@ import {
 import { executeAppsScriptFunction } from "./services/google/appsScript";
 import { executeHubspotFunction } from "./services/hubspot";
 import { chatWithAI } from "./services/openai/api";
-import { DOMAction, LocalAction } from "./types/actionType";
+import { DOMAction, LocalAction } from "./types/actionType.ts";
 import { getGoogleDocUrlFromId } from "./utils/helpers";
+import { MESSAGE_TYPE } from "./components/chatWidget/types.ts";
 // --- Modularized Tool Handlers ---
 
 /**
@@ -34,7 +41,7 @@ async function handleGoogleWorkspaceAction(
       "[background.ts] Automation stopped due to successful Apps Script execution."
     );
     await chrome.runtime.sendMessage({
-      type: "COMMAND_RESPONSE",
+      type: MESSAGE_TYPE.COMMAND_RESPONSE,
       response: {
         message: result.status,
         output: `url: ${
@@ -44,6 +51,7 @@ async function handleGoogleWorkspaceAction(
         }`,
       },
     });
+    await findAndUngroupDfmGroup();
     executedActions.push(`Executed Google Workspace function: ${functionName}`);
   } catch (error) {
     console.error(
@@ -51,13 +59,14 @@ async function handleGoogleWorkspaceAction(
       error
     );
     await chrome.runtime.sendMessage({
-      type: "COMMAND_RESPONSE",
+      type: MESSAGE_TYPE.COMMAND_RESPONSE,
       response: {
         message:
           "Google Workspace function execution failed: " +
           (error as Error).message,
       },
     });
+    await findAndUngroupDfmGroup();
     throw error;
   }
 }
@@ -111,13 +120,17 @@ async function handleHubspotAction(
           args
         );
 
+        // Send a HubspotResponse indicating a skipped duplicate
         await chrome.runtime.sendMessage({
-          type: "COMMAND_RESPONSE",
+          type: MESSAGE_TYPE.HUBSPOT_RESPONSE,
           response: {
+            success: true, // Treat skipping as a successful handling of the situation
+            functionName: functionName,
             message: `Skipped duplicate ${functionName} operation - already executed`,
-          },
+            details: { args, skipped: true }, // Provide context
+          } as HubSpotExecutionResult,
         });
-
+        await findAndUngroupDfmGroup();
         executedActions.push(
           `Skipped duplicate HubSpot function: ${functionName}`
         );
@@ -138,11 +151,12 @@ async function handleHubspotAction(
       "[background.ts] HubSpot function call executed successfully:",
       result
     );
+    // Send the HubSpot execution result using the new MESSAGE_TYPE.HUBSPOT_RESPONSE type
     await chrome.runtime.sendMessage({
-      type: "COMMAND_RESPONSE",
+      type: MESSAGE_TYPE.HUBSPOT_RESPONSE,
       response: result,
     });
-
+    await findAndUngroupDfmGroup();
     // For create operations, include a unique fingerprint in the action description
     if (isCreateOperation && operationKey) {
       executedActions.push(
@@ -161,14 +175,23 @@ async function handleHubspotAction(
     }
   } catch (error) {
     console.error("[background.ts] HubSpot function call failed:", error);
+    // Send a HubspotResponse indicating an error
     await chrome.runtime.sendMessage({
-      type: "COMMAND_RESPONSE",
+      type: MESSAGE_TYPE.HUBSPOT_RESPONSE,
       response: {
-        message:
+        success: false,
+        functionName: functionName,
+        // Provide a user-friendly error message
+        error:
           "HubSpot function execution failed: " +
           (error instanceof Error ? error.message : String(error)),
-      },
+        // Provide a general error type, or try to infer a more specific one if possible
+        errorType: (error as any).errorType || "general",
+        details: error, // Include the error object for details
+        status: (error as any).status, // Include status if available
+      } as HubSpotExecutionResult,
     });
+    await findAndUngroupDfmGroup();
     automationStopped = true;
     throw error;
   }
@@ -182,7 +205,9 @@ async function handleDomAction(
   args: any,
   tabIdRef: { value: number },
   executedActions: string[],
-  setLastActionType: (type: string) => void
+  setLastActionType: (type: string) => void,
+  initialCommand: string,
+  model: string
 ) {
   switch (functionName) {
     case DOMAction.clickElement.name: {
@@ -246,9 +271,9 @@ async function handleDomAction(
       await sendActionToTab(
         {
           id: Date.now().toString(),
-          type: DOMAction.keyPress.name,
+          type: DOMAction.keyPress.name, // Map to valid LocalActionType
           data: { index, key },
-          description: functionName,
+          description: functionName, // Keep original name here
         },
         tabIdRef.value
       );
@@ -265,31 +290,22 @@ async function handleDomAction(
       await sendActionToTab(
         {
           id: Date.now().toString(),
-          type: DOMAction.scroll.name,
+          type: DOMAction.scroll.name, // Map to valid LocalActionType
           data: { direction, offset },
-          description: functionName,
+          description: functionName, // Keep original name here
         },
         tabIdRef.value
       );
       executedActions.push(`Scrolled ${direction} by ${offset} pixels`);
       break;
     }
-    case DOMAction.goToUrl.name: {
-      const url = (args as any).url;
-      if (!url) throw new Error(`No URL provided for ${functionName}`);
-      await sendActionToTab(
-        {
-          id: Date.now().toString(),
-          type: DOMAction.goToUrl.name,
-          data: { url },
-          description: functionName,
-        },
-        tabIdRef.value
-      );
-      executedActions.push(`Navigated to ${url}`);
-      setLastActionType(DOMAction.goToUrl.name);
+    case DOMAction.goToExistingTab.name: {
+      const targetUrl = (args as any).url;
+      if (!targetUrl) throw new Error(`No URL provided for ${functionName}`);
+      await navigateTab(targetUrl, initialCommand, executedActions, model);
       break;
     }
+
     case DOMAction.openTab.name: {
       const url = (args as any).url;
       if (!url) throw new Error(`No URL provided for ${functionName}`);
@@ -314,9 +330,9 @@ async function handleDomAction(
       const result = await sendActionToTab(
         {
           id: Date.now().toString(),
-          type: DOMAction.extractContent.name,
+          type: DOMAction.extractContent.name, // Map to valid LocalActionType
           data: { index },
-          description: functionName,
+          description: functionName, // Keep original name here
         },
         tabIdRef.value
       );
@@ -325,26 +341,17 @@ async function handleDomAction(
       );
       break;
     }
-    case DOMAction.verify.name: {
-      const url = (args as any).url;
-      if (!url) throw new Error(`No URL provided for ${functionName}`);
-      // For verify, you might want to check the current tab's URL or similar logic
-      executedActions.push(`Verified URL contains ${url}`);
-      break;
-    }
     case DOMAction.done.name: {
       const message = (args as any).message || "Task completed.";
       const output = (args as any).output;
       console.log(`[background.ts] Task completed: "${message}"`);
-      // Send as a COMMAND_RESPONSE which ChatWidget knows how to handle
       await chrome.runtime.sendMessage({
-        type: "COMMAND_RESPONSE",
-        response: {
-          message: message,
-          output: output,
-          type: "completion", // Add a type to identify this as a completion
-        },
+        type: MESSAGE_TYPE.AI_RESPONSE,
+        action: "completion",
+        message: message,
+        output: output,
       });
+      await findAndUngroupDfmGroup();
       executedActions.push(
         `Completed task: ${message}${output ? ` Output: ${output}` : ""}`
       );
@@ -356,13 +363,11 @@ async function handleDomAction(
       console.log(
         `[background.ts] Asking question via ${DOMAction.ask.name}: "${question}"`
       );
-      // Send as a COMMAND_RESPONSE which ChatWidget knows how to handle
+      // Send as an AI_RESPONSE with action "question"
       await chrome.runtime.sendMessage({
-        type: "COMMAND_RESPONSE",
-        response: {
-          message: question,
-          type: "question", // Add a type to identify this as a question
-        },
+        type: MESSAGE_TYPE.AI_RESPONSE,
+        action: "question",
+        question: question, // Use 'question' property for consistency with AskArgs
       });
       executedActions.push(`Asked question: "${question}"`);
       automationStopped = true;
@@ -388,6 +393,257 @@ const activePorts: Record<number, chrome.runtime.Port> = {};
 // Add state for the background script (optional but helpful for clarity)
 let isRecordingActive = false;
 let isWebSocketConnected = false;
+
+// Global variable to store the group ID once found/created
+let doFormeGroupId: number | null = null;
+const doFormeGroupName = "DFM";
+/**
+ * Finds the existing 'DFM' group ID.
+ * Returns null if not found.
+ */
+async function findDoFormeGroupId(): Promise<number | null> {
+  console.log(
+    `[findDoFormeGroupId] Function start. Current stored ID: ${doFormeGroupId}`
+  ); // Log start
+  if (doFormeGroupId !== null) {
+    console.log(
+      `[findDoFormeGroupId] Checking validity of stored ID: ${doFormeGroupId}`
+    ); // Log check
+    try {
+      await chrome.tabGroups.get(doFormeGroupId);
+      console.log(`[findDoFormeGroupId] Stored ID ${doFormeGroupId} is valid.`); // Log valid
+      return doFormeGroupId;
+    } catch (e) {
+      // Catch specific error
+      console.warn(
+        `[findDoFormeGroupId] Stored group ID ${doFormeGroupId} no longer valid. Error: ${
+          e instanceof Error ? e.message : String(e)
+        }` // Log invalidation error
+      );
+      doFormeGroupId = null; // Reset if group was deleted by user
+    }
+  } else {
+    console.log(`[findDoFormeGroupId] No stored ID.`); // Log no stored ID
+  }
+
+  // If no valid stored ID, query existing groups
+  try {
+    console.log(
+      `[findDoFormeGroupId] Querying for group titled '${doFormeGroupName}'...`
+    ); // Log query
+    const groups = await chrome.tabGroups.query({ title: doFormeGroupName });
+    console.log(`[findDoFormeGroupId] Query returned ${groups.length} groups.`); // Log query result count
+    if (groups.length > 0) {
+      doFormeGroupId = groups[0].id; // Store the found ID
+      console.log(
+        `[findDoFormeGroupId] Found existing group with ID: ${doFormeGroupId}` // Log found
+      );
+      return doFormeGroupId;
+    } else {
+      console.log(
+        `[findDoFormeGroupId] Query found no groups named '${doFormeGroupName}'.`
+      ); // Log not found by query
+    }
+  } catch (error) {
+    console.error("[findDoFormeGroupId] Error querying tab groups:", error); // Log query error
+  }
+
+  console.log("[findDoFormeGroupId] Function end. Returning null."); // Log returning null
+  return null; // Group not found
+}
+
+/**
+ * Ungroups all tabs currently within a specific group.
+ * The tabs themselves will remain open in the window.
+ * Requires "tabs" permission (and potentially "tabGroups" for related operations).
+ *
+ * @param groupId The numeric ID of the group whose tabs should be ungrouped.
+ */
+async function ungroupTabsInGroup(groupId: number): Promise<void> {
+  // Basic validation for the groupId
+  if (typeof groupId !== "number" || groupId < 0) {
+    // Group IDs are non-negative
+    console.warn("[ungroupTabsInGroup] Invalid groupId provided:", groupId);
+    return;
+  }
+  console.log(
+    `[ungroupTabsInGroup] Attempting to ungroup tabs in group ${groupId}...`
+  );
+
+  try {
+    // 1. Find all tabs belonging to the specified group
+    // Note: We query the tabs API, filtering by groupId
+    const tabsInGroup = await chrome.tabs.query({ groupId: groupId });
+
+    if (tabsInGroup.length === 0) {
+      console.log(
+        `[ungroupTabsInGroup] No tabs found in group ${groupId}. The group might be empty or already removed.`
+      );
+      return; // Nothing to do
+    }
+
+    // 2. Extract the valid IDs of the tabs found
+    const tabIdsToUngroup = tabsInGroup
+      .map((tab) => tab.id) // Get the ID from each tab object
+      .filter((id) => typeof id === "number") as number[]; // Filter out any potentially undefined IDs and ensure they are numbers
+
+    if (tabIdsToUngroup.length === 0) {
+      console.warn(
+        `[ungroupTabsInGroup] Found tabs in group ${groupId}, but could not extract valid tab IDs.`
+      );
+      return;
+    }
+
+    console.log(
+      `[ungroupTabsInGroup] Found ${tabIdsToUngroup.length} tabs to ungroup from group ${groupId}:`,
+      tabIdsToUngroup
+    );
+
+    // 3. Call chrome.tabs.ungroup with the collected tab IDs
+    await chrome.tabs.ungroup(tabIdsToUngroup);
+
+    console.log(
+      `[ungroupTabsInGroup] Successfully ungrouped ${tabIdsToUngroup.length} tabs from group ${groupId}.`
+    );
+    // NOTE: When a group becomes empty after ungrouping its last tabs,
+    // Chrome usually removes the group entity automatically.
+  } catch (error) {
+    console.error(
+      `[ungroupTabsInGroup] Error during ungrouping process for group ${groupId}:`,
+      error
+    );
+    // Handle potential errors, e.g., the group or tabs were removed concurrently
+    if (error instanceof Error) {
+      if (error.message.includes("No group with id")) {
+        console.warn(
+          `[ungroupTabsInGroup] Group ${groupId} likely ceased to exist before ungrouping finished.`
+        );
+      } else if (error.message.includes("No tab with id")) {
+        console.warn(
+          `[ungroupTabsInGroup] One or more tabs may have been closed before they could be ungrouped.`
+        );
+      }
+    }
+  }
+}
+
+async function findAndUngroupDfmGroup() {
+  console.log("Finding DFM group to ungroup...");
+  try {
+    const groups = await chrome.tabGroups.query({ title: doFormeGroupName });
+    if (groups.length > 0) {
+      const currentGroupId = groups[0].id;
+      console.log(
+        `Found current DFM group ID: ${currentGroupId}. Now attempting to ungroup.`
+      );
+      await ungroupTabsInGroup(currentGroupId);
+    } else {
+      console.log("Could not find any group named 'DFM' right now.");
+    }
+  } catch (error) {
+    console.error("Error finding or ungrouping DFM group:", error);
+  }
+}
+
+// Call this new function instead of directly calling ungroupTabsInGroup
+// findAndUngroupDfmGroup();
+
+/**
+ * Adds a tab to the 'doForme' group.
+ * Creates the group if it doesn't exist.
+ */
+async function addTabToDoFormeGroup(tabId: number): Promise<void> {
+  if (!tabId) {
+    console.warn("[addTabToDoFormeGroup] Invalid tabId received:", tabId);
+    return;
+  }
+  console.log(
+    `[addTabToDoFormeGroup] Attempting to add tab ${tabId} to '${doFormeGroupName}' group.`
+  );
+
+  try {
+    let groupId = await findDoFormeGroupId();
+
+    if (groupId !== null) {
+      // --- Group exists ---
+      console.log(
+        `[addTabToDoFormeGroup] Adding tab ${tabId} to existing group ${groupId}.`
+      );
+      try {
+        await chrome.tabs.get(tabId); // Check if tab exists
+        await chrome.tabs.group({ groupId: groupId, tabIds: [tabId] });
+        console.log(
+          `[addTabToDoFormeGroup] Tab ${tabId} added to existing group ${groupId}.`
+        );
+      } catch (tabError) {
+        console.warn(
+          `[addTabToDoFormeGroup] Tab ${tabId} check failed or couldn't be added to group ${groupId}:`,
+          tabError instanceof Error ? tabError.message : String(tabError)
+        );
+      }
+    } else {
+      // --- Group doesn't exist, create it ---
+      console.log(
+        `[addTabToDoFormeGroup] No '${doFormeGroupName}' group found. Creating new group with tab ${tabId}.`
+      );
+      try {
+        await chrome.tabs.get(tabId); // Check if tab exists first
+        const newGroupId = await chrome.tabs.group({ tabIds: [tabId] });
+        console.log(
+          `[addTabToDoFormeGroup] New group ${newGroupId} created. Attempting to update title/color...` // Log before update
+        );
+
+        // --- CRITICAL STEP: Try to update the new group ---
+        try {
+          await chrome.tabGroups.update(newGroupId, {
+            title: doFormeGroupName,
+            color: "yellow", // Make sure color is valid
+          });
+          console.log(
+            `[addTabToDoFormeGroup] Successfully updated group ${newGroupId}. Storing ID.`
+          ); // Log update success
+          // --- Store the ID ONLY if the update succeeded ---
+          doFormeGroupId = newGroupId;
+        } catch (updateError) {
+          // --- Log failure to update ---
+          console.error(
+            `[addTabToDoFormeGroup] FAILED to update group ${newGroupId} title/color:`,
+            updateError
+          );
+          // Consider ungrouping the tab if setup failed
+          try {
+            console.warn(
+              `[addTabToDoFormeGroup] Attempting to ungroup tab ${tabId} due to update failure.`
+            );
+            await chrome.tabs.ungroup([tabId]);
+          } catch (ungroupError) {
+            console.error(
+              `[addTabToDoFormeGroup] Failed to ungroup tab ${tabId}:`,
+              ungroupError
+            );
+          }
+          // DO NOT store the group ID if update failed
+        }
+      } catch (tabError) {
+        console.warn(
+          `[addTabToDoFormeGroup] Tab ${tabId} check failed or couldn't be used to create group:`,
+          tabError instanceof Error ? tabError.message : String(tabError)
+        );
+      }
+    }
+  } catch (error) {
+    console.error(
+      `[addTabToDoFormeGroup] Error processing tab ${tabId} for group:`,
+      error
+    );
+    if (error instanceof Error && error.message.includes("No group with id")) {
+      console.warn(
+        `[addTabToDoFormeGroup] The stored group ID ${doFormeGroupId} seems invalid. Resetting.`
+      );
+      doFormeGroupId = null; // Reset stored ID if it became invalid
+    }
+  }
+}
 
 chrome.action.onClicked.addListener(async (tab) => {
   console.log("[background.ts] Extension action clicked, tab:", tab);
@@ -627,7 +883,8 @@ async function processCommand(
     console.log("[background.ts] Automation stopped. Not processing.");
     return;
   }
-
+  // Add the new tab to the group immediately
+  await addTabToDoFormeGroup(tabId);
   activeAutomationTabs.add(tabId);
   recentActionsMap[tabId] = recentActionsMap[tabId] || [];
 
@@ -659,11 +916,12 @@ async function processCommand(
           err
         );
         await chrome.runtime.sendMessage({
-          type: "FINISH_PROCESS_COMMAND",
+          type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
           response:
             "Failed to fetch page elements: " +
             (err instanceof Error ? err.message : String(err)),
         });
+        await findAndUngroupDfmGroup();
         return; // Stop processing if page elements fail
       }
     }
@@ -726,11 +984,12 @@ async function processCommand(
     } catch (error) {
       console.error("[background.ts] Tab URL/List error:", error);
       await chrome.runtime.sendMessage({
-        type: "FINISH_PROCESS_COMMAND",
+        type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
         response:
           "Failed to get tab URL/List: " +
           (error instanceof Error ? error.message : String(error)),
       });
+      await findAndUngroupDfmGroup();
       return;
     }
 
@@ -742,9 +1001,10 @@ async function processCommand(
       } else {
         console.warn("[background.ts] No elements found, aborting");
         await chrome.runtime.sendMessage({
-          type: "FINISH_PROCESS_COMMAND",
+          type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
           response: "No page elements found, aborting command processing.",
         });
+        await findAndUngroupDfmGroup();
         return;
       }
     }
@@ -827,11 +1087,12 @@ async function processCommand(
                 { name, result }
               );
               if (result && result.success) {
-                // Send error to UI and stop further processing
+                // TODO: Send error to UI and stop further processing
                 chrome.runtime.sendMessage({
-                  type: "FINISH_PROCESS_COMMAND",
+                  type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
                   response: result,
                 });
+                await findAndUngroupDfmGroup();
                 activeAutomationTabs.delete(tabId);
                 automationStopped = true;
                 return;
@@ -861,9 +1122,10 @@ async function processCommand(
         );
       }
       chrome.runtime.sendMessage({
-        type: "FINISH_PROCESS_COMMAND",
+        type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
         response: "AI provider returned no response.",
       });
+      await findAndUngroupDfmGroup();
       activeAutomationTabs.delete(tabId);
       return;
     }
@@ -911,10 +1173,11 @@ async function processCommand(
         );
       } else {
         chrome.runtime.sendMessage({
-          type: "FINISH_PROCESS_COMMAND",
+          type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
           response:
             "AI response missing mandatory state report. Aborting after retry.",
         });
+        await findAndUngroupDfmGroup();
         activeAutomationTabs.delete(tabId);
       }
       return;
@@ -952,9 +1215,10 @@ async function processCommand(
         );
       } else {
         await chrome.runtime.sendMessage({
-          type: "FINISH_PROCESS_COMMAND",
+          type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
           response: "No valid state returned from AI, aborting after retry.",
         });
+        await findAndUngroupDfmGroup();
       }
       return;
     }
@@ -979,9 +1243,12 @@ async function processCommand(
 
     // Update memory if available
     if (memory) {
-      chrome.runtime.sendMessage({ type: "MEMORY_UPDATE", response: memory });
+      chrome.runtime.sendMessage({
+        type: MESSAGE_TYPE.MEMORY_UPDATE,
+        response: memory,
+      });
       chrome.tabs.sendMessage(tabIdRef.value, {
-        type: "MEMORY_UPDATE",
+        type: MESSAGE_TYPE.MEMORY_UPDATE,
         response: memory,
       });
     } else {
@@ -1012,9 +1279,10 @@ async function processCommand(
         );
       } else {
         chrome.runtime.sendMessage({
-          type: "FINISH_PROCESS_COMMAND",
+          type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
           response: evaluation || "Task likely completed (no further actions).",
         });
+        await findAndUngroupDfmGroup();
         resetExecutionState(tabId);
         activeAutomationTabs.clear();
         return;
@@ -1099,14 +1367,20 @@ async function processCommand(
           executedActions.push(
             `Extracted content from element at index ${index}: "${result}"`
           );
-        } else if (functionName === DOMAction.goToUrl.name) {
+        } else if (functionName === DOMAction.goToExistingTab.name) {
           const url = (args as any).url;
           if (!url) {
             throw new Error(`No URL provided for ${functionName}`);
           }
-          await navigateTab(tabIdRef.value, url);
-          executedActions.push(`Navigated to ${url}`);
-          lastActionType = DOMAction.goToUrl.name;
+          const existingTab = await navigateTab(
+            url,
+            initialCommand,
+            actionHistory,
+            model
+          );
+          if (existingTab.id) tabIdRef.value = existingTab.id;
+          executedActions.push(`Switched to tab: ${url}`);
+          lastActionType = DOMAction.goToExistingTab.name;
         } else if (functionName === DOMAction.openTab.name) {
           const url = (args as any).url;
           if (!url) {
@@ -1115,7 +1389,7 @@ async function processCommand(
           const newTab = await createTab(url);
           if (newTab.id) tabIdRef.value = newTab.id;
           executedActions.push(`Opened new tab with URL ${url}`);
-          lastActionType = DOMAction.openTab.name; // Keep simplified type for navigation check
+          lastActionType = DOMAction.openTab.name;
         } else if (functionName === DOMAction.scroll.name) {
           const direction = (args as any).direction;
           const offset = (args as any).offset;
@@ -1135,50 +1409,6 @@ async function processCommand(
             tabIdRef.value
           );
           executedActions.push(`Scrolled ${direction} by ${offset} pixels`);
-        } else if (functionName === DOMAction.verify.name) {
-          const url = (args as any).url;
-          if (!url) {
-            throw new Error(`No URL provided for ${functionName}`);
-          }
-          await verifyOrOpenTab(url, tabIdRef);
-          executedActions.push(`Verified URL contains ${url}`);
-        } else if (
-          functionName === DOMAction.ask.name ||
-          functionName === "google_workspace_ask"
-        ) {
-          const question =
-            (args as any).question || "Please provide instructions.";
-          console.log(`[background.ts] Asking: ${question}`);
-          automationStopped = true; // Pause automation
-
-          // Send COMMAND_RESPONSE instead of UPDATE_SIDEPANEL
-          // This is the message that the ChatWidget component is properly handling
-          await chrome.runtime.sendMessage({
-            type: "COMMAND_RESPONSE",
-            response: {
-              message: question,
-              type: "question",
-            },
-          });
-
-          executedActions.push(`Asked question: "${question}"`);
-          automationStopped = true;
-          return "ASK_PAUSED";
-        } else if (
-          functionName === DOMAction.done.name ||
-          functionName === "google_workspace_done"
-        ) {
-          console.log(`[background.ts] Tasks completed`);
-          const message = (args as any).message || "Task completed.";
-          const output = (args as any).output;
-          const response = { message, output };
-          chrome.runtime.sendMessage({
-            type: "COMMAND_RESPONSE",
-            response,
-          });
-          automationStopped = true;
-          executedActions.push(`Completed task: ${message}`);
-          return "DONE";
         } else if (functionName === DOMAction.refetch.name) {
           console.log("[background.ts] Refetch action detected, will loop...");
           executedActions.push("Re-fetched page elements");
@@ -1190,7 +1420,9 @@ async function processCommand(
             executedActions,
             (type) => {
               lastActionType = type;
-            }
+            },
+            initialCommand,
+            model
           );
           continue;
         } else {
@@ -1219,17 +1451,17 @@ async function processCommand(
           response: { message: errorMessage },
         });
 
-        // For critical errors, stop automation
-        if (["navigate", "open_tab", "verify"].includes(functionName)) {
-          automationStopped = true;
-          await chrome.runtime.sendMessage({
-            type: "FINISH_PROCESS_COMMAND",
-            response: errorMessage,
-          });
-          resetExecutionState(tabId);
-          activeAutomationTabs.delete(tabId);
-          return;
-        }
+        // TODO: For critical errors, stop automation
+        // if (["navigate", "open_tab", "verify"].includes(functionName)) {
+        //   automationStopped = true;
+        //   await chrome.runtime.sendMessage({
+        //     type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
+        //     response: errorMessage,
+        //   });
+        //   resetExecutionState(tabId);
+        //   activeAutomationTabs.delete(tabId);
+        //   return;
+        // }
       }
     }
 
@@ -1294,9 +1526,10 @@ async function handleError(
     });
     if (err.message.includes("quota")) {
       await chrome.runtime.sendMessage({
-        type: "FINISH_PROCESS_COMMAND",
+        type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
         response: message,
       });
+      await findAndUngroupDfmGroup();
       automationStopped = true;
     } else if (err.message.includes("429")) {
       setTimeout(
@@ -1316,43 +1549,21 @@ async function handleError(
     const errorMessage = `Command processing failed: ${
       err instanceof Error ? err.message : String(err)
     }`;
-    console.error({ errorMessage });
+    console.log({ errorMessage });
     chrome.tabs.sendMessage(tabIdRef.value, {
-      type: "DISPLAY_MESSAGE",
+      type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
       response: { message: errorMessage },
     });
-    await chrome.runtime.sendMessage({
-      type: "FINISH_PROCESS_COMMAND",
-      response: errorMessage,
-    });
-    automationStopped = true;
+    await findAndUngroupDfmGroup();
   }
   resetExecutionState(tabId);
   activeAutomationTabs.delete(tabId);
+  automationStopped = true;
 }
 
 function resetExecutionState(tabId: number) {
   recentActionsMap[tabId] = [];
   delete currentTasks[tabId];
-}
-
-// No replacement needed - removing these functions
-
-async function verifyOrOpenTab(urlPart: string, tabIdRef: { value: number }) {
-  const tabs = await chrome.tabs.query({});
-  const found = tabs.find((t) => t.url?.includes(urlPart));
-  if (found?.id) {
-    await chrome.tabs.update(found.id, { active: true });
-    activeAutomationTabs.add(found.id);
-    await waitForTabLoad(found.id);
-    tabIdRef.value = found.id;
-  } else {
-    const newTab = await createTab(`https://${urlPart}`);
-    if (newTab?.id) {
-      tabIdRef.value = newTab.id;
-      activeAutomationTabs.add(newTab.id);
-    }
-  }
 }
 
 /**
@@ -1558,7 +1769,6 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
     }
     return true; // Indicate async response handling
   }
-
   if (msg.type === "PROCESS_COMMAND") {
     automationStopped = false;
     const [activeTab] = await chrome.tabs.query({
@@ -1567,9 +1777,10 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
     });
     if (!activeTab?.id) {
       await chrome.runtime.sendMessage({
-        type: "FINISH_PROCESS_COMMAND",
+        type: MESSAGE_TYPE.FINISH_PROCESS_COMMAND,
         response: "No active tab found, aborting command processing.",
       });
+      await findAndUngroupDfmGroup();
       sendResponse({ success: false, error: "No active tab" });
       return true; // Indicate async response
     }
@@ -1591,11 +1802,12 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
       console.debug("Error during processCommand:", err);
     });
 
-    return true; // Indicate async response
+    return true;
   } else if (msg.type === "NEW_CHAT") {
-    chrome.storage.local.set({ conversationHistory: [] }, () => {
-      sendResponse({ success: true });
-    });
+    // Clear both conversation histories using the new storage API
+    await saveConversationHistory(D4M_CONVERSATION_HISTORY_KEY, []);
+    await saveConversationHistory(HUBSPOT_CONVERSATION_HISTORY_KEY, []);
+    sendResponse({ success: true });
     return true; // Indicate async response
   } else if (msg.type === "STOP_AUTOMATION") {
     automationStopped = true;
@@ -1934,20 +2146,54 @@ function waitForTabLoad(tabId: number): Promise<void> {
   });
 }
 
-async function navigateTab(tabId: number, url: string): Promise<void> {
-  await chrome.tabs.update(tabId, { url });
-  activeAutomationTabs.add(tabId);
-  await waitForTabLoad(tabId);
-  await ensureContentScriptInjected(tabId);
+async function navigateTab(
+  url: string,
+  initialCommand: string,
+  actionHistory: string[] | undefined,
+  model: string
+): Promise<chrome.tabs.Tab> {
+  const tabs = await chrome.tabs.query({});
+  const existingTab = tabs.find(
+    (tab) => tab && tab.id && tab.url?.includes(url)
+  );
+
+  if (!existingTab) {
+    return createTab(url);
+  }
+
+  await chrome.tabs.update(existingTab.id!, { active: true });
+  await chrome.windows.update(existingTab.windowId, { focused: true });
+
+  await addTabToDoFormeGroup(existingTab.id!);
+
+  activeAutomationTabs.add(existingTab.id!);
+  await waitForTabLoad(existingTab.id!);
+  await ensureContentScriptInjected(existingTab.id!);
+  // processCommand(
+  //   existingTab.id!,
+  //   "navigated to new tab",
+  //   initialCommand,
+  //   actionHistory,
+  //   model,
+  //   "",
+  //   0
+  // );
+  return existingTab;
 }
 
 async function createTab(url: string): Promise<chrome.tabs.Tab> {
+  console.log(`[createTab] Creating new tab with URL: ${url}`);
   const tab = await chrome.tabs.create({ url });
   if (!tab.id) {
     throw new Error("Failed to create tab or tab ID is missing.");
   }
+  console.log(`[createTab] Tab ${tab.id} created.`);
+
+  // Add the new tab to the group immediately
+  await addTabToDoFormeGroup(tab.id);
+
+  activeAutomationTabs.add(tab.id); // Keep tracking if needed elsewhere
   await waitForTabLoad(tab.id);
   await ensureContentScriptInjected(tab.id);
-  activeAutomationTabs.add(tab.id); // Ensure new tab is marked active
   return tab;
 }

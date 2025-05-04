@@ -60,7 +60,10 @@ export const DOMAction = {
     description: "Simulates a key press on an element",
   },
   scroll: { name: "dom_scroll", description: "Scrolls the page up or down" },
-  goToUrl: { name: "dom_goToUrl", description: "Navigates to a new URL" },
+  goToExistingTab: {
+    name: "dom_goToExistingTab",
+    description: "Navigates to an existing tab with the specified URL",
+  },
   openTab: {
     name: "dom_openTab",
     description: "Opens a new tab with the specified URL",
@@ -69,7 +72,6 @@ export const DOMAction = {
     name: "dom_extractContent",
     description: "Extracts content from an element",
   },
-  verify: { name: "dom_verify", description: "Verifies the current URL" },
   done: { name: "dom_done", description: "Indicates task completion" },
   ask: {
     name: "dom_ask",
@@ -78,7 +80,7 @@ export const DOMAction = {
   reportCurrentState: {
     name: "dom_reportCurrentState",
     description:
-      "Reports the current state of the task, mandatory for every response",
+      "Reports the current state of the task, **MANDATORY INCLUSION FOR EVERY RESPONSE** YOU MUST INCLUDE THIS ACTION IN EVERY RESPONSE YOU SEND IT TO ME",
   },
   wait: {
     name: "dom_wait",

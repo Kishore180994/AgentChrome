@@ -1,4 +1,5 @@
 import { Part } from "@google/generative-ai";
+import { MemoryState } from "../../types/memoryTypes";
 
 /**
  * Represents the role of an entity in the system.
@@ -148,9 +149,9 @@ export interface ScrollArgs {
 }
 
 /**
- * Represents the arguments for a `goToUrl` function call.
+ * Represents the arguments for a `GotoExistingTab` function call.
  */
-export interface GoToUrlArgs {
+export interface GotoExistingTabArgs {
   url: string;
 }
 
@@ -193,28 +194,12 @@ export interface AskArgs {
 }
 
 /**
- * Represents a step in the task memory.
- */
-export interface MemoryStep {
-  step_number: string;
-  description: string;
-  status: "PENDING" | "IN_PROGRESS" | "PASS" | "FAIL";
-}
-
-/**
- * Represents the memory object in current_state.
- */
-export interface Memory {
-  steps: MemoryStep[];
-}
-
-/**
  * Represents the current_state object in reportCurrentState.
  */
 export interface CurrentState {
   page_summary: string;
   evaluation_previous_goal: string;
-  memory: Memory;
+  memory: MemoryState;
   current_goal: string;
   user_command?: string;
 }
@@ -237,7 +222,7 @@ export interface GeminiFunctionCall {
     | SubmitFormArgs
     | KeyPressArgs
     | ScrollArgs
-    | GoToUrlArgs
+    | GotoExistingTabArgs
     | OpenTabArgs
     | ExtractContentArgs
     | VerifyArgs
