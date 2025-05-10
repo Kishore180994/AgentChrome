@@ -16,7 +16,7 @@ import {
   Role,
   GeminiResponse,
 } from "./interfaces";
-import { googleDOMTools, HSTools, hubspotModularTools } from "./tools";
+import { googleDOMTools, hubspotModularTools } from "./tools";
 import { getAPICompatibleTools, HubspotFunctionTool } from "./hubspotTool";
 import { commonTools } from "./commonTools";
 
@@ -31,7 +31,7 @@ export type AIProvider = "gemini" | "claude";
 // --- Helper Functions ---
 /**
  * Filters messages based on Role and calls the appropriate AI provider.
- * Returns the raw GeminiResponse to preserve the [functioncall, functioncall, ...] format.
+ * Returns the raw GeminiResponse to preserve the [functionCall, functionCall, ...] format.
  */
 // Helper to determine if we should use the HubSpot system prompt
 export async function shouldUseHubspotSystemPrompt(): Promise<boolean> {
