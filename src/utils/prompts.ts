@@ -5,6 +5,8 @@ export const commonPromptRules = `
 1. ONE OR MORE ACTION FUNCTION CALLS (e.g., dom_clickElement, dom_inputText, dom_goToExistingTab, google_workspace_createNewGoogleDoc, hubspot_createContact, etc.). Multiple non-DOM-changing actions can be chained before a single DOM-changing action or the final dom_reportCurrentState.
 2. ONE \`dom_reportCurrentState\` FUNCTION CALL (always as the second/last function call in the array, e.g., dom_reportCurrentState).
 THIS IS MANDATORY AND NON-NEGOTIABLE. RESPONSES WITH ONLY \`dom_reportCurrentState\` OR AN INCORRECT NUMBER/ORDER OF CALLS WILL CAUSE SYSTEM FAILURE.
+
+**FAILURE TO ADHERE TO THIS 2-CALL STRUCTURE WILL BREAK THE SYSTEM.**
 `;
 
 export const commonRules = `

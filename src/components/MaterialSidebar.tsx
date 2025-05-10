@@ -10,15 +10,7 @@ import {
   Menu,
   User,
   Settings,
-  LogIn,
-  Download,
-  RefreshCw,
-  Search,
 } from "lucide-react";
-import ComponentHeader, {
-  commonButtons,
-  HeaderButtonOption,
-} from "./common/ComponentHeader";
 import { SettingsPage } from "./SettingsPage";
 import { ChatWidget } from "./chatWidget/ChatWidget";
 import { PreviousChatsPage } from "./PreviousChatsPage";
